@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,61 +20,58 @@ interface RSSItem {
   guid: string;
 }
 
-function parseRSSFeed(xmlText: string): RSSItem[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, "text/xml");
-  if (!doc) return [];
+function extractText(xml: string, tag: string): string {
+  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i');
+  const match = xml.match(regex);
+  if (!match) return '';
+  return match[1].replace(/<!\[CDATA\[([\\s\\S]*?)\]\]>/g, '$1').trim();
+}
 
+function parseRSSFeed(xmlText: string): RSSItem[] {
   const items: RSSItem[] = [];
 
-  // Try RSS format first
-  const rssItems = doc.querySelectorAll("item");
-  if (rssItems.length > 0) {
-    for (const item of rssItems) {
-      const title = item.querySelector("title")?.textContent?.trim() ?? "";
-      const description = item.querySelector("description")?.textContent?.trim() ?? "";
-      const link = item.querySelector("link")?.textContent?.trim() ?? "";
-      const pubDateText = item.querySelector("pubDate")?.textContent?.trim() ?? "";
-      const guid = item.querySelector("guid")?.textContent?.trim() ?? link;
+  // Try RSS format
+  const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
+  let match;
+  
+  while ((match = itemRegex.exec(xmlText)) !== null) {
+    const itemXml = match[1];
+    const title = extractText(itemXml, 'title');
+    const description = extractText(itemXml, 'description');
+    const link = extractText(itemXml, 'link');
+    const pubDate = extractText(itemXml, 'pubDate');
+    const guid = extractText(itemXml, 'guid') || link;
 
-      if (title && link) {
-        items.push({
-          title,
-          description,
-          link,
-          pubDate: pubDateText ? new Date(pubDateText).toISOString() : new Date().toISOString(),
-          guid,
-        });
-      }
+    if (title && link) {
+      items.push({
+        title,
+        description,
+        link,
+        pubDate: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        guid: guid || link,
+      });
     }
-    return items;
   }
 
-  // Try Atom format
-  const atomEntries = doc.querySelectorAll("entry");
-  if (atomEntries.length > 0) {
-    for (const entry of atomEntries) {
-      const title = entry.querySelector("title")?.textContent?.trim() ?? "";
-      const summary = entry.querySelector("summary")?.textContent?.trim() ?? "";
-      const content = entry.querySelector("content")?.textContent?.trim() ?? "";
-      const description = content || summary;
-      
-      const linkEl = entry.querySelector("link[href]");
-      const link = linkEl?.getAttribute("href") ?? "";
-      
-      const published = entry.querySelector("published")?.textContent?.trim() ?? "";
-      const updated = entry.querySelector("updated")?.textContent?.trim() ?? "";
-      const pubDateText = published || updated;
-      
-      const id = entry.querySelector("id")?.textContent?.trim() ?? link;
+  // Try Atom format if no RSS items found
+  if (items.length === 0) {
+    const entryRegex = /<entry[^>]*>([\s\S]*?)<\/entry>/gi;
+    while ((match = entryRegex.exec(xmlText)) !== null) {
+      const entryXml = match[1];
+      const title = extractText(entryXml, 'title');
+      const summary = extractText(entryXml, 'summary') || extractText(entryXml, 'content');
+      const linkMatch = entryXml.match(/<link[^>]+href=["']([^"']+)["']/i);
+      const link = linkMatch ? linkMatch[1] : '';
+      const published = extractText(entryXml, 'published') || extractText(entryXml, 'updated');
+      const id = extractText(entryXml, 'id') || link;
 
       if (title && link) {
         items.push({
           title,
-          description,
+          description: summary,
           link,
-          pubDate: pubDateText ? new Date(pubDateText).toISOString() : new Date().toISOString(),
-          guid: id,
+          pubDate: published ? new Date(published).toISOString() : new Date().toISOString(),
+          guid: id || link,
         });
       }
     }
