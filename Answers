@@ -1,0 +1,212 @@
+THREAT-INTEL EDGE FUNCTION CODE REVIEW
+Answers to Reviewer Questions
+==============================
+
+1. MULTI-TENANT + ACCESS MODEL
+------------------------------
+
+Current State: Single-tenant, everything shared.
+
+  ip_lookups    -> No user_id column, all lookups visible to everyone
+  url_lookups   -> No user_id column, all lookups visible to everyone
+  case_notes    -> No user_id column, open RLS (anyone can CRUD anything)
+  api_cache     -> Global cache, no user isolation
+
+Decision Needed:
+  - Internal tool for one SOC team: Current model works, just tighten case_notes RLS
+  - Multi-department / multi-org: Every table needs org_id or user_id, strict RLS
+
+Shared history is currently a FEATURE (analysts see what others queried) but becomes
+a LIABILITY if you ever have multiple customers or compliance requirements (GDPR
+"right to deletion").
+
+
+2. THREAT SCORING SPEC (HOW IT ACTUALLY WORKS)
+----------------------------------------------
+
+From the code (lines 524-534):
+
+SCORING ALGORITHM:
+
+1. Collect per-source scores:
+   - VirusTotal: (malicious*100 + suspicious*50) / total_engines
+   - AbuseIPDB: abuseConfidenceScore (0-100, direct from API)
+   - AlienVault: min(pulse_count * 10, 100)
+   - IPQualityScore: fraud_score (0-100, direct from API)
+   - GreyNoise: 80 if malicious, 30 if unknown+noise, 0 otherwise
+   - Spamhaus: 60 if listed, 0 if not
+
+2. Calculate base score:
+   avgScore = sum(scores) / count(scores)
+
+3. Apply floor if malicious hit:
+   if any source has isMalicious=true -> minimum 50
+
+4. Add threat boosts:
+   +20 if TOR detected
+   +10 if VPN detected
+   +15 if Proxy detected
+   +25 if Spamhaus listed
+   +30 if GreyNoise malicious scanner
+
+5. Final score:
+   overallThreatScore = min(avgScore + threatBoost, 100)
+
+Gaps identified:
+  - No source weighting (VirusTotal counts same as ip.teoh.io)
+  - No "unknown/no data" handling (missing scores just excluded from average)
+  - No confidence metric separate from severity
+  - Conflict resolution: if 1 malicious + 12 clean -> avg dilutes the signal,
+    but floor of 50 kicks in
+
+What "unknown" means: If a source returns no data or errors, it's excluded from
+the average entirely. The threatScore field is only present if the source
+returned scoreable data.
+
+
+3. RATE LIMITING + ABUSE CONTROLS
+---------------------------------
+
+Current State: NONE. Zero rate limiting.
+
+Anyone can:
+  - Hammer /ip endpoint endlessly
+  - Use your backend as a free API relay to VirusTotal/Shodan
+  - Exhaust your API quotas in minutes
+
+What's needed:
+  - Per-IP rate limiting (prevent abuse from single source)
+  - Per-user rate limiting (if authenticated)
+  - Per-route limits (bulk should be stricter)
+  - Burst vs sustained (e.g., 10/sec burst, 100/hour sustained)
+  - Response caching helps, but doesn't prevent intentional abuse
+
+
+4. SECRETS + KEY ENCRYPTION
+---------------------------
+
+Current State: PLAIN TEXT IN DATABASE.
+
+  -- user_api_keys table stores:
+  api_key TEXT NOT NULL  -- plain text!
+
+Server-side keys come from environment variables (Supabase Secrets), which is fine.
+But user-provided keys in user_api_keys table are readable by:
+  - Anyone with database access
+  - Any Supabase dashboard admin
+  - Any SQL query against the table
+
+What's missing:
+  - No pgcrypto encryption
+  - No envelope encryption
+  - No KMS integration
+  - No key rotation mechanism
+
+
+5. OBSERVABILITY + AUDIT TRAIL
+------------------------------
+
+Current State: Minimal.
+
+The code does insert into ip_lookups and url_lookups (lines 535, 547), which provides:
+  - What IP/URL was looked up
+  - When (created_at)
+  - Results and threat score
+
+What's missing:
+  - WHO made the request (no user_id)
+  - FROM WHERE (no client IP logged)
+  - Request latency
+  - Per-source latency and errors
+  - Structured logging (console.log not used)
+  - No alerting hooks
+  - No health endpoint
+
+
+6. API CONTRACT + VERSIONING
+----------------------------
+
+Current State: Implicit, unversioned.
+
+Endpoints (line 610):
+  POST /threat-intel/ip      -> { ip: string }
+  POST /threat-intel/url     -> { url: string }
+  POST /threat-intel/bulk    -> { ips: string[] }
+  GET  /threat-intel/config
+
+Response shapes are undocumented and could change without warning.
+
+What's needed:
+  - OpenAPI/Swagger spec
+  - /v1/ prefix for versioning
+  - Standard error format (currently just { error: string })
+  - Deprecation strategy
+
+
+7. DATA RETENTION + PURGE JOBS
+------------------------------
+
+Current State: NO CLEANUP JOBS EXIST.
+
+The code sets cache expiry (line 47: CACHE_DURATION_HOURS = 6) but:
+  - Expired cache entries stay in database forever
+  - ip_lookups and url_lookups grow unbounded
+  - No scheduled function to purge old data
+
+What's needed:
+  - Supabase pg_cron or scheduled Edge Function
+  - Purge rules: 30-day for lookups, immediate for expired cache
+  - User "delete my history" capability (if required)
+
+
+8. PRODUCTION HARDENING CHECKLIST
+---------------------------------
+
+Item                  | Status
+----------------------|---------------------------
+CSP headers           | Not set
+CORS                  | Wide open (*)
+HSTS                  | Not set
+X-Frame-Options       | Not set
+Dependency pinning    | Partial (some @2, some ^2.57.4)
+CI/CD gates           | None configured
+Lint/typecheck        | Available but not enforced
+Unit tests            | None
+Smoke tests           | None
+
+
+CACHING CLARIFICATION (REVIEWER'S QUESTION)
+-------------------------------------------
+
+Q: Cache per-source or final aggregated?
+
+A: PER-SOURCE (lines 49-66). Each source's response is cached independently with
+   key {source}:{query}. The aggregated response is NOT cached - it's recomputed
+   each time from cached source responses.
+
+Q: User API keys bypass cache?
+
+A: NO. Cache is keyed only by source+query, not by API key. If User A queries
+   with their VirusTotal key, User B gets the same cached result even with a
+   different key. This could be a correctness issue if different API keys return
+   different data (they shouldn't, but some APIs do vary by tier).
+
+
+SUMMARY: WHAT'S PRODUCTION-READY VS WHAT NEEDS WORK
+===================================================
+
+Area              | Production Ready? | Effort to Fix
+------------------|-------------------|---------------
+Core functionality| Yes               | -
+Threat scoring    | Works, needs docs | Low
+Multi-tenant      | No                | High
+Rate limiting     | No                | Medium
+Key encryption    | No                | Medium
+Audit logging     | Partial           | Medium
+API versioning    | No                | Low
+Data retention    | No                | Low
+Security headers  | No                | Low
+
+RECOMMENDATION: The tool works great for internal/single-team use. For multi-org
+or external exposure, items 1, 3, and 4 are blockers. Everything else can be
+added incrementally.
