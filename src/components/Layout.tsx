@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
   Mail, FileSearch, Hash, Globe, ShieldOff, Code, Bug, FileText,
-  LogIn, LogOut, Settings, User, ChevronDown
+  LogIn, LogOut, Settings, User, ChevronDown, Newspaper
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cve' | 'cases' | 'settings';
+export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cve' | 'cases' | 'news' | 'settings';
 
 interface LayoutProps {
   currentPage: Page;
@@ -43,6 +43,7 @@ const navCategories: NavCategory[] = [
   {
     label: 'Investigation',
     items: [
+      { id: 'news', label: 'News Feed', icon: Newspaper },
       { id: 'cases', label: 'Case Notes', icon: FileText },
       { id: 'history', label: 'History', icon: History },
     ],
