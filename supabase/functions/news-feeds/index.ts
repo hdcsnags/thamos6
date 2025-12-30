@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -29,7 +30,6 @@ function extractText(xml: string, tag: string): string {
 
 function parseRSSFeed(xmlText: string): RSSItem[] {
   const items: RSSItem[] = [];
-
   const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
   let match;
   
@@ -78,24 +78,41 @@ function parseRSSFeed(xmlText: string): RSSItem[] {
   return items;
 }
 
-async function fetchAndStoreFeed(sourceId: string, url: string): Promise<{ success: boolean; itemsAdded: number; error?: string }> {
+async function getAuthUser(req: Request): Promise<{ id: string } | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  
+  const token = authHeader.replace('Bearer ', '');
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } }
+  });
+  
+  const { data: { user }, error } = await userClient.auth.getUser();
+  if (error || !user) return null;
+  return { id: user.id };
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function errorResponse(message: string, status = 400) {
+  return jsonResponse({ error: message }, status);
+}
+
+async function fetchAndStoreDefaultFeed(sourceId: string, url: string): Promise<{ success: boolean; itemsAdded: number; error?: string }> {
   try {
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ThreatIntelBot/1.0)",
-      },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThreatIntelBot/1.0)" },
     });
-
-    if (!response.ok) {
-      return { success: false, itemsAdded: 0, error: `HTTP ${response.status}` };
-    }
+    if (!response.ok) return { success: false, itemsAdded: 0, error: `HTTP ${response.status}` };
 
     const xmlText = await response.text();
     const items = parseRSSFeed(xmlText);
-
-    if (items.length === 0) {
-      return { success: false, itemsAdded: 0, error: "No items found in feed" };
-    }
+    if (items.length === 0) return { success: false, itemsAdded: 0, error: "No items found" };
 
     let itemsAdded = 0;
     for (const item of items) {
@@ -109,10 +126,40 @@ async function fetchAndStoreFeed(sourceId: string, url: string): Promise<{ succe
           pub_date: item.pubDate,
           guid: item.guid,
         }, { onConflict: "source_id,guid", ignoreDuplicates: true });
-
       if (!error) itemsAdded++;
     }
+    return { success: true, itemsAdded };
+  } catch (e) {
+    return { success: false, itemsAdded: 0, error: String(e) };
+  }
+}
 
+async function fetchAndStoreUserFeed(userId: string, sourceId: string, url: string): Promise<{ success: boolean; itemsAdded: number; error?: string }> {
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThreatIntelBot/1.0)" },
+    });
+    if (!response.ok) return { success: false, itemsAdded: 0, error: `HTTP ${response.status}` };
+
+    const xmlText = await response.text();
+    const items = parseRSSFeed(xmlText);
+    if (items.length === 0) return { success: false, itemsAdded: 0, error: "No items found" };
+
+    let itemsAdded = 0;
+    for (const item of items) {
+      const { error } = await serviceClient
+        .from("user_custom_feed_items")
+        .upsert({
+          user_id: userId,
+          source_id: sourceId,
+          title: item.title,
+          description: item.description,
+          link: item.link,
+          pub_date: item.pubDate,
+          guid: item.guid,
+        }, { onConflict: "source_id,guid", ignoreDuplicates: true });
+      if (!error) itemsAdded++;
+    }
     return { success: true, itemsAdded };
   } catch (e) {
     return { success: false, itemsAdded: 0, error: String(e) };
@@ -126,173 +173,288 @@ Deno.serve(async (req: Request) => {
 
   try {
     const url = new URL(req.url);
-    const path = url.pathname.replace("/news-feeds", "");
+    const path = url.pathname.replace("/news-feeds", "").replace(/\/$/, "") || "/";
+    const user = await getAuthUser(req);
 
-    if ((path === "/sources" || path === "/sources/") && req.method === "GET") {
+    // ============ PUBLIC ENDPOINTS ============
+    
+    // GET /sources - list default sources (public)
+    if (path === "/sources" && req.method === "GET") {
       const { data, error } = await serviceClient
         .from("rss_sources")
         .select("*")
         .eq("is_active", true)
         .order("name");
-
       if (error) throw error;
-
-      return new Response(JSON.stringify({ sources: data ?? [] }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ sources: data ?? [] });
     }
 
-    if ((path === "/sources" || path === "/sources/") && req.method === "POST") {
-      const body = await req.json();
-      const { name, url: feedUrl, category, description } = body;
-
-      if (!name || !feedUrl || !category) {
-        return new Response(
-          JSON.stringify({ error: "Missing required fields: name, url, category" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const validCategories = ['vulnerabilities', 'alerts', 'threats', 'news'];
-      if (!validCategories.includes(category)) {
-        return new Response(
-          JSON.stringify({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { data, error } = await serviceClient
-        .from("rss_sources")
-        .insert({
-          name,
-          url: feedUrl,
-          category,
-          description,
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return new Response(
-          JSON.stringify({ error: error.message }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      return new Response(JSON.stringify({ source: data }), {
-        status: 201,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (path.match(/^\/sources\/[a-f0-9-]+\/?$/) && req.method === "DELETE") {
-      const sourceId = path.split('/')[2];
-
-      const { error } = await serviceClient
-        .from("rss_sources")
-        .delete()
-        .eq("id", sourceId);
-
-      if (error) {
-        return new Response(
-          JSON.stringify({ error: error.message }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if ((path === "/items" || path === "/items/") && req.method === "GET") {
+    // GET /items - list items from default sources (public)
+    if (path === "/items" && req.method === "GET") {
       const category = url.searchParams.get("category");
       const sourceId = url.searchParams.get("source_id");
-      const limit = parseInt(url.searchParams.get("limit") ?? "50");
+      const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50"), 100);
 
       let query = serviceClient
         .from("feed_items")
-        .select(`
-          *,
-          source:rss_sources!inner(
-            id,
-            name,
-            category,
-            icon_url
-          )
-        `)
+        .select(`*, source:rss_sources!inner(id, name, category, icon_url)`)
         .order("pub_date", { ascending: false })
-        .limit(Math.min(limit, 100));
+        .limit(limit);
 
-      if (category) {
-        query = query.eq("source.category", category);
-      }
-
-      if (sourceId) {
-        query = query.eq("source_id", sourceId);
-      }
+      if (category) query = query.eq("source.category", category);
+      if (sourceId) query = query.eq("source_id", sourceId);
 
       const { data, error } = await query;
-
       if (error) throw error;
-
-      return new Response(JSON.stringify({ items: data ?? [] }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ items: data ?? [] });
     }
 
-    if ((path === "/refresh" || path === "/refresh/") && req.method === "POST") {
-      const body = await req.json();
-      const sourceIds = body.source_ids ?? [];
-
-      let sourcesQuery = serviceClient
+    // POST /refresh - refresh default feeds (public, for cron jobs)
+    if (path === "/refresh" && req.method === "POST") {
+      const { data: sources, error } = await serviceClient
         .from("rss_sources")
         .select("*")
         .eq("is_active", true);
-
-      if (sourceIds.length > 0) {
-        sourcesQuery = sourcesQuery.in("id", sourceIds);
-      }
-
-      const { data: sources, error: sourcesError } = await sourcesQuery;
-
-      if (sourcesError) throw sourcesError;
-      if (!sources || sources.length === 0) {
-        return new Response(JSON.stringify({ error: "No sources found" }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (error) throw error;
+      if (!sources?.length) return errorResponse("No sources found", 404);
 
       const results = await Promise.all(
-        sources.map(source => fetchAndStoreFeed(source.id, source.url))
+        sources.map(s => fetchAndStoreDefaultFeed(s.id, s.url))
       );
 
-      const summary = {
+      return jsonResponse({
         total: sources.length,
         successful: results.filter(r => r.success).length,
         failed: results.filter(r => !r.success).length,
         totalItemsAdded: results.reduce((sum, r) => sum + r.itemsAdded, 0),
-        details: sources.map((source, i) => ({
-          source: source.name,
-          ...results[i],
-        })),
-      };
-
-      return new Response(JSON.stringify(summary), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(
-      JSON.stringify({ error: "Not found", availableEndpoints: ["/sources", "/items", "/refresh"] }),
-      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    // ============ AUTHENTICATED ENDPOINTS ============
+    
+    if (!user) {
+      return errorResponse("Authentication required", 401);
+    }
+
+    // GET /my/sources - user's sources (custom + defaults with preferences)
+    if (path === "/my/sources" && req.method === "GET") {
+      const [defaultRes, customRes, prefsRes] = await Promise.all([
+        serviceClient.from("rss_sources").select("*").eq("is_active", true).order("name"),
+        serviceClient.from("user_custom_sources").select("*").eq("user_id", user.id).order("name"),
+        serviceClient.from("user_feed_preferences").select("*").eq("user_id", user.id),
+      ]);
+
+      const prefs = new Map((prefsRes.data ?? []).map(p => [p.source_id, p.is_enabled]));
+      
+      const defaultSources = (defaultRes.data ?? []).map(s => ({
+        ...s,
+        is_default: true,
+        is_enabled: prefs.has(s.id) ? prefs.get(s.id) : true,
+      }));
+
+      const customSources = (customRes.data ?? []).map(s => ({
+        ...s,
+        is_default: false,
+        is_enabled: s.is_active,
+      }));
+
+      return jsonResponse({ sources: [...defaultSources, ...customSources] });
+    }
+
+    // POST /my/sources - add custom source
+    if (path === "/my/sources" && req.method === "POST") {
+      const body = await req.json();
+      const { name, url: feedUrl, category, description } = body;
+
+      if (!name || !feedUrl || !category) {
+        return errorResponse("Missing required fields: name, url, category");
+      }
+
+      const validCategories = ['vulnerabilities', 'alerts', 'threats', 'news'];
+      if (!validCategories.includes(category)) {
+        return errorResponse(`Invalid category. Must be one of: ${validCategories.join(', ')}`);
+      }
+
+      const { data, error } = await serviceClient
+        .from("user_custom_sources")
+        .insert({ user_id: user.id, name, url: feedUrl, category, description })
+        .select()
+        .single();
+
+      if (error) return errorResponse(error.message);
+
+      // Fetch initial items
+      await fetchAndStoreUserFeed(user.id, data.id, feedUrl);
+
+      return jsonResponse({ source: { ...data, is_default: false, is_enabled: true } }, 201);
+    }
+
+    // DELETE /my/sources/:id - delete custom source
+    const deleteMatch = path.match(/^\/my\/sources\/([a-f0-9-]+)$/);
+    if (deleteMatch && req.method === "DELETE") {
+      const sourceId = deleteMatch[1];
+      const { error } = await serviceClient
+        .from("user_custom_sources")
+        .delete()
+        .eq("id", sourceId)
+        .eq("user_id", user.id);
+
+      if (error) return errorResponse(error.message);
+      return jsonResponse({ success: true });
+    }
+
+    // POST /my/preferences - toggle default source on/off
+    if (path === "/my/preferences" && req.method === "POST") {
+      const body = await req.json();
+      const { source_id, is_enabled } = body;
+
+      if (!source_id || typeof is_enabled !== 'boolean') {
+        return errorResponse("Missing required fields: source_id, is_enabled");
+      }
+
+      const { data, error } = await serviceClient
+        .from("user_feed_preferences")
+        .upsert({ user_id: user.id, source_id, is_enabled }, { onConflict: "user_id,source_id" })
+        .select()
+        .single();
+
+      if (error) return errorResponse(error.message);
+      return jsonResponse({ preference: data });
+    }
+
+    // GET /my/items - user's combined feed
+    if (path === "/my/items" && req.method === "GET") {
+      const category = url.searchParams.get("category");
+      const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50"), 100);
+      const unreadOnly = url.searchParams.get("unread") === "true";
+      const savedOnly = url.searchParams.get("saved") === "true";
+
+      // Get user preferences
+      const { data: prefs } = await serviceClient
+        .from("user_feed_preferences")
+        .select("source_id, is_enabled")
+        .eq("user_id", user.id);
+      
+      const disabledSources = (prefs ?? []).filter(p => !p.is_enabled).map(p => p.source_id);
+
+      // Get default feed items
+      let defaultQuery = serviceClient
+        .from("feed_items")
+        .select(`*, source:rss_sources!inner(id, name, category, icon_url)`)
+        .order("pub_date", { ascending: false })
+        .limit(limit);
+
+      if (category) defaultQuery = defaultQuery.eq("source.category", category);
+      if (disabledSources.length > 0) {
+        defaultQuery = defaultQuery.not("source_id", "in", `(${disabledSources.join(",")})`);
+      }
+
+      // Get custom feed items
+      let customQuery = serviceClient
+        .from("user_custom_feed_items")
+        .select(`*, source:user_custom_sources!inner(id, name, category, icon_url)`)
+        .eq("user_id", user.id)
+        .order("pub_date", { ascending: false })
+        .limit(limit);
+
+      if (category) customQuery = customQuery.eq("source.category", category);
+
+      // Get user's read/saved status
+      const { data: userItems } = await serviceClient
+        .from("user_feed_items")
+        .select("item_id, is_read, is_saved")
+        .eq("user_id", user.id);
+
+      const itemStatus = new Map((userItems ?? []).map(i => [i.item_id, { is_read: i.is_read, is_saved: i.is_saved }]));
+
+      const [defaultRes, customRes] = await Promise.all([defaultQuery, customQuery]);
+
+      let allItems = [
+        ...(defaultRes.data ?? []).map(item => ({
+          ...item,
+          is_custom: false,
+          is_read: itemStatus.get(item.id)?.is_read ?? false,
+          is_saved: itemStatus.get(item.id)?.is_saved ?? false,
+        })),
+        ...(customRes.data ?? []).map(item => ({
+          ...item,
+          is_custom: true,
+          is_read: false,
+          is_saved: false,
+        })),
+      ];
+
+      // Sort by pub_date
+      allItems.sort((a, b) => new Date(b.pub_date).getTime() - new Date(a.pub_date).getTime());
+
+      // Apply filters
+      if (unreadOnly) allItems = allItems.filter(i => !i.is_read);
+      if (savedOnly) allItems = allItems.filter(i => i.is_saved);
+
+      return jsonResponse({ items: allItems.slice(0, limit) });
+    }
+
+    // POST /my/items/:id/read - mark item as read
+    const readMatch = path.match(/^\/my\/items\/([a-f0-9-]+)\/read$/);
+    if (readMatch && req.method === "POST") {
+      const itemId = readMatch[1];
+      const { data, error } = await serviceClient
+        .from("user_feed_items")
+        .upsert({ user_id: user.id, item_id: itemId, is_read: true, read_at: new Date().toISOString() }, { onConflict: "user_id,item_id" })
+        .select()
+        .single();
+
+      if (error) return errorResponse(error.message);
+      return jsonResponse({ success: true, item: data });
+    }
+
+    // POST /my/items/:id/save - toggle saved status
+    const saveMatch = path.match(/^\/my\/items\/([a-f0-9-]+)\/save$/);
+    if (saveMatch && req.method === "POST") {
+      const itemId = saveMatch[1];
+      const body = await req.json();
+      const isSaved = body.is_saved ?? true;
+
+      const { data, error } = await serviceClient
+        .from("user_feed_items")
+        .upsert({ 
+          user_id: user.id, 
+          item_id: itemId, 
+          is_saved: isSaved, 
+          saved_at: isSaved ? new Date().toISOString() : null 
+        }, { onConflict: "user_id,item_id" })
+        .select()
+        .single();
+
+      if (error) return errorResponse(error.message);
+      return jsonResponse({ success: true, item: data });
+    }
+
+    // POST /my/refresh - refresh user's custom feeds
+    if (path === "/my/refresh" && req.method === "POST") {
+      const { data: sources, error } = await serviceClient
+        .from("user_custom_sources")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true);
+
+      if (error) throw error;
+      if (!sources?.length) return jsonResponse({ total: 0, successful: 0, failed: 0, totalItemsAdded: 0 });
+
+      const results = await Promise.all(
+        sources.map(s => fetchAndStoreUserFeed(user.id, s.id, s.url))
+      );
+
+      return jsonResponse({
+        total: sources.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        totalItemsAdded: results.reduce((sum, r) => sum + r.itemsAdded, 0),
+      });
+    }
+
+    return errorResponse("Not found", 404);
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: String(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(String(error), 500);
   }
 });

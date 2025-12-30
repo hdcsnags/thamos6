@@ -31,6 +31,8 @@ interface RSSSource {
   icon_url: string | null;
   description: string | null;
   is_active: boolean;
+  is_default?: boolean;
+  is_enabled?: boolean;
 }
 
 interface WatchlistEntry {
@@ -57,7 +59,7 @@ export default function NewsFeed() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
@@ -79,6 +81,18 @@ export default function NewsFeed() {
   ];
 
   useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session?.access_token);
+    };
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsAuthenticated(!!session?.access_token);
+      loadSources();
+      loadItems();
+    });
+
     loadSources();
     loadWatchlist();
     loadItems().then(async (loadedCount) => {
@@ -88,20 +102,31 @@ export default function NewsFeed() {
       }
       checkForNewMatches();
     });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     loadItems();
-  }, [selectedCategory, selectedSources]);
+  }, [selectedCategory]);
 
   const loadSources = async () => {
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/sources`;
-      const response = await fetch(url, {
-        headers: {
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      const isAuthenticated = !!session?.access_token;
+
+      const endpoint = isAuthenticated ? '/my/sources' : '/sources';
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds${endpoint}`;
+
+      const headers: Record<string, string> = {
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      };
+
+      if (isAuthenticated) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(url, { headers });
       const data = await response.json();
       setSources(data.sources || []);
     } catch (error) {
@@ -129,48 +154,35 @@ export default function NewsFeed() {
   const loadItems = async (): Promise<number> => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
+      const { data: { session } } = await supabase.auth.getSession();
+      const isAuthenticated = !!session?.access_token;
 
+      const params = new URLSearchParams();
       if (selectedCategory !== 'all') {
         params.append('category', selectedCategory);
       }
-
       params.append('limit', '100');
 
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/items?${params}`;
-      const response = await fetch(url, {
-        headers: {
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-      });
+      const endpoint = isAuthenticated ? '/my/items' : '/items';
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds${endpoint}?${params}`;
+
+      const headers: Record<string, string> = {
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      };
+
+      if (isAuthenticated) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(url, { headers });
       const data = await response.json();
 
       let feedItems = data.items || [];
 
-      if (selectedSources.size > 0) {
-        feedItems = feedItems.filter((item: FeedItem) => selectedSources.has(item.source_id));
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const itemIds = feedItems.map((item: FeedItem) => item.id);
-        const { data: userItems } = await supabase
-          .from('user_feed_items')
-          .select('item_id, is_read, is_saved')
-          .eq('user_id', user.id)
-          .in('item_id', itemIds);
-
-        const statusMap = new Map(userItems?.map(ui => [ui.item_id, ui]) || []);
-        feedItems = feedItems.map((item: FeedItem) => {
-          const watchlistMatches = checkWatchlistMatches(item);
-          return {
-            ...item,
-            is_read: statusMap.get(item.id)?.is_read || false,
-            is_saved: statusMap.get(item.id)?.is_saved || false,
-            watchlist_matches: watchlistMatches,
-          };
-        });
-      }
+      feedItems = feedItems.map((item: FeedItem) => ({
+        ...item,
+        watchlist_matches: checkWatchlistMatches(item),
+      }));
 
       setItems(feedItems);
       return feedItems.length;
@@ -242,16 +254,6 @@ export default function NewsFeed() {
     ));
   };
 
-  const toggleSource = (sourceId: string) => {
-    const newSelected = new Set(selectedSources);
-    if (newSelected.has(sourceId)) {
-      newSelected.delete(sourceId);
-    } else {
-      newSelected.add(sourceId);
-    }
-    setSelectedSources(newSelected);
-  };
-
   const checkWatchlistMatches = (item: FeedItem): WatchlistMatch[] => {
     const matches: WatchlistMatch[] = [];
     const searchText = `${item.title} ${item.description || ''}`.toLowerCase();
@@ -269,18 +271,26 @@ export default function NewsFeed() {
 
   const addCustomFeed = async () => {
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/sources`;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error('Must be logged in to add custom feeds');
+        return;
+      }
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/sources`;
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify(newFeed),
       });
 
       if (response.ok) {
         await loadSources();
+        await refreshFeeds();
         setNewFeed({ name: '', url: '', category: 'news', description: '' });
         setShowAddFeed(false);
       }
@@ -291,19 +301,54 @@ export default function NewsFeed() {
 
   const deleteFeed = async (sourceId: string) => {
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/sources/${sourceId}`;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/sources/${sourceId}`;
       const response = await fetch(url, {
         method: 'DELETE',
         headers: {
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${session.access_token}`,
         },
       });
 
       if (response.ok) {
         await loadSources();
+        await loadItems();
       }
     } catch (error) {
       console.error('Failed to delete feed:', error);
+    }
+  };
+
+  const toggleSourceEnabled = async (sourceId: string, currentEnabled: boolean) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/preferences`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          source_id: sourceId,
+          is_enabled: !currentEnabled,
+        }),
+      });
+
+      if (response.ok) {
+        setSources(sources.map(s =>
+          s.id === sourceId ? { ...s, is_enabled: !currentEnabled } : s
+        ));
+        await loadItems();
+      }
+    } catch (error) {
+      console.error('Failed to toggle source:', error);
     }
   };
 
@@ -557,14 +602,22 @@ export default function NewsFeed() {
               <Filter className="w-5 h-5 text-emerald-400" />
               Feed Sources
             </h3>
-            <button
-              onClick={() => setShowAddFeed(true)}
-              className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-400 transition-colors flex items-center gap-1 text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Add Custom Feed
-            </button>
+            {isAuthenticated && (
+              <button
+                onClick={() => setShowAddFeed(true)}
+                className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-400 transition-colors flex items-center gap-1 text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add Custom Feed
+              </button>
+            )}
           </div>
+
+          {!isAuthenticated && (
+            <p className="text-sm text-slate-400 bg-slate-800/50 rounded-lg p-3">
+              Sign in to customize your feed sources and add your own RSS feeds.
+            </p>
+          )}
 
           {showAddFeed && (
             <div className="bg-slate-800/50 rounded-lg p-4 space-y-3 border border-slate-700">
@@ -632,43 +685,78 @@ export default function NewsFeed() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sources.map(source => (
-              <div
-                key={source.id}
-                className={`p-3 rounded-lg border transition-all ${
-                  selectedSources.has(source.id) || selectedSources.size === 0
-                    ? 'border-emerald-500 bg-emerald-500/10'
-                    : 'border-slate-700 bg-slate-800/50'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <button
-                    onClick={() => toggleSource(source.id)}
-                    className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                      selectedSources.has(source.id) || selectedSources.size === 0
-                        ? 'border-emerald-500 bg-emerald-500'
-                        : 'border-slate-600'
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-slate-400 mb-2">Default Sources</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sources.filter(s => s.is_default !== false).map(source => (
+                  <div
+                    key={source.id}
+                    className={`p-3 rounded-lg border transition-all ${
+                      source.is_enabled !== false
+                        ? 'border-emerald-500 bg-emerald-500/10'
+                        : 'border-slate-700 bg-slate-800/50 opacity-60'
                     }`}
                   >
-                    {(selectedSources.has(source.id) || selectedSources.size === 0) && (
-                      <Check className="w-3 h-3 text-white" />
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-white text-sm">{source.name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5 capitalize">{source.category}</p>
+                    <div className="flex items-start gap-2">
+                      {isAuthenticated ? (
+                        <button
+                          onClick={() => toggleSourceEnabled(source.id, source.is_enabled !== false)}
+                          className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                            source.is_enabled !== false
+                              ? 'border-emerald-500 bg-emerald-500'
+                              : 'border-slate-600'
+                          }`}
+                        >
+                          {source.is_enabled !== false && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </button>
+                      ) : (
+                        <div className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 border-emerald-500 bg-emerald-500`}>
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-white text-sm">{source.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 capitalize">{source.category}</p>
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => deleteFeed(source.id)}
-                    className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                    title="Delete feed"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                ))}
+              </div>
+            </div>
+
+            {sources.some(s => s.is_default === false) && (
+              <div>
+                <h4 className="text-sm font-medium text-slate-400 mb-2">Your Custom Sources</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {sources.filter(s => s.is_default === false).map(source => (
+                    <div
+                      key={source.id}
+                      className="p-3 rounded-lg border border-amber-500/50 bg-amber-500/10"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-white text-sm">{source.name}</p>
+                            <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">Custom</span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5 capitalize">{source.category}</p>
+                        </div>
+                        <button
+                          onClick={() => deleteFeed(source.id)}
+                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                          title="Delete custom feed"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
