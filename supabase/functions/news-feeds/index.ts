@@ -30,7 +30,6 @@ function extractText(xml: string, tag: string): string {
 function parseRSSFeed(xmlText: string): RSSItem[] {
   const items: RSSItem[] = [];
 
-  // Try RSS format
   const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
   let match;
   
@@ -53,7 +52,6 @@ function parseRSSFeed(xmlText: string): RSSItem[] {
     }
   }
 
-  // Try Atom format if no RSS items found
   if (items.length === 0) {
     const entryRegex = /<entry[^>]*>([\s\S]*?)<\/entry>/gi;
     while ((match = entryRegex.exec(xmlText)) !== null) {
@@ -130,7 +128,6 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const path = url.pathname.replace("/news-feeds", "");
 
-    // GET /sources - Get all active RSS sources
     if ((path === "/sources" || path === "/sources/") && req.method === "GET") {
       const { data, error } = await serviceClient
         .from("rss_sources")
@@ -145,7 +142,70 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // GET /items - Get recent feed items with optional filters
+    if ((path === "/sources" || path === "/sources/") && req.method === "POST") {
+      const body = await req.json();
+      const { name, url: feedUrl, category, description } = body;
+
+      if (!name || !feedUrl || !category) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields: name, url, category" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const validCategories = ['vulnerabilities', 'alerts', 'threats', 'news'];
+      if (!validCategories.includes(category)) {
+        return new Response(
+          JSON.stringify({ error: `Invalid category. Must be one of: ${validCategories.join(', ')}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data, error } = await serviceClient
+        .from("rss_sources")
+        .insert({
+          name,
+          url: feedUrl,
+          category,
+          description,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(JSON.stringify({ source: data }), {
+        status: 201,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (path.match(/^\/sources\/[a-f0-9-]+\/?$/) && req.method === "DELETE") {
+      const sourceId = path.split('/')[2];
+
+      const { error } = await serviceClient
+        .from("rss_sources")
+        .delete()
+        .eq("id", sourceId);
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if ((path === "/items" || path === "/items/") && req.method === "GET") {
       const category = url.searchParams.get("category");
       const sourceId = url.searchParams.get("source_id");
@@ -182,12 +242,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // POST /refresh - Refresh feeds (fetch from sources)
     if ((path === "/refresh" || path === "/refresh/") && req.method === "POST") {
       const body = await req.json();
       const sourceIds = body.source_ids ?? [];
 
-      // Get sources to refresh
       let sourcesQuery = serviceClient
         .from("rss_sources")
         .select("*")
@@ -207,7 +265,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Refresh each feed
       const results = await Promise.all(
         sources.map(source => fetchAndStoreFeed(source.id, source.url))
       );
