@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAlerts } from '../contexts/AlertContext';
 
 interface FeedItem {
   id: string;
@@ -66,6 +67,8 @@ export default function NewsFeed() {
   const [showAddWatchlist, setShowAddWatchlist] = useState(false);
   const [newFeed, setNewFeed] = useState({ name: '', url: '', category: 'news', description: '' });
   const [newWatchlistEntry, setNewWatchlistEntry] = useState({ type: 'keyword', value: '', description: '', severity: 'medium' });
+  const { checkForNewMatches } = useAlerts();
+  const hasAutoRefreshed = useRef(false);
 
   const categories = [
     { id: 'all', name: 'All News', color: 'slate' },
@@ -78,7 +81,13 @@ export default function NewsFeed() {
   useEffect(() => {
     loadSources();
     loadWatchlist();
-    loadItems();
+    loadItems().then(async (loadedCount) => {
+      if (loadedCount === 0 && !hasAutoRefreshed.current) {
+        hasAutoRefreshed.current = true;
+        await refreshFeeds();
+      }
+      checkForNewMatches();
+    });
   }, []);
 
   useEffect(() => {
@@ -117,7 +126,7 @@ export default function NewsFeed() {
     }
   };
 
-  const loadItems = async () => {
+  const loadItems = async (): Promise<number> => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -164,8 +173,10 @@ export default function NewsFeed() {
       }
 
       setItems(feedItems);
+      return feedItems.length;
     } catch (error) {
       console.error('Failed to load items:', error);
+      return 0;
     } finally {
       setLoading(false);
     }
@@ -185,6 +196,7 @@ export default function NewsFeed() {
       });
       await response.json();
       await loadItems();
+      await checkForNewMatches();
     } catch (error) {
       console.error('Failed to refresh feeds:', error);
     } finally {

@@ -2,9 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
   Mail, FileSearch, Hash, Globe, ShieldOff, Code, Bug, FileText,
-  LogIn, LogOut, Settings, User, ChevronDown, Newspaper
+  LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
+  ExternalLink, Check, Trash2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useAlerts } from '../contexts/AlertContext';
 
 export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cve' | 'cases' | 'news' | 'settings';
 
@@ -219,6 +221,171 @@ function LoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
+  const { user } = useAuth();
+  const { alerts, unreadCount, markAsRead, markAllAsRead, dismissAlert, dismissAllAlerts } = useAlerts();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  if (!user) return null;
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'red';
+      case 'high': return 'orange';
+      case 'medium': return 'yellow';
+      case 'low': return 'blue';
+      default: return 'slate';
+    }
+  };
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="relative p-2 rounded-lg hover:bg-slate-800 transition-all"
+      >
+        <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-amber-400' : 'text-slate-400'}`} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-96 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
+          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-white">Alerts</h3>
+              <p className="text-xs text-slate-400">
+                {unreadCount > 0 ? `${unreadCount} unread` : 'No new alerts'}
+              </p>
+            </div>
+            {alerts.length > 0 && (
+              <div className="flex gap-2">
+                <button
+                  onClick={markAllAsRead}
+                  className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all"
+                >
+                  Mark all read
+                </button>
+                <button
+                  onClick={dismissAllAlerts}
+                  className="px-2 py-1 text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="max-h-96 overflow-y-auto">
+            {alerts.length === 0 ? (
+              <div className="p-8 text-center">
+                <Bell className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 text-sm">No alerts yet</p>
+                <p className="text-slate-500 text-xs mt-1">
+                  Add items to your watchlist to receive alerts when they appear in the news feed
+                </p>
+                <button
+                  onClick={() => { onNavigate('news'); setOpen(false); }}
+                  className="mt-4 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg transition-all"
+                >
+                  Go to News Feed
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-800">
+                {alerts.map(alert => (
+                  <div
+                    key={alert.id}
+                    className={`p-4 hover:bg-slate-800/50 transition-all ${!alert.is_read ? 'bg-slate-800/30' : ''}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`p-1.5 rounded-lg bg-${getSeverityColor(alert.severity)}-500/20`}>
+                        <AlertTriangle className={`w-4 h-4 text-${getSeverityColor(alert.severity)}-400`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium bg-${getSeverityColor(alert.severity)}-500/20 text-${getSeverityColor(alert.severity)}-400`}>
+                            {alert.severity}
+                          </span>
+                          {!alert.is_read && (
+                            <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                          )}
+                        </div>
+                        <p className="text-sm text-white font-medium line-clamp-2">{alert.title}</p>
+                        <p className="text-xs text-slate-400 mt-1">{alert.description}</p>
+                        {alert.watchlist_entry && (
+                          <p className="text-xs text-amber-400 mt-1">
+                            Matched: {alert.watchlist_entry.value}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-2">
+                          {alert.feed_item?.link && (
+                            <a
+                              href={alert.feed_item.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => markAsRead(alert.id)}
+                              className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-all"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              Read article
+                            </a>
+                          )}
+                          {!alert.is_read && (
+                            <button
+                              onClick={() => markAsRead(alert.id)}
+                              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-all"
+                            >
+                              <Check className="w-3 h-3" />
+                              Mark read
+                            </button>
+                          )}
+                          <button
+                            onClick={() => dismissAlert(alert.id)}
+                            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-400 transition-all"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {alerts.length > 0 && (
+            <div className="p-3 border-t border-slate-700">
+              <button
+                onClick={() => { onNavigate('news'); setOpen(false); }}
+                className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-all"
+              >
+                View News Feed
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const { user, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -309,7 +476,10 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
               <div className="flex items-center gap-2">
                 {!loading && (
                   user ? (
-                    <UserMenu onNavigate={onNavigate} />
+                    <>
+                      <AlertDropdown onNavigate={onNavigate} />
+                      <UserMenu onNavigate={onNavigate} />
+                    </>
                   ) : (
                     <button
                       onClick={() => setShowLogin(true)}
