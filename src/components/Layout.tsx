@@ -454,7 +454,7 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
 export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const { user, loading } = useAuth();
+  const { user, loading, authError, clearAuthError } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -588,6 +588,27 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
       </main>
 
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+
+      {authError && (
+        <div className="fixed bottom-4 right-4 max-w-md bg-red-500/10 border border-red-500/30 rounded-xl p-4 shadow-2xl z-50">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium text-red-400">Sign in failed</p>
+              <p className="text-sm text-slate-300 mt-1">{authError}</p>
+              <p className="text-xs text-slate-400 mt-2">
+                Please check that your OAuth provider is configured correctly in the Supabase dashboard.
+              </p>
+            </div>
+            <button
+              onClick={clearAuthError}
+              className="text-slate-400 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
@@ -15,12 +17,36 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function parseHashError(): { error: string; description: string } | null {
+  const hash = window.location.hash;
+  if (!hash || !hash.includes('error=')) return null;
+
+  const params = new URLSearchParams(hash.substring(1));
+  const error = params.get('error');
+  const description = params.get('error_description');
+
+  if (error) {
+    return {
+      error,
+      description: description ? decodeURIComponent(description) : 'Authentication failed',
+    };
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    const hashError = parseHashError();
+    if (hashError) {
+      setAuthError(hashError.description);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -34,6 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  const clearAuthError = useCallback(() => {
+    setAuthError(null);
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -86,6 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       session,
       loading,
+      authError,
+      clearAuthError,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithPassword,
