@@ -3,7 +3,7 @@ import {
   Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
   Mail, FileSearch, Hash, Globe, ShieldOff, Code, FileText,
   LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
-  ExternalLink, Check, Trash2
+  ExternalLink, Check, Trash2, MoreHorizontal
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
@@ -44,17 +44,77 @@ const navCategories: NavCategory[] = [
       { id: 'news', label: 'News Feed', icon: Newspaper },
     ],
   },
-  {
-    label: 'Extras',
-    items: [
-      { id: 'email', label: 'Email Analyzer', icon: Mail },
-      { id: 'url', label: 'URL Scanner', icon: Link },
-      { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
-      { id: 'cases', label: 'Case Notes', icon: FileText },
-      { id: 'history', label: 'History', icon: History },
-    ],
-  },
 ];
+
+const extrasItems: { id: Page; label: string; icon: React.ElementType }[] = [
+  { id: 'email', label: 'Email Analyzer', icon: Mail },
+  { id: 'url', label: 'URL Scanner', icon: Link },
+  { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
+  { id: 'cases', label: 'Case Notes', icon: FileText },
+  { id: 'history', label: 'History', icon: History },
+];
+
+function ExtrasDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const isActiveExtras = extrasItems.some(item => item.id === currentPage);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+          isActiveExtras
+            ? 'bg-cyan-500/20 text-cyan-400'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+        }`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+        <span className="font-medium">Extras</span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
+          <div className="p-2">
+            {extrasItems.map(item => {
+              const Icon = item.icon;
+              const isActive = currentPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                    isActive
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LoginModal({ onClose }: { onClose: () => void }) {
   const { signInWithGoogle, signInWithMicrosoft, signInWithPassword, signUpWithPassword } = useAuth();
@@ -532,6 +592,8 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   })}
                 </div>
               ))}
+              <div className="h-4 w-px bg-slate-700 mx-2" />
+              <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
             </div>
           </div>
         </div>
@@ -569,6 +631,34 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   </div>
                 </div>
               ))}
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
+                  Extras
+                </p>
+                <div className="space-y-1">
+                  {extrasItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
+                          isActive
+                            ? 'bg-cyan-500/20 text-cyan-400'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="font-medium">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
