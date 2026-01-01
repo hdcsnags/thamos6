@@ -10,7 +10,6 @@ import HashLookup from './pages/HashLookup';
 import DomainIntel from './pages/DomainIntel';
 import DefangTool from './pages/DefangTool';
 import DecoderTool from './pages/DecoderTool';
-import CVELookup from './pages/CVELookup';
 import CaseNotes from './pages/CaseNotes';
 import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
@@ -40,8 +39,6 @@ function App() {
         return <DefangTool />;
       case 'decoder':
         return <DecoderTool />;
-      case 'cve':
-        return <CVELookup />;
       case 'cases':
         return <CaseNotes />;
       case 'news':

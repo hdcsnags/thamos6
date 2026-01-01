@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
-  Mail, FileSearch, Hash, Globe, ShieldOff, Code, Bug, FileText,
+  Mail, FileSearch, Hash, Globe, ShieldOff, Code, FileText,
   LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
   ExternalLink, Check, Trash2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
 
-export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cve' | 'cases' | 'news' | 'settings';
+export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings';
 
 interface LayoutProps {
   currentPage: Page;
@@ -26,26 +26,30 @@ const navCategories: NavCategory[] = [
     label: 'Threat Intel',
     items: [
       { id: 'ip', label: 'IP Lookup', icon: Search },
-      { id: 'url', label: 'URL Scanner', icon: Link },
       { id: 'hash', label: 'Hash Lookup', icon: Hash },
       { id: 'domain', label: 'Domain Intel', icon: Globe },
-      { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
     ],
   },
   {
     label: 'Analysis Tools',
     items: [
-      { id: 'email', label: 'Email Analyzer', icon: Mail },
       { id: 'ioc', label: 'IOC Extractor', icon: FileSearch },
       { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
       { id: 'decoder', label: 'Decoder', icon: Code },
-      { id: 'cve', label: 'CVE Lookup', icon: Bug },
     ],
   },
   {
     label: 'Investigation',
     items: [
       { id: 'news', label: 'News Feed', icon: Newspaper },
+    ],
+  },
+  {
+    label: 'Extras',
+    items: [
+      { id: 'email', label: 'Email Analyzer', icon: Mail },
+      { id: 'url', label: 'URL Scanner', icon: Link },
+      { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
       { id: 'cases', label: 'Case Notes', icon: FileText },
       { id: 'history', label: 'History', icon: History },
     ],
