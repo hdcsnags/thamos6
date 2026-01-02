@@ -149,120 +149,152 @@ export default function IPLookup() {
           </div>
 
           {enrichment && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-cyan-400" />
-                  Location & Network
+            <div className="space-y-6">
+              <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
+                <h3 className="text-xl font-semibold text-white mb-5 flex items-center gap-2">
+                  <Shield className="w-6 h-6 text-cyan-400" />
+                  Privacy & Anonymization Analysis
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Country</p>
-                    <p className="text-white font-medium">
-                      {enrichment.country || 'Unknown'}
-                      {enrichment.countryCode && <span className="text-slate-400 ml-2">({enrichment.countryCode})</span>}
-                    </p>
+
+                <div className="space-y-3 mb-5">
+                  <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isTor ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-800/50'}`}>
+                    <div className="flex items-center gap-3">
+                      <svg className={`w-5 h-5 ${enrichment.isTor ? 'text-red-400' : 'text-slate-500'}`} viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                      </svg>
+                      <div>
+                        <span className="text-white font-semibold">Tor Exit Node</span>
+                        <p className="text-xs text-slate-400">Checked against Tor Project exit list</p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isTor ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                      {enrichment.isTor ? 'DETECTED' : 'Clean'}
+                    </span>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">City</p>
-                    <p className="text-white font-medium">{enrichment.city || 'Unknown'}</p>
+
+                  <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isVPN ? 'bg-orange-500/10 border border-orange-500/30' : 'bg-slate-800/50'}`}>
+                    <div className="flex items-center gap-3">
+                      <Wifi className={`w-5 h-5 ${enrichment.isVPN ? 'text-orange-400' : 'text-slate-500'}`} />
+                      <div className="flex-1">
+                        <span className="text-white font-semibold">VPN</span>
+                        {enrichment.vpnService && (
+                          <p className="text-sm text-orange-300 font-medium mt-0.5">{enrichment.vpnService}</p>
+                        )}
+                        {!enrichment.vpnService && enrichment.isVPN && (
+                          <p className="text-xs text-slate-400">Provider unknown</p>
+                        )}
+                        {!enrichment.isVPN && (
+                          <p className="text-xs text-slate-400">Based on ASN & org heuristics</p>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isVPN ? 'bg-orange-500/20 text-orange-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                      {enrichment.isVPN ? 'DETECTED' : 'Clean'}
+                    </span>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Region</p>
-                    <p className="text-white font-medium">{enrichment.region || 'Unknown'}</p>
+
+                  <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isProxy ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-slate-800/50'}`}>
+                    <div className="flex items-center gap-3">
+                      <Server className={`w-5 h-5 ${enrichment.isProxy ? 'text-yellow-400' : 'text-slate-500'}`} />
+                      <div>
+                        <span className="text-white font-semibold">Proxy Server</span>
+                        <p className="text-xs text-slate-400">
+                          {enrichment.isProxy && enrichment.isHosting ? 'Datacenter proxy' :
+                           enrichment.isProxy && !enrichment.isHosting ? 'Residential proxy' :
+                           'No proxy detected'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isProxy ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                      {enrichment.isProxy ? 'DETECTED' : 'Clean'}
+                    </span>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Timezone</p>
-                    <p className="text-white font-medium flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {enrichment.timezone || 'Unknown'}
-                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
+                    <span className="text-sm text-slate-400">Hosting/DC</span>
+                    <span className={`text-sm font-medium ${enrichment.isHosting ? 'text-blue-400' : 'text-slate-400'}`}>
+                      {enrichment.isHosting ? 'Yes' : 'No'}
+                    </span>
                   </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">ISP</p>
-                    <p className="text-white font-medium">{enrichment.isp || 'Unknown'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Organization</p>
-                    <p className="text-white font-medium flex items-center gap-1">
-                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      {enrichment.org || 'Unknown'}
-                    </p>
+                  <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
+                    <span className="text-sm text-slate-400">Type Verdict</span>
+                    <span className="text-sm font-medium text-white">
+                      {enrichment.isHosting ? 'Likely Hosting' :
+                       enrichment.isVPN || enrichment.isProxy || enrichment.isTor ? 'Anonymization' :
+                       'Likely Residential'}
+                    </span>
                   </div>
                   {enrichment.asn && (
-                    <div className="col-span-2">
-                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">ASN</p>
-                      <p className="text-white font-medium font-mono text-sm">{enrichment.asn}</p>
+                    <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
+                      <span className="text-sm text-slate-400">ASN</span>
+                      <span className="text-sm font-medium text-white font-mono">{enrichment.asn}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-cyan-400" />
-                  Privacy & Anonymization
-                </h3>
-                <div className="space-y-3">
-                  <div className={`flex items-center justify-between p-3 rounded-lg ${enrichment.isVPN ? 'bg-orange-500/10 border border-orange-500/30' : 'bg-slate-800/50'}`}>
-                    <div className="flex items-center gap-3">
-                      <Wifi className={`w-5 h-5 ${enrichment.isVPN ? 'text-orange-400' : 'text-slate-500'}`} />
-                      <span className="text-white font-medium">VPN</span>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-cyan-400" />
+                    Location & Network
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Country</p>
+                      <p className="text-white font-medium">
+                        {enrichment.country || 'Unknown'}
+                        {enrichment.countryCode && <span className="text-slate-400 ml-2">({enrichment.countryCode})</span>}
+                      </p>
                     </div>
-                    <div className="text-right">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${enrichment.isVPN ? 'bg-orange-500/20 text-orange-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                        {enrichment.isVPN ? 'DETECTED' : 'Not Detected'}
-                      </span>
-                      {enrichment.vpnService && (
-                        <p className="text-xs text-orange-400 mt-1">{enrichment.vpnService}</p>
-                      )}
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">City</p>
+                      <p className="text-white font-medium">{enrichment.city || 'Unknown'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Region</p>
+                      <p className="text-white font-medium">{enrichment.region || 'Unknown'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Timezone</p>
+                      <p className="text-white font-medium flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        {enrichment.timezone || 'Unknown'}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">ISP</p>
+                      <p className="text-white font-medium">{enrichment.isp || 'Unknown'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Organization</p>
+                      <p className="text-white font-medium flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                        {enrichment.org || 'Unknown'}
+                      </p>
                     </div>
                   </div>
+                </div>
 
-                  <div className={`flex items-center justify-between p-3 rounded-lg ${enrichment.isTor ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-800/50'}`}>
-                    <div className="flex items-center gap-3">
-                      <svg className={`w-5 h-5 ${enrichment.isTor ? 'text-red-400' : 'text-slate-500'}`} viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-                      </svg>
-                      <span className="text-white font-medium">TOR Exit Node</span>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${enrichment.isTor ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                      {enrichment.isTor ? 'DETECTED' : 'Not Detected'}
-                    </span>
-                  </div>
-
-                  <div className={`flex items-center justify-between p-3 rounded-lg ${enrichment.isProxy ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-slate-800/50'}`}>
-                    <div className="flex items-center gap-3">
-                      <Server className={`w-5 h-5 ${enrichment.isProxy ? 'text-yellow-400' : 'text-slate-500'}`} />
-                      <span className="text-white font-medium">Proxy</span>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${enrichment.isProxy ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                      {enrichment.isProxy ? 'DETECTED' : 'Not Detected'}
-                    </span>
-                  </div>
-
-                  <div className={`flex items-center justify-between p-3 rounded-lg ${enrichment.isHosting ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-slate-800/50'}`}>
-                    <div className="flex items-center gap-3">
-                      <Building2 className={`w-5 h-5 ${enrichment.isHosting ? 'text-blue-400' : 'text-slate-500'}`} />
-                      <span className="text-white font-medium">Hosting/Datacenter</span>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${enrichment.isHosting ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                      {enrichment.isHosting ? 'YES' : 'No'}
-                    </span>
-                  </div>
-
-                  {enrichment.isBot !== undefined && (
-                    <div className={`flex items-center justify-between p-3 rounded-lg ${enrichment.isBot ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-800/50'}`}>
+                {enrichment.isBot !== undefined && (
+                  <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-cyan-400" />
+                      Bot Detection
+                    </h3>
+                    <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isBot ? 'bg-red-500/10 border border-red-500/30' : 'bg-emerald-500/10 border border-emerald-500/30'}`}>
                       <div className="flex items-center gap-3">
-                        <AlertTriangle className={`w-5 h-5 ${enrichment.isBot ? 'text-red-400' : 'text-slate-500'}`} />
+                        <AlertTriangle className={`w-5 h-5 ${enrichment.isBot ? 'text-red-400' : 'text-emerald-400'}`} />
                         <span className="text-white font-medium">Bot Activity</span>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${enrichment.isBot ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                        {enrichment.isBot ? 'DETECTED' : 'Not Detected'}
+                      <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isBot ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                        {enrichment.isBot ? 'DETECTED' : 'Clean'}
                       </span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

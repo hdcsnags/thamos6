@@ -1,4 +1,4 @@
-import { CheckCircle, XCircle, AlertCircle, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, ExternalLink, ChevronDown, ChevronUp, ShieldOff } from 'lucide-react';
 import { useState } from 'react';
 import type { ThreatResult } from '../types';
 
@@ -72,6 +72,31 @@ const sourceInfo: Record<string, { name: string; url: string; description: strin
     name: 'URLhaus',
     url: 'https://urlhaus.abuse.ch',
     description: 'Malware URL database',
+  },
+  tor_exit_list: {
+    name: 'Tor Exit List',
+    url: 'https://check.torproject.org',
+    description: 'Official Tor Project exit nodes',
+  },
+  vpn_provider: {
+    name: 'VPN Provider',
+    url: '#',
+    description: 'ASN-based VPN identification',
+  },
+  teoh: {
+    name: 'Teoh VPN',
+    url: 'https://ip.teoh.io',
+    description: 'VPN & proxy detection',
+  },
+  greynoise: {
+    name: 'GreyNoise',
+    url: 'https://greynoise.io',
+    description: 'Internet scanner detection',
+  },
+  spamhaus: {
+    name: 'Spamhaus',
+    url: 'https://spamhaus.org',
+    description: 'Blocklist reputation',
   },
 };
 
@@ -225,6 +250,57 @@ function extractKeyData(source: string, data: Record<string, unknown>): Record<s
       }
       break;
     }
+    case 'tor_exit_list': {
+      const d = data as any;
+      if (d) {
+        result['Tor Exit Node'] = d.is_tor_exit || false;
+        if (d.last_seen) result['Last Seen'] = new Date(d.last_seen).toLocaleDateString();
+        if (d.source) result['Source'] = d.source;
+      }
+      break;
+    }
+    case 'vpn_provider': {
+      const d = data as any;
+      if (d && d.provider) {
+        result['Provider'] = d.provider;
+        result['Confidence'] = d.confidence || 'unknown';
+        if (d.matched_by) result['Matched By'] = d.matched_by === 'asn' ? 'ASN' : d.matched_by === 'org_pattern' ? 'Organization' : 'Keyword';
+      } else {
+        result['VPN Detected'] = false;
+      }
+      break;
+    }
+    case 'teoh': {
+      const d = data as any;
+      if (d) {
+        result['VPN/Proxy'] = d.vpn_or_proxy === 'yes' || d.is_vpn === true;
+        result['Tor'] = d.is_tor || false;
+        result['Datacenter'] = d.is_datacenter || d.hosting || false;
+        if (d.vpn_name) result['VPN Name'] = d.vpn_name;
+      }
+      break;
+    }
+    case 'greynoise': {
+      const d = data as any;
+      if (d) {
+        result['Mass Scanner'] = d.noise || false;
+        result['RIOT'] = d.riot || false;
+        if (d.classification) result['Classification'] = d.classification;
+        if (d.name) result['Name'] = d.name;
+      }
+      break;
+    }
+    case 'spamhaus': {
+      const d = data as any;
+      if (d) {
+        const listed = d.listedIn && d.listedIn.length > 0;
+        result['Listed'] = listed;
+        if (listed) {
+          result['Lists'] = d.listedIn.join(', ');
+        }
+      }
+      break;
+    }
   }
 
   return result;
@@ -235,19 +311,56 @@ export default function SourceCard({ source, result }: SourceCardProps) {
   const info = sourceInfo[source] || { name: source, url: '#', description: '' };
 
   const hasError = !!result.error;
+  const isApiKeyMissing = result.error === 'API key not configured';
   const hasThreat = result.isMalicious || (result.threatScore !== undefined && result.threatScore > 30);
   const keyData = hasError ? {} : extractKeyData(source, result.data);
 
   const getStatusIcon = () => {
+    if (isApiKeyMissing) return <ShieldOff className="w-5 h-5 text-amber-500" />;
     if (hasError) return <AlertCircle className="w-5 h-5 text-slate-500" />;
     if (hasThreat) return <XCircle className="w-5 h-5 text-red-400" />;
     return <CheckCircle className="w-5 h-5 text-emerald-400" />;
   };
 
   const getStatusBorder = () => {
+    if (isApiKeyMissing) return 'border-amber-500/30';
     if (hasError) return 'border-slate-700';
     if (hasThreat) return 'border-red-500/30';
     return 'border-emerald-500/30';
+  };
+
+  const getStatusBadge = () => {
+    if (isApiKeyMissing) {
+      return (
+        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">
+          Not Checked (API Key Missing)
+        </div>
+      );
+    }
+    if (hasError) {
+      return (
+        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-700 text-slate-400">
+          Error
+        </div>
+      );
+    }
+    if (result.threatScore !== undefined) {
+      return (
+        <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+          result.threatScore >= 70 ? 'bg-red-500/20 text-red-400' :
+          result.threatScore >= 40 ? 'bg-orange-500/20 text-orange-400' :
+          result.threatScore >= 20 ? 'bg-yellow-500/20 text-yellow-400' :
+          'bg-emerald-500/20 text-emerald-400'
+        }`}>
+          Score: {result.threatScore}
+        </div>
+      );
+    }
+    return (
+      <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">
+        Checked
+      </div>
+    );
   };
 
   return (
@@ -272,16 +385,7 @@ export default function SourceCard({ source, result }: SourceCardProps) {
             </div>
           </div>
 
-          {result.threatScore !== undefined && (
-            <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-              result.threatScore >= 70 ? 'bg-red-500/20 text-red-400' :
-              result.threatScore >= 40 ? 'bg-orange-500/20 text-orange-400' :
-              result.threatScore >= 20 ? 'bg-yellow-500/20 text-yellow-400' :
-              'bg-emerald-500/20 text-emerald-400'
-            }`}>
-              Score: {result.threatScore}
-            </div>
-          )}
+          {getStatusBadge()}
         </div>
 
         {hasError ? (

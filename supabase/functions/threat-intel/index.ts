@@ -430,6 +430,90 @@ async function checkTeohVPN(ctx: TierContext, ip: string): Promise<ThreatResult>
   }
 }
 
+async function checkTorExitList(ip: string): Promise<ThreatResult> {
+  try {
+    const { data, error } = await serviceClient
+      .from("tor_exit_nodes")
+      .select("ip_address, last_seen")
+      .eq("ip_address", ip)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const isTorExit = data !== null;
+    return {
+      source: "tor_exit_list",
+      data: {
+        is_tor_exit: isTorExit,
+        last_seen: data?.last_seen,
+        source: "Tor Project Exit List"
+      },
+      isMalicious: false,
+      threatScore: 0
+    };
+  } catch (e) {
+    return { source: "tor_exit_list", data: {}, error: String(e) };
+  }
+}
+
+async function checkVPNProvider(asn: string | undefined, org: string | undefined): Promise<ThreatResult> {
+  if (!asn && !org) {
+    return { source: "vpn_provider", data: { provider: null, confidence: null } };
+  }
+
+  try {
+    const asnNumber = asn ? parseInt(asn.replace(/\D/g, "")) : null;
+
+    let query = serviceClient
+      .from("vpn_providers")
+      .select("provider_name, confidence, asn, org_pattern");
+
+    if (asnNumber) {
+      query = query.eq("asn", asnNumber);
+    } else if (org) {
+      query = query.ilike("org_pattern", org.substring(0, 50));
+    } else {
+      return { source: "vpn_provider", data: { provider: null, confidence: null } };
+    }
+
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return {
+        source: "vpn_provider",
+        data: {
+          provider: data.provider_name,
+          confidence: data.confidence,
+          matched_by: asnNumber ? "asn" : "org_pattern"
+        }
+      };
+    }
+
+    if (org) {
+      const orgLower = org.toLowerCase();
+      const vpnKeywords = ["vpn", "proxy", "mullvad", "nord", "express", "proton", "surfshark", "cyberghost", "private internet access"];
+      const hasVpnKeyword = vpnKeywords.some(keyword => orgLower.includes(keyword));
+
+      if (hasVpnKeyword) {
+        return {
+          source: "vpn_provider",
+          data: {
+            provider: "Unknown VPN",
+            confidence: "low",
+            matched_by: "keyword_heuristic"
+          }
+        };
+      }
+    }
+
+    return { source: "vpn_provider", data: { provider: null, confidence: null } };
+  } catch (e) {
+    return { source: "vpn_provider", data: {}, error: String(e) };
+  }
+}
+
 async function checkGreyNoise(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "greynoise", ip);
   if (cached) {
@@ -559,6 +643,17 @@ async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatRes
 function extractEnrichment(results: ThreatResult[]): IPEnrichment {
   const enrichment: IPEnrichment = {};
 
+  const torExitList = results.find(r => r.source === "tor_exit_list")?.data as any;
+  if (torExitList && torExitList.is_tor_exit === true) {
+    enrichment.isTor = true;
+  }
+
+  const vpnProvider = results.find(r => r.source === "vpn_provider")?.data as any;
+  if (vpnProvider && vpnProvider.provider) {
+    enrichment.isVPN = true;
+    enrichment.vpnService = vpnProvider.provider;
+  }
+
   const ipapi = results.find(r => r.source === "ipapi")?.data as any;
   if (ipapi && !ipapi.error) {
     enrichment.country = ipapi.country;
@@ -580,8 +675,11 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     const ipData = Object.values(proxycheck).find((v: any) => typeof v === "object" && v !== null && "proxy" in v) as any;
     if (ipData) {
       if (ipData.proxy === "yes") enrichment.isProxy = true;
-      if (ipData.type === "VPN") { enrichment.isVPN = true; enrichment.vpnService = ipData.provider || "Unknown VPN"; }
-      if (ipData.type === "TOR") enrichment.isTor = true;
+      if (ipData.type === "VPN" && !enrichment.isVPN) {
+        enrichment.isVPN = true;
+        if (!enrichment.vpnService) enrichment.vpnService = ipData.provider || "Unknown VPN";
+      }
+      if (ipData.type === "TOR" && enrichment.isTor === undefined) enrichment.isTor = true;
       if (!enrichment.country && ipData.country) enrichment.country = ipData.country;
       if (!enrichment.isp && ipData.isp) enrichment.isp = ipData.isp;
       if (!enrichment.asn && ipData.asn) enrichment.asn = ipData.asn;
@@ -590,8 +688,8 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
 
   const ipqs = results.find(r => r.source === "ipqualityscore")?.data as any;
   if (ipqs && !ipqs.error) {
-    if (ipqs.vpn === true) enrichment.isVPN = true;
-    if (ipqs.tor === true) enrichment.isTor = true;
+    if (ipqs.vpn === true && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (ipqs.tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
     if (ipqs.proxy === true) enrichment.isProxy = true;
     if (ipqs.bot_status === true) enrichment.isBot = true;
     if (ipqs.ISP && !enrichment.isp) enrichment.isp = ipqs.ISP;
@@ -603,12 +701,12 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
 
   const abuseipdb = results.find(r => r.source === "abuseipdb")?.data as any;
   if (abuseipdb?.data) {
-    if (abuseipdb.data.isTor === true) enrichment.isTor = true;
+    if (abuseipdb.data.isTor === true && enrichment.isTor === undefined) enrichment.isTor = true;
     if (abuseipdb.data.countryCode && !enrichment.countryCode) enrichment.countryCode = abuseipdb.data.countryCode;
     if (abuseipdb.data.isp && !enrichment.isp) enrichment.isp = abuseipdb.data.isp;
     if (abuseipdb.data.usageType) {
       const ut = abuseipdb.data.usageType.toLowerCase();
-      if (ut.includes("vpn") || ut.includes("commercial")) enrichment.isVPN = true;
+      if ((ut.includes("vpn") || ut.includes("commercial")) && enrichment.isVPN === undefined) enrichment.isVPN = true;
       if (ut.includes("hosting") || ut.includes("data center")) enrichment.isHosting = true;
     }
   }
@@ -633,8 +731,8 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
 
   const teoh = results.find(r => r.source === "teoh")?.data as any;
   if (teoh && !teoh.error) {
-    if (teoh.vpn_or_proxy === "yes" || teoh.is_vpn === true) enrichment.isVPN = true;
-    if (teoh.is_tor === true) enrichment.isTor = true;
+    if ((teoh.vpn_or_proxy === "yes" || teoh.is_vpn === true) && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (teoh.is_tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
     if (teoh.is_datacenter === true || teoh.hosting === true) enrichment.isHosting = true;
     if (teoh.vpn_name && !enrichment.vpnService) enrichment.vpnService = teoh.vpn_name;
   }
@@ -690,6 +788,8 @@ Deno.serve(async (req: Request) => {
 
       const sourcePromises: Promise<ThreatResult>[] = [];
 
+      sourcePromises.push(checkTorExitList(ip));
+
       if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
       if (allowedSources.includes("proxycheck")) sourcePromises.push(checkProxyCheck(ctx, ip, apiKeys.proxycheck ?? ""));
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotal(ctx, ip, apiKeys.virustotal ?? ""));
@@ -708,6 +808,12 @@ Deno.serve(async (req: Request) => {
       const results: ThreatResult[] = settledResults
         .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
         .map(r => r.value);
+
+      const ipapi = results.find(r => r.source === "ipapi")?.data as any;
+      const asn = ipapi?.as;
+      const org = ipapi?.org;
+      const vpnCheck = await checkVPNProvider(asn, org);
+      results.push(vpnCheck);
 
       const enrichment = extractEnrichment(results);
       const scores = results.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
