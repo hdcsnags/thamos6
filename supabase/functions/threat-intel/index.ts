@@ -16,8 +16,6 @@ const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") ?? "";
 const TRUSTED_DOMAIN = "dsbn.org";
 
-const ENCRYPTION_KEY = Deno.env.get("API_KEY_ENCRYPTION_KEY") ?? "";
-
 type UserTier = "anon" | "dsbn" | "external";
 
 interface TierContext {
@@ -117,15 +115,35 @@ async function getOrgApiKeys(): Promise<Record<string, string>> {
   };
 }
 
+async function deriveEncryptionKey(): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: encoder.encode("thamos6-api-key-encryption"),
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
 async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }): Promise<string> {
-  if (!ENCRYPTION_KEY) return "";
+  if (!SUPABASE_SERVICE_ROLE_KEY) return "";
 
   try {
-    const keyData = Uint8Array.from(atob(ENCRYPTION_KEY), c => c.charCodeAt(0));
-    const key = await crypto.subtle.importKey(
-      "raw", keyData, { name: "AES-GCM" }, false, ["decrypt"]
-    );
-
+    const key = await deriveEncryptionKey();
     const iv = Uint8Array.from(atob(encrypted.iv), c => c.charCodeAt(0));
     const ciphertext = Uint8Array.from(atob(encrypted.ciphertext), c => c.charCodeAt(0));
 
