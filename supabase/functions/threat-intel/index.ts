@@ -456,6 +456,43 @@ async function checkTorExitList(ip: string): Promise<ThreatResult> {
   }
 }
 
+function ipToInteger(ip: string): number {
+  const parts = ip.split('.').map(Number);
+  return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+}
+
+async function checkIP2Proxy(ip: string): Promise<ThreatResult> {
+  try {
+    const ipInt = ipToInteger(ip);
+
+    const { data, error } = await serviceClient
+      .from("ip2proxy_ranges")
+      .select("proxy_type, country_code, country_name, isp")
+      .lte("ip_from", ipInt)
+      .gte("ip_to", ipInt)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const isProxy = data !== null;
+    return {
+      source: "ip2proxy",
+      data: {
+        is_proxy: isProxy,
+        proxy_type: data?.proxy_type,
+        country_code: data?.country_code,
+        country_name: data?.country_name,
+        isp: data?.isp,
+        source: "IP2Proxy LITE Database"
+      },
+      isMalicious: false,
+      threatScore: 0
+    };
+  } catch (e) {
+    return { source: "ip2proxy", data: {}, error: String(e) };
+  }
+}
+
 async function checkVPNProvider(asn: string | undefined, org: string | undefined): Promise<ThreatResult> {
   if (!asn && !org) {
     return { source: "vpn_provider", data: { provider: null, confidence: null } };
@@ -648,6 +685,20 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     enrichment.isTor = true;
   }
 
+  const ip2proxy = results.find(r => r.source === "ip2proxy")?.data as any;
+  if (ip2proxy && ip2proxy.is_proxy === true) {
+    if (ip2proxy.proxy_type === "VPN") {
+      enrichment.isVPN = true;
+      enrichment.vpnService = ip2proxy.isp || "Unknown VPN";
+    } else if (ip2proxy.proxy_type === "DCH") {
+      enrichment.isHosting = true;
+    } else if (ip2proxy.proxy_type === "PUB") {
+      enrichment.isProxy = true;
+    } else if (ip2proxy.proxy_type === "TOR") {
+      enrichment.isTor = true;
+    }
+  }
+
   const vpnProvider = results.find(r => r.source === "vpn_provider")?.data as any;
   if (vpnProvider && vpnProvider.provider) {
     enrichment.isVPN = true;
@@ -789,6 +840,7 @@ Deno.serve(async (req: Request) => {
       const sourcePromises: Promise<ThreatResult>[] = [];
 
       sourcePromises.push(checkTorExitList(ip));
+      sourcePromises.push(checkIP2Proxy(ip));
 
       if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
       if (allowedSources.includes("proxycheck")) sourcePromises.push(checkProxyCheck(ctx, ip, apiKeys.proxycheck ?? ""));
