@@ -142,7 +142,7 @@ async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVer
 async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
   const { data } = await serviceClient
     .from("user_api_keys")
-    .select("service, encrypted_key")
+    .select("service, encrypted_key, api_key")
     .eq("user_id", userId)
     .eq("is_active", true);
 
@@ -152,7 +152,13 @@ async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
   for (const row of data) {
     if (row.encrypted_key) {
       const decrypted = await decryptApiKey(row.encrypted_key);
-      if (decrypted) keys[row.service] = decrypted;
+      if (decrypted) {
+        keys[row.service] = decrypted;
+        continue;
+      }
+    }
+    if (row.api_key) {
+      keys[row.service] = row.api_key;
     }
   }
   return keys;
