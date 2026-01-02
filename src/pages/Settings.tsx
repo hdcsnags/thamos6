@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Upload, BarChart3, Plus, Trash2, Eye, EyeOff, Check, AlertCircle, Download } from 'lucide-react';
+import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -33,7 +33,6 @@ export default function Settings() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [newKey, setNewKey] = useState({ service: '', key: '' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -78,29 +77,35 @@ export default function Settings() {
 
     setSaving(true);
     try {
-      const existing = apiKeys.find(k => k.service === newKey.service);
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
 
-      if (existing) {
-        const { error } = await supabase
-          .from('user_api_keys')
-          .update({ api_key: newKey.key, updated_at: new Date().toISOString() })
-          .eq('id', existing.id);
+      if (!token) throw new Error('Not authenticated');
 
-        if (error) throw error;
-        showMessage('success', `${newKey.service} key updated`);
-      } else {
-        const { error } = await supabase
-          .from('user_api_keys')
-          .insert({ user_id: user.id, service: newKey.service, api_key: newKey.key });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-keys`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            service: newKey.service,
+            apiKey: newKey.key,
+          }),
+        }
+      );
 
-        if (error) throw error;
-        showMessage('success', `${newKey.service} key added`);
-      }
+      const result = await response.json();
 
+      if (!response.ok) throw new Error(result.error || 'Failed to save key');
+
+      showMessage('success', result.message || `${newKey.service} key saved (encrypted)`);
       setNewKey({ service: '', key: '' });
       fetchData();
-    } catch {
-      showMessage('error', 'Failed to save key');
+    } catch (err) {
+      showMessage('error', err instanceof Error ? err.message : 'Failed to save key');
     } finally {
       setSaving(false);
     }
@@ -110,12 +115,29 @@ export default function Settings() {
     if (!confirm(`Delete ${service} API key?`)) return;
 
     try {
-      const { error } = await supabase.from('user_api_keys').delete().eq('id', id);
-      if (error) throw error;
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      if (!token) throw new Error('Not authenticated');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-keys/${service}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error || 'Failed to delete key');
+
       showMessage('success', 'Key deleted');
       fetchData();
-    } catch {
-      showMessage('error', 'Failed to delete key');
+    } catch (err) {
+      showMessage('error', err instanceof Error ? err.message : 'Failed to delete key');
     }
   };
 
@@ -123,11 +145,19 @@ export default function Settings() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+
+    if (!token) {
+      showMessage('error', 'Not authenticated');
+      return;
+    }
+
     const text = await file.text();
     const lines = text.split('\n').filter(line => line.trim() && line.includes('='));
 
-    let added = 0;
-    let updated = 0;
+    let success = 0;
+    let failed = 0;
 
     for (const line of lines) {
       const [service, ...keyParts] = line.split('=');
@@ -136,29 +166,36 @@ export default function Settings() {
 
       if (!serviceName || !key) continue;
 
-      const existing = apiKeys.find(k => k.service.toLowerCase() === serviceName);
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-keys`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ service: serviceName, apiKey: key }),
+          }
+        );
 
-      if (existing) {
-        await supabase
-          .from('user_api_keys')
-          .update({ api_key: key, updated_at: new Date().toISOString() })
-          .eq('id', existing.id);
-        updated++;
-      } else {
-        await supabase
-          .from('user_api_keys')
-          .insert({ user_id: user.id, service: serviceName, api_key: key });
-        added++;
+        if (response.ok) {
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
       }
     }
 
-    showMessage('success', `Imported ${added} new keys, updated ${updated} existing`);
+    showMessage('success', `Imported ${success} keys${failed > 0 ? `, ${failed} failed` : ''} (encrypted)`);
     fetchData();
     e.target.value = '';
   };
 
   const exportKeys = () => {
-    const content = apiKeys.map(k => `${k.service}=${k.api_key}`).join('\n');
+    const content = apiKeys.map(k => `${k.service}=<encrypted>`).join('\n');
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -281,17 +318,15 @@ export default function Settings() {
                         <p className="font-medium text-white">{serviceInfo?.name || key.service}</p>
                         <div className="flex items-center gap-2 text-sm">
                           <code className="text-slate-400 font-mono">
-                            {showKeys[key.id] ? key.api_key : '•'.repeat(Math.min(key.api_key.length, 32))}
+                            {'•'.repeat(32)}
                           </code>
+                          <span className="text-xs text-emerald-400 flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            Encrypted
+                          </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setShowKeys(prev => ({ ...prev, [key.id]: !prev[key.id] }))}
-                          className="p-2 text-slate-400 hover:text-white transition-all"
-                        >
-                          {showKeys[key.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
                         <button
                           onClick={() => deleteKey(key.id, key.service)}
                           className="p-2 text-slate-400 hover:text-red-400 transition-all"
@@ -306,6 +341,10 @@ export default function Settings() {
             )}
 
             <div className="mt-6 p-4 bg-slate-800/50 rounded-lg">
+              <div className="flex items-center gap-2 text-emerald-400 text-sm mb-3">
+                <Shield className="w-4 h-4" />
+                All API keys are encrypted at rest using AES-256-GCM
+              </div>
               <p className="text-sm text-slate-400 mb-2">
                 <span className="text-slate-300 font-medium">Manual Entry:</span> Select service from dropdown, then enter just the API key
               </p>
