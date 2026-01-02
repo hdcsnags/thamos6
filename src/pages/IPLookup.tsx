@@ -331,23 +331,98 @@ export default function IPLookup() {
                   </div>
                 </div>
 
-                {enrichment.isBot !== undefined && (
-                  <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-cyan-400" />
-                      Bot Detection
-                    </h3>
-                    <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isBot ? 'bg-red-500/10 border border-red-500/30' : 'bg-emerald-500/10 border border-emerald-500/30'}`}>
-                      <div className="flex items-center gap-3">
-                        <AlertTriangle className={`w-5 h-5 ${enrichment.isBot ? 'text-red-400' : 'text-emerald-400'}`} />
-                        <span className="text-white font-medium">Bot Activity</span>
+                {(() => {
+                  const abuseData = result.results.abuseipdb;
+                  const abuseScore = abuseData?.data?.data?.abuseConfidenceScore;
+                  const totalReports = abuseData?.data?.data?.totalReports ?? 0;
+                  const isWhitelisted = abuseData?.data?.data?.isWhitelisted ?? false;
+                  const usageType = abuseData?.data?.data?.usageType;
+                  const lastReportedAt = abuseData?.data?.data?.lastReportedAt;
+                  const hasAbuseData = abuseScore !== undefined && abuseScore !== null;
+                  const noApiKey = abuseData?.error === 'API key not configured';
+
+                  if (noApiKey || !hasAbuseData) {
+                    return enrichment.isBot !== undefined && (
+                      <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
+                        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-cyan-400" />
+                          Bot Detection
+                        </h3>
+                        <div className={`flex items-center justify-between p-4 rounded-lg ${enrichment.isBot ? 'bg-red-500/10 border border-red-500/30' : 'bg-emerald-500/10 border border-emerald-500/30'}`}>
+                          <div className="flex items-center gap-3">
+                            <AlertTriangle className={`w-5 h-5 ${enrichment.isBot ? 'text-red-400' : 'text-emerald-400'}`} />
+                            <span className="text-white font-medium">Bot Activity</span>
+                          </div>
+                          <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isBot ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                            {enrichment.isBot ? 'DETECTED' : 'Clean'}
+                          </span>
+                        </div>
                       </div>
-                      <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${enrichment.isBot ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                        {enrichment.isBot ? 'DETECTED' : 'Clean'}
-                      </span>
+                    );
+                  }
+
+                  const isAbusive = abuseScore > 25;
+                  const hasReports = totalReports > 0;
+
+                  return (
+                    <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
+                      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Flag className="w-5 h-5 text-cyan-400" />
+                        AbuseIPDB Report
+                      </h3>
+                      <div className="space-y-3">
+                        <div className={`flex items-center justify-between p-3 rounded-lg ${
+                          isAbusive ? 'bg-red-500/10 border border-red-500/30' :
+                          hasReports ? 'bg-yellow-500/10 border border-yellow-500/30' :
+                          'bg-emerald-500/10 border border-emerald-500/30'
+                        }`}>
+                          <div>
+                            <p className="text-white font-semibold">Confidence Score</p>
+                            <p className="text-xs text-slate-400">{abuseScore}% abuse confidence</p>
+                          </div>
+                          <span className={`text-2xl font-bold ${
+                            isAbusive ? 'text-red-400' :
+                            hasReports ? 'text-yellow-400' :
+                            'text-emerald-400'
+                          }`}>
+                            {abuseScore}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 bg-slate-800/50 rounded-lg">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Reports</p>
+                            <p className={`text-lg font-bold ${hasReports ? 'text-yellow-400' : 'text-white'}`}>
+                              {totalReports}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-slate-800/50 rounded-lg">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Whitelisted</p>
+                            <p className={`text-lg font-bold ${isWhitelisted ? 'text-emerald-400' : 'text-white'}`}>
+                              {isWhitelisted ? 'Yes' : 'No'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {usageType && (
+                          <div className="p-3 bg-slate-800/50 rounded-lg">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Usage Type</p>
+                            <p className="text-white font-medium">{usageType}</p>
+                          </div>
+                        )}
+
+                        {lastReportedAt && (
+                          <div className="p-3 bg-slate-800/50 rounded-lg">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Last Reported</p>
+                            <p className="text-white font-medium text-sm">
+                              {new Date(lastReportedAt).toLocaleDateString()} {new Date(lastReportedAt).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           )}

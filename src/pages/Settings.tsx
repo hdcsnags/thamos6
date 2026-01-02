@@ -306,12 +306,15 @@ export default function Settings() {
             )}
 
             <div className="mt-6 p-4 bg-slate-800/50 rounded-lg">
+              <p className="text-sm text-slate-400 mb-2">
+                <span className="text-slate-300 font-medium">Manual Entry:</span> Select service from dropdown, then enter just the API key
+              </p>
               <p className="text-sm text-slate-400">
-                <span className="text-slate-300 font-medium">Key file format:</span> One key per line as{' '}
+                <span className="text-slate-300 font-medium">File Import Format:</span> One key per line as{' '}
                 <code className="text-cyan-400">service=apikey</code>
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Example: virustotal=abc123...
+                Example: abuseipdb=abc123...
               </p>
             </div>
           </div>
