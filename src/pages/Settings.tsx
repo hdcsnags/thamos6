@@ -24,8 +24,9 @@ const AVAILABLE_SERVICES = [
   { id: 'greynoise', name: 'GreyNoise', description: 'Internet scan data' },
   { id: 'urlscan', name: 'URLScan.io', description: 'URL scanning' },
   { id: 'alienvault', name: 'AlienVault OTX', description: 'Threat intelligence' },
-  { id: 'ipinfo', name: 'IPInfo', description: 'IP geolocation' },
-  { id: 'threatfox', name: 'ThreatFox', description: 'IOC database' },
+  { id: 'ipqualityscore', name: 'IPQualityScore', description: 'Fraud detection' },
+  { id: 'proxycheck', name: 'ProxyCheck', description: 'Proxy/VPN detection' },
+  { id: 'ip2proxy', name: 'IP2Proxy', description: 'Proxy database' },
 ];
 
 export default function Settings() {
