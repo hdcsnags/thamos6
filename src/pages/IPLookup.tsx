@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Loader2, Copy, Check, Globe, Server, AlertTriangle, MapPin, Shield, Wifi, Building2, Clock, Radio, Ban, Activity } from 'lucide-react';
+import { Search, Loader2, Copy, Check, Globe, Server, AlertTriangle, MapPin, Shield, Wifi, Building2, Clock, Radio, Ban, Activity, Flag } from 'lucide-react';
 import { lookupIP, isValidIP } from '../lib/threatIntel';
 import type { IPLookupResult } from '../types';
 import ThreatScore from '../components/ThreatScore';
@@ -209,6 +209,55 @@ export default function IPLookup() {
                       {enrichment.isProxy ? 'DETECTED' : 'Clean'}
                     </span>
                   </div>
+
+                  {(() => {
+                    const abuseData = result.results.abuseipdb;
+                    const abuseScore = abuseData?.data?.data?.abuseConfidenceScore;
+                    const hasAbuseData = abuseScore !== undefined && abuseScore !== null;
+                    const isAbusive = hasAbuseData && abuseScore > 25;
+                    const noApiKey = abuseData?.error === 'API key not configured';
+
+                    return (
+                      <div className={`flex items-center justify-between p-4 rounded-lg ${
+                        noApiKey ? 'bg-slate-800/50' :
+                        isAbusive ? 'bg-red-500/10 border border-red-500/30' :
+                        'bg-slate-800/50'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <Flag className={`w-5 h-5 ${
+                            noApiKey ? 'text-slate-500' :
+                            isAbusive ? 'text-red-400' :
+                            'text-slate-500'
+                          }`} />
+                          <div className="flex-1">
+                            <span className="text-white font-semibold">Abuse Reports</span>
+                            {noApiKey && (
+                              <p className="text-xs text-slate-400">API key not configured</p>
+                            )}
+                            {!noApiKey && hasAbuseData && (
+                              <p className="text-xs text-slate-400">
+                                AbuseIPDB confidence: {abuseScore}%
+                                {abuseScore === 0 && ' - No reports'}
+                                {abuseScore > 0 && abuseScore <= 25 && ' - Low confidence'}
+                                {abuseScore > 25 && abuseScore <= 75 && ' - Medium confidence'}
+                                {abuseScore > 75 && ' - High confidence'}
+                              </p>
+                            )}
+                            {!noApiKey && !hasAbuseData && (
+                              <p className="text-xs text-slate-400">No data available</p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
+                          noApiKey ? 'bg-slate-700/50 text-slate-400' :
+                          isAbusive ? 'bg-red-500/20 text-red-400' :
+                          'bg-emerald-500/20 text-emerald-400'
+                        }`}>
+                          {noApiKey ? 'N/A' : isAbusive ? 'ABUSIVE' : 'Clean'}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-800">
