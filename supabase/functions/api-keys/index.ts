@@ -10,7 +10,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const ENCRYPTION_KEY = Deno.env.get("API_KEY_ENCRYPTION_KEY") ?? "";
 const KEY_VERSION = 1;
 
 const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -19,6 +18,30 @@ interface EncryptedKey {
   iv: string;
   ciphertext: string;
   keyVersion: number;
+}
+
+async function deriveEncryptionKey(): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: encoder.encode("thamos6-api-key-encryption"),
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
 
 async function verifyUser(req: Request): Promise<{ userId: string; email: string } | null> {
@@ -44,15 +67,7 @@ async function verifyUser(req: Request): Promise<{ userId: string; email: string
 }
 
 async function encryptApiKey(plaintext: string): Promise<EncryptedKey> {
-  if (!ENCRYPTION_KEY) {
-    throw new Error("Encryption key not configured");
-  }
-
-  const keyData = Uint8Array.from(atob(ENCRYPTION_KEY), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey(
-    "raw", keyData, { name: "AES-GCM" }, false, ["encrypt"]
-  );
-
+  const key = await deriveEncryptionKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encodedPlaintext = new TextEncoder().encode(plaintext);
 
