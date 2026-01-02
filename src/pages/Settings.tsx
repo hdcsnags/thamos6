@@ -27,6 +27,7 @@ const AVAILABLE_SERVICES = [
   { id: 'ipqualityscore', name: 'IPQualityScore', description: 'Fraud detection' },
   { id: 'proxycheck', name: 'ProxyCheck', description: 'Proxy/VPN detection' },
   { id: 'ip2proxy', name: 'IP2Proxy', description: 'Proxy database' },
+  { id: 'iphub', name: 'IPHub', description: 'VPN/proxy detection' },
 ];
 
 export default function Settings() {

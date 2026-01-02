@@ -58,11 +58,11 @@ interface IPEnrichment {
 }
 
 const FREE_SOURCES = [
-  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault"
+  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru"
 ];
 
 const PAID_SOURCES = [
-  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy"
+  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy", "iphub"
 ];
 
 const CACHE_DURATION_HOURS = 6;
@@ -112,6 +112,7 @@ async function getOrgApiKeys(): Promise<Record<string, string>> {
     proxycheck: Deno.env.get("PROXYCHECK_API_KEY") ?? "",
     greynoise: Deno.env.get("GREYNOISE_API_KEY") ?? "",
     ip2proxy: Deno.env.get("IP2PROXY_API_KEY") ?? "",
+    iphub: Deno.env.get("IPHUB_API_KEY") ?? "",
   };
 }
 
@@ -515,6 +516,71 @@ async function checkIP2Proxy(ctx: TierContext, ip: string, apiKey: string): Prom
   }
 }
 
+async function checkIPHub(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "iphub", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "iphub", ip);
+  if (cached) return { source: "iphub", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://v2.api.iphub.info/ip/${ip}`, {
+      headers: { "X-Key": apiKey }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "iphub", ip, data);
+    return {
+      source: "iphub",
+      data: {
+        ip: data.ip,
+        country_code: data.countryCode,
+        country_name: data.countryName,
+        asn: data.asn,
+        isp: data.isp,
+        block: data.block,
+        hostname: data.hostname,
+        source: "IPHub API"
+      }
+    };
+  } catch (e) {
+    return { source: "iphub", data: {}, error: String(e) };
+  }
+}
+
+async function checkTeamCymru(ctx: TierContext, ip: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "teamcymru", ip);
+  if (cached) return { source: "teamcymru", data: cached };
+  try {
+    const reversed = ip.split(".").reverse().join(".");
+    const response = await fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${reversed}.origin.asn.cymru.com&type=TXT`, {
+      headers: { "Accept": "application/dns-json" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const dnsData = await response.json();
+
+    if (!dnsData?.Answer || dnsData.Answer.length === 0) {
+      return { source: "teamcymru", data: { ip, found: false } };
+    }
+
+    const txtRecord = dnsData.Answer[0]?.data?.replace(/"/g, "") ?? "";
+    const parts = txtRecord.split("|").map((s: string) => s.trim());
+
+    const result = {
+      ip,
+      found: true,
+      asn: parts[0] || null,
+      bgp_prefix: parts[1] || null,
+      country_code: parts[2] || null,
+      registry: parts[3] || null,
+      allocated: parts[4] || null,
+      source: "Team Cymru IP-ASN"
+    };
+
+    await setCachedResponse(ctx, "teamcymru", ip, result);
+    return { source: "teamcymru", data: result };
+  } catch (e) {
+    return { source: "teamcymru", data: {}, error: String(e) };
+  }
+}
+
 async function checkVPNProvider(asn: string | undefined, org: string | undefined): Promise<ThreatResult> {
   if (!asn && !org) {
     return { source: "vpn_provider", data: { provider: null, confidence: null } };
@@ -836,6 +902,26 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     }
   }
 
+  const iphub = results.find(r => r.source === "iphub")?.data as any;
+  if (iphub && !iphub.error) {
+    if (iphub.block === 1) {
+      enrichment.isProxy = true;
+      enrichment.isHosting = true;
+    } else if (iphub.block === 2) {
+      enrichment.isProxy = true;
+    }
+    if (iphub.country_code && !enrichment.countryCode) enrichment.countryCode = iphub.country_code;
+    if (iphub.country_name && !enrichment.country) enrichment.country = iphub.country_name;
+    if (iphub.isp && !enrichment.isp) enrichment.isp = iphub.isp;
+    if (iphub.asn && !enrichment.asn) enrichment.asn = `AS${iphub.asn}`;
+  }
+
+  const teamcymru = results.find(r => r.source === "teamcymru")?.data as any;
+  if (teamcymru && teamcymru.found && !teamcymru.error) {
+    if (teamcymru.asn && !enrichment.asn) enrichment.asn = `AS${teamcymru.asn}`;
+    if (teamcymru.country_code && !enrichment.countryCode) enrichment.countryCode = teamcymru.country_code;
+  }
+
   return enrichment;
 }
 
@@ -877,6 +963,8 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("teoh")) sourcePromises.push(checkTeohVPN(ctx, ip));
       if (allowedSources.includes("greynoise")) sourcePromises.push(checkGreyNoise(ctx, ip, apiKeys.greynoise ?? ""));
       if (allowedSources.includes("spamhaus")) sourcePromises.push(checkSpamhaus(ctx, ip));
+      if (allowedSources.includes("iphub")) sourcePromises.push(checkIPHub(ctx, ip, apiKeys.iphub ?? ""));
+      if (allowedSources.includes("teamcymru")) sourcePromises.push(checkTeamCymru(ctx, ip));
 
       const settledResults = await Promise.allSettled(sourcePromises);
       const results: ThreatResult[] = settledResults
@@ -1050,13 +1138,15 @@ Deno.serve(async (req: Request) => {
         urlhaus: true,
         rdap: true,
         teoh: true,
-        spamhaus: true
+        spamhaus: true,
+        teamcymru: true
       };
 
       const configResponse = {
         configured: {
           ...configured,
           ip2proxy: ctx.tier === "dsbn" ? !!orgKeys.ip2proxy : !!apiKeys.ip2proxy,
+          iphub: ctx.tier === "dsbn" ? !!orgKeys.iphub : !!apiKeys.iphub,
         },
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
