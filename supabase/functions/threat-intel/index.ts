@@ -64,7 +64,7 @@ const FREE_SOURCES = [
 ];
 
 const PAID_SOURCES = [
-  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan"
+  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy"
 ];
 
 const CACHE_DURATION_HOURS = 6;
@@ -113,6 +113,7 @@ async function getOrgApiKeys(): Promise<Record<string, string>> {
     urlscan: Deno.env.get("URLSCAN_API_KEY") ?? "",
     proxycheck: Deno.env.get("PROXYCHECK_API_KEY") ?? "",
     greynoise: Deno.env.get("GREYNOISE_API_KEY") ?? "",
+    ip2proxy: Deno.env.get("IP2PROXY_API_KEY") ?? "",
   };
 }
 
@@ -456,34 +457,31 @@ async function checkTorExitList(ip: string): Promise<ThreatResult> {
   }
 }
 
-function ipToInteger(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
-}
-
-async function checkIP2Proxy(ip: string): Promise<ThreatResult> {
+async function checkIP2Proxy(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "ip2proxy", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "ip2proxy", ip);
+  if (cached) return { source: "ip2proxy", data: cached };
   try {
-    const ipInt = ipToInteger(ip);
+    const response = await fetchWithTimeout(`https://api.ip2proxy.com/?key=${apiKey}&ip=${ip}&package=PX11&format=json`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "ip2proxy", ip, data);
 
-    const { data, error } = await serviceClient
-      .from("ip2proxy_ranges")
-      .select("proxy_type, country_code, country_name, isp")
-      .lte("ip_from", ipInt)
-      .gte("ip_to", ipInt)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    const isProxy = data !== null;
+    const isProxy = data.isProxy !== "NO" && data.isProxy !== "-";
     return {
       source: "ip2proxy",
       data: {
         is_proxy: isProxy,
-        proxy_type: data?.proxy_type,
-        country_code: data?.country_code,
-        country_name: data?.country_name,
-        isp: data?.isp,
-        source: "IP2Proxy LITE Database"
+        proxy_type: data.proxyType !== "-" ? data.proxyType : null,
+        country_code: data.countryCode !== "-" ? data.countryCode : null,
+        country_name: data.countryName !== "-" ? data.countryName : null,
+        isp: data.isp !== "-" ? data.isp : null,
+        usage_type: data.usageType !== "-" ? data.usageType : null,
+        asn: data.asn !== "-" ? data.asn : null,
+        as_name: data.as !== "-" ? data.as : null,
+        threat: data.threat !== "-" ? data.threat : null,
+        provider: data.provider !== "-" ? data.provider : null,
+        source: "IP2Proxy API"
       },
       isMalicious: false,
       threatScore: 0
@@ -840,9 +838,9 @@ Deno.serve(async (req: Request) => {
       const sourcePromises: Promise<ThreatResult>[] = [];
 
       sourcePromises.push(checkTorExitList(ip));
-      sourcePromises.push(checkIP2Proxy(ip));
 
       if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
+      if (allowedSources.includes("ip2proxy")) sourcePromises.push(checkIP2Proxy(ctx, ip, apiKeys.ip2proxy ?? ""));
       if (allowedSources.includes("proxycheck")) sourcePromises.push(checkProxyCheck(ctx, ip, apiKeys.proxycheck ?? ""));
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotal(ctx, ip, apiKeys.virustotal ?? ""));
       if (allowedSources.includes("abuseipdb")) sourcePromises.push(checkAbuseIPDB(ctx, ip, apiKeys.abuseipdb ?? ""));
@@ -1031,12 +1029,17 @@ Deno.serve(async (req: Request) => {
         spamhaus: true
       };
 
-      return new Response(JSON.stringify({
-        configured,
+      const configResponse = {
+        configured: {
+          ...configured,
+          ip2proxy: ctx.tier === "dsbn" ? !!orgKeys.ip2proxy : !!apiKeys.ip2proxy,
+        },
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
         user: ctx.email ? { email: ctx.email } : null,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      };
+
+      return new Response(JSON.stringify(configResponse), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });

@@ -69,7 +69,7 @@ async function encryptApiKey(plaintext: string): Promise<EncryptedKey> {
 
 const VALID_SERVICES = [
   "virustotal", "abuseipdb", "alienvault", "shodan",
-  "ipqualityscore", "urlscan", "proxycheck", "greynoise"
+  "ipqualityscore", "urlscan", "proxycheck", "greynoise", "ip2proxy"
 ];
 
 Deno.serve(async (req: Request) => {

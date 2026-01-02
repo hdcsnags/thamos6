@@ -94,6 +94,7 @@ export interface ConfiguredSources {
   urlscan: boolean;
   proxycheck: boolean;
   greynoise: boolean;
+  ip2proxy: boolean;
   ipapi: boolean;
   threatfox: boolean;
   urlhaus: boolean;
