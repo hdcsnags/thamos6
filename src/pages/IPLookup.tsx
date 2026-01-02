@@ -213,6 +213,7 @@ export default function IPLookup() {
                   {(() => {
                     const abuseData = result.results.abuseipdb;
                     const abuseScore = abuseData?.data?.data?.abuseConfidenceScore;
+                    const totalReports = abuseData?.data?.data?.totalReports ?? 0;
                     const hasAbuseData = abuseScore !== undefined && abuseScore !== null;
                     const isAbusive = hasAbuseData && abuseScore > 25;
                     const noApiKey = abuseData?.error === 'API key not configured';
@@ -221,12 +222,14 @@ export default function IPLookup() {
                       <div className={`flex items-center justify-between p-4 rounded-lg ${
                         noApiKey ? 'bg-slate-800/50' :
                         isAbusive ? 'bg-red-500/10 border border-red-500/30' :
+                        totalReports > 0 ? 'bg-yellow-500/10 border border-yellow-500/30' :
                         'bg-slate-800/50'
                       }`}>
                         <div className="flex items-center gap-3">
                           <Flag className={`w-5 h-5 ${
                             noApiKey ? 'text-slate-500' :
                             isAbusive ? 'text-red-400' :
+                            totalReports > 0 ? 'text-yellow-400' :
                             'text-slate-500'
                           }`} />
                           <div className="flex-1">
@@ -236,11 +239,11 @@ export default function IPLookup() {
                             )}
                             {!noApiKey && hasAbuseData && (
                               <p className="text-xs text-slate-400">
-                                AbuseIPDB confidence: {abuseScore}%
-                                {abuseScore === 0 && ' - No reports'}
-                                {abuseScore > 0 && abuseScore <= 25 && ' - Low confidence'}
-                                {abuseScore > 25 && abuseScore <= 75 && ' - Medium confidence'}
-                                {abuseScore > 75 && ' - High confidence'}
+                                {totalReports} report{totalReports !== 1 ? 's' : ''} - {abuseScore}% confidence
+                                {abuseScore === 0 && totalReports > 0 && ' (old reports)'}
+                                {abuseScore > 0 && abuseScore <= 25 && ' - Low risk'}
+                                {abuseScore > 25 && abuseScore <= 75 && ' - Medium risk'}
+                                {abuseScore > 75 && ' - High risk'}
                               </p>
                             )}
                             {!noApiKey && !hasAbuseData && (
@@ -251,9 +254,10 @@ export default function IPLookup() {
                         <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
                           noApiKey ? 'bg-slate-700/50 text-slate-400' :
                           isAbusive ? 'bg-red-500/20 text-red-400' :
+                          totalReports > 0 ? 'bg-yellow-500/20 text-yellow-400' :
                           'bg-emerald-500/20 text-emerald-400'
                         }`}>
-                          {noApiKey ? 'N/A' : isAbusive ? 'ABUSIVE' : 'Clean'}
+                          {noApiKey ? 'N/A' : isAbusive ? 'ABUSIVE' : totalReports > 0 ? 'REPORTED' : 'Clean'}
                         </span>
                       </div>
                     );
