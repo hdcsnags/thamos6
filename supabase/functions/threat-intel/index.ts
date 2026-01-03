@@ -1,16 +1,26 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const ALLOWED_ORIGINS = new Set([
+const PRODUCTION_ORIGINS = new Set([
   "https://t6.thamos.ca",
   "https://thamos6.pages.dev",
-  "http://localhost:5173",
-  "http://localhost:5174",
 ]);
+
+function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return false;
+
+  if (PRODUCTION_ORIGINS.has(origin)) return true;
+
+  if (origin.startsWith("http://localhost") || origin.startsWith("https://localhost")) return true;
+
+  if (origin.includes(".webcontainer") || origin.includes(".local-credentialless.webcontainer-api.io")) return true;
+
+  return false;
+}
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  const allowOrigin = ALLOWED_ORIGINS.has(origin) ? origin : "https://t6.thamos.ca";
+  const allowOrigin = isAllowedOrigin(origin) ? origin : "https://t6.thamos.ca";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Vary": "Origin",
