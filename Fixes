@@ -1,0 +1,174 @@
+Encryption key derivation is using your SUPABASE_SERVICE_ROLE_KEY
+
+In this file, deriveEncryptionKey() PBKDF2-derives the AES key from SUPABASE_SERVICE_ROLE_KEY.
+
+That’s a problem because:
+
+rotating your service role key will break decryption of all stored keys
+
+it couples “DB superpower secret” with “crypto key” (bad separation)
+
+it contradicts the earlier plan (“API_KEY_ENCRYPTION_KEY”)
+
+✅ Fix: use a dedicated secret like API_KEY_ENCRYPTION_KEY (32-byte base64) and import it directly.
+
+Drop-in replacement:
+
+const API_KEY_ENCRYPTION_KEY = Deno.env.get("API_KEY_ENCRYPTION_KEY") ?? "";
+
+function decodeB64(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  if (!API_KEY_ENCRYPTION_KEY) throw new Error("Missing API_KEY_ENCRYPTION_KEY");
+  const raw = decodeB64(API_KEY_ENCRYPTION_KEY);
+  if (raw.byteLength !== 32) throw new Error("API_KEY_ENCRYPTION_KEY must be 32 bytes (base64)");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }): Promise<string> {
+  try {
+    const key = await getEncryptionKey();
+    const iv = decodeB64(encrypted.iv);
+    const ciphertext = decodeB64(encrypted.ciphertext);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return "";
+  }
+}
+
+
+Then in Supabase secrets:
+
+API_KEY_ENCRYPTION_KEY = openssl rand -base64 32
+
+(If you already encrypted keys using the old method, you’ll need a migration path or “try old method fallback” temporarily.)
+
+2) Anon users are currently writing to DB
+
+Even tier === "anon" still inserts into:
+
+ip_lookups
+
+url_lookups
+
+audit_events (via logAuditEvent)
+
+That means someone can hammer the endpoint and fill your DB.
+
+✅ Fix: only write history/audit for authenticated tiers (or add a hard rate limit).
+
+Example:
+
+const canPersist = ctx.tier !== "anon";
+
+if (canPersist) {
+  await serviceClient.from("ip_lookups").insert({...});
+  await logAuditEvent(...);
+}
+
+
+If you still want anon stats, write only a counter (no results payload) or put it behind Cloudflare rate limiting.
+
+3) CORS is wide open
+
+Access-Control-Allow-Origin: * is fine for pure public endpoints, but this function returns user/tier info and triggers org-key calls (for DSBN).
+
+✅ Fix: restrict to known origins:
+
+https://t6.thamos.ca
+
+https://thamos6.pages.dev (optional)
+
+http://localhost:5173 (dev)
+
+Pattern:
+
+const ALLOWED_ORIGINS = new Set([
+  "https://t6.thamos.ca",
+  "https://thamos6.pages.dev",
+  "http://localhost:5173",
+]);
+
+function cors(req: Request) {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.has(origin) ? origin : "https://t6.thamos.ca";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+}
+
+
+Then use cors(req) instead of a constant.
+
+⭐ “Top-cheese” upgrades (worth doing)
+A) Admin cache context should probably match DSBN
+
+Right now:
+
+admin returns cacheContext: "org:admin"
+
+DSBN returns cacheContext: "org:dsbn"
+
+If you want org-wide cache/historical continuity, make admin also "org:dsbn".
+
+B) Your VPN provider matching logic is likely not doing what you want
+
+This line is suspicious:
+
+query = query.ilike("org_pattern", org.substring(0, 50));
+
+
+That’s searching the pattern column for the org string. It’ll rarely match.
+
+✅ Better approach:
+
+If ASN match exists: great.
+
+Else load a small list of provider patterns and do matching in code:
+
+const { data } = await serviceClient
+  .from("vpn_providers")
+  .select("provider_name, confidence, asn, org_pattern");
+
+const hit = data?.find(r => org && r.org_pattern && org.toLowerCase().includes(r.org_pattern.toLowerCase()));
+
+
+Also: treat “hosting ASN” vs “consumer ASN” separately.
+
+C) Add a real IP abuse / blacklist source beyond Spamhaus
+
+You already have the big ones (AbuseIPDB + Spamhaus + IPQS + OTX). If you want “known attack IPs” style data:
+
+blocklist.de is a great add because it provides DNS-based lists of attacking IPs (last ~48 hours) and other export options. 
+Blocklist
++1
+
+You can implement it exactly like Spamhaus (DNS-over-HTTPS queries).
+
+D) Add a dedicated VPN/Proxy/Tor classifier API (cheap + clean)
+
+You already have multiple VPN-ish signals, but if you want “one authoritative privacy verdict”, add VPNAPI.io:
+
+free accounts: 1000 requests/day 
+vpnapi.io
++1
+
+designed specifically for VPN/proxy/tor/private-relay detection
+
+This would give you a clean is_vpn/is_proxy/is_tor/is_relay verdict and confidence.
+
+E) Capture caller IP in audit
+
+Right now you log ip_address: null. On Cloudflare you can read:
+
+CF-Connecting-IP (usually)
+
+or X-Forwarded-For
+
+Even if you don’t store it for privacy reasons, it’s useful for rate limit and abuse detection.
