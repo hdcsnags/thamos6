@@ -1,11 +1,23 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+const ALLOWED_ORIGINS = new Set([
+  "https://t6.thamos.ca",
+  "https://thamos6.pages.dev",
+  "http://localhost:5173",
+  "http://localhost:5174",
+]);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.has(origin) ? origin : "https://t6.thamos.ca";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  };
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -58,11 +70,11 @@ interface IPEnrichment {
 }
 
 const FREE_SOURCES = [
-  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru"
+  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru", "blocklistde"
 ];
 
 const PAID_SOURCES = [
-  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy", "iphub"
+  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy", "iphub", "vpnapi"
 ];
 
 const CACHE_DURATION_HOURS = 6;
@@ -91,7 +103,7 @@ async function verifyAndGetTier(req: Request): Promise<TierContext> {
   const userId = user.id;
 
   if (email === ADMIN_EMAIL) {
-    return { tier: "dsbn", userId, email, cacheContext: "org:admin" };
+    return { tier: "dsbn", userId, email, cacheContext: "org:dsbn" };
   }
 
   if (email.endsWith(`@${TRUSTED_DOMAIN}`)) {
@@ -113,10 +125,24 @@ async function getOrgApiKeys(): Promise<Record<string, string>> {
     greynoise: Deno.env.get("GREYNOISE_API_KEY") ?? "",
     ip2proxy: Deno.env.get("IP2PROXY_API_KEY") ?? "",
     iphub: Deno.env.get("IPHUB_API_KEY") ?? "",
+    vpnapi: Deno.env.get("VPNAPI_API_KEY") ?? "",
   };
 }
 
-async function deriveEncryptionKey(): Promise<CryptoKey> {
+const API_KEY_ENCRYPTION_KEY = Deno.env.get("API_KEY_ENCRYPTION_KEY") ?? "";
+
+function decodeB64(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  if (!API_KEY_ENCRYPTION_KEY) throw new Error("Missing API_KEY_ENCRYPTION_KEY");
+  const raw = decodeB64(API_KEY_ENCRYPTION_KEY);
+  if (raw.byteLength !== 32) throw new Error("API_KEY_ENCRYPTION_KEY must be 32 bytes (base64)");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function deriveEncryptionKeyLegacy(): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -141,21 +167,28 @@ async function deriveEncryptionKey(): Promise<CryptoKey> {
 }
 
 async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }): Promise<string> {
-  if (!SUPABASE_SERVICE_ROLE_KEY) return "";
+  const iv = decodeB64(encrypted.iv);
+  const ciphertext = decodeB64(encrypted.ciphertext);
 
-  try {
-    const key = await deriveEncryptionKey();
-    const iv = Uint8Array.from(atob(encrypted.iv), c => c.charCodeAt(0));
-    const ciphertext = Uint8Array.from(atob(encrypted.ciphertext), c => c.charCodeAt(0));
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv }, key, ciphertext
-    );
-
-    return new TextDecoder().decode(decrypted);
-  } catch {
-    return "";
+  if (API_KEY_ENCRYPTION_KEY) {
+    try {
+      const key = await getEncryptionKey();
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+      return new TextDecoder().decode(decrypted);
+    } catch {
+    }
   }
+
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const legacyKey = await deriveEncryptionKeyLegacy();
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, ciphertext);
+      return new TextDecoder().decode(decrypted);
+    } catch {
+    }
+  }
+
+  return "";
 }
 
 async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
@@ -251,7 +284,14 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
   }
 }
 
+function getCallerIP(req: Request): string | null {
+  return req.headers.get("CF-Connecting-IP")
+    ?? req.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? null;
+}
+
 async function logAuditEvent(
+  req: Request,
   ctx: TierContext,
   action: string,
   resourceType: string,
@@ -259,6 +299,7 @@ async function logAuditEvent(
   metadata: Record<string, unknown> = {}
 ): Promise<void> {
   const requestId = crypto.randomUUID();
+  const callerIP = getCallerIP(req);
   await serviceClient.from("audit_events").insert({
     request_id: requestId,
     user_id: ctx.userId,
@@ -268,7 +309,7 @@ async function logAuditEvent(
     resource_type: resourceType,
     resource_id: resourceId,
     metadata,
-    ip_address: null,
+    ip_address: callerIP,
     created_at: new Date().toISOString(),
   });
 }
@@ -589,37 +630,56 @@ async function checkVPNProvider(asn: string | undefined, org: string | undefined
   try {
     const asnNumber = asn ? parseInt(asn.replace(/\D/g, "")) : null;
 
-    let query = serviceClient
-      .from("vpn_providers")
-      .select("provider_name, confidence, asn, org_pattern");
-
     if (asnNumber) {
-      query = query.eq("asn", asnNumber);
-    } else if (org) {
-      query = query.ilike("org_pattern", org.substring(0, 50));
-    } else {
-      return { source: "vpn_provider", data: { provider: null, confidence: null } };
-    }
+      const { data: asnMatch, error } = await serviceClient
+        .from("vpn_providers")
+        .select("provider_name, confidence, asn, org_pattern")
+        .eq("asn", asnNumber)
+        .limit(1)
+        .maybeSingle();
 
-    const { data, error } = await query.limit(1).maybeSingle();
+      if (error) throw error;
 
-    if (error) throw error;
-
-    if (data) {
-      return {
-        source: "vpn_provider",
-        data: {
-          provider: data.provider_name,
-          confidence: data.confidence,
-          matched_by: asnNumber ? "asn" : "org_pattern"
-        }
-      };
+      if (asnMatch) {
+        return {
+          source: "vpn_provider",
+          data: {
+            provider: asnMatch.provider_name,
+            confidence: asnMatch.confidence,
+            matched_by: "asn"
+          }
+        };
+      }
     }
 
     if (org) {
-      const orgLower = org.toLowerCase();
+      const { data: providers, error } = await serviceClient
+        .from("vpn_providers")
+        .select("provider_name, confidence, asn, org_pattern")
+        .not("org_pattern", "is", null);
+
+      if (error) throw error;
+
+      if (providers) {
+        const orgLower = org.toLowerCase();
+        const match = providers.find(p =>
+          p.org_pattern && orgLower.includes(p.org_pattern.toLowerCase())
+        );
+
+        if (match) {
+          return {
+            source: "vpn_provider",
+            data: {
+              provider: match.provider_name,
+              confidence: match.confidence,
+              matched_by: "org_pattern"
+            }
+          };
+        }
+      }
+
       const vpnKeywords = ["vpn", "proxy", "mullvad", "nord", "express", "proton", "surfshark", "cyberghost", "private internet access"];
-      const hasVpnKeyword = vpnKeywords.some(keyword => orgLower.includes(keyword));
+      const hasVpnKeyword = vpnKeywords.some(keyword => org.toLowerCase().includes(keyword));
 
       if (hasVpnKeyword) {
         return {
@@ -717,6 +777,83 @@ async function checkSpamhaus(ctx: TierContext, ip: string): Promise<ThreatResult
     return { source: "spamhaus", data: result, isMalicious: listedIn.length > 0, threatScore: listedIn.length > 0 ? 60 : 0 };
   } catch (e) {
     return { source: "spamhaus", data: {}, error: String(e) };
+  }
+}
+
+const BLOCKLIST_DE_ZONES = [
+  { zone: "all.bl.blocklist.de", name: "Blocklist.de All", description: "All attacking IPs in last 48h" },
+  { zone: "ssh.bl.blocklist.de", name: "Blocklist.de SSH", description: "SSH brute-force attackers" },
+  { zone: "mail.bl.blocklist.de", name: "Blocklist.de Mail", description: "Mail server attackers" },
+];
+
+async function checkBlocklistDE(ctx: TierContext, ip: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "blocklistde", ip);
+  if (cached) {
+    const lists = (cached as any)?.listedIn ?? [];
+    return { source: "blocklistde", data: cached, isMalicious: lists.length > 0, threatScore: lists.length > 0 ? 70 : 0 };
+  }
+  try {
+    const reversed = ip.split(".").reverse().join(".");
+    const listedIn: string[] = [];
+    const details: Record<string, any> = {};
+
+    const zoneChecks = await Promise.allSettled(
+      BLOCKLIST_DE_ZONES.map(async ({ zone, name, description }) => {
+        const response = await fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${reversed}.${zone}&type=A`, {
+          headers: { "Accept": "application/dns-json" }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.Answer && data.Answer.length > 0) {
+            return { zone, name, description, listed: true, returnCodes: data.Answer.map((a: any) => a.data) };
+          }
+        }
+        return null;
+      })
+    );
+
+    for (const result of zoneChecks) {
+      if (result.status === "fulfilled" && result.value) {
+        listedIn.push(result.value.name);
+        details[result.value.zone] = result.value;
+      }
+    }
+
+    const result = { ip, listedIn, details, checked: BLOCKLIST_DE_ZONES.map(z => z.name) };
+    await setCachedResponse(ctx, "blocklistde", ip, result);
+    return { source: "blocklistde", data: result, isMalicious: listedIn.length > 0, threatScore: listedIn.length > 0 ? 70 : 0 };
+  } catch (e) {
+    return { source: "blocklistde", data: {}, error: String(e) };
+  }
+}
+
+async function checkVPNAPI(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "vpnapi", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "vpnapi", ip);
+  if (cached) return { source: "vpnapi", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://vpnapi.io/api/${ip}?key=${apiKey}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "vpnapi", ip, data);
+    return {
+      source: "vpnapi",
+      data: {
+        ip: data.ip,
+        is_vpn: data.security?.vpn ?? false,
+        is_proxy: data.security?.proxy ?? false,
+        is_tor: data.security?.tor ?? false,
+        is_relay: data.security?.relay ?? false,
+        country: data.location?.country,
+        country_code: data.location?.country_code,
+        city: data.location?.city,
+        isp: data.network?.autonomous_system_organization,
+        asn: data.network?.autonomous_system_number ? `AS${data.network.autonomous_system_number}` : null,
+        source: "VPNAPI.io"
+      }
+    };
+  } catch (e) {
+    return { source: "vpnapi", data: {}, error: String(e) };
   }
 }
 
@@ -922,10 +1059,24 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     if (teamcymru.country_code && !enrichment.countryCode) enrichment.countryCode = teamcymru.country_code;
   }
 
+  const vpnapi = results.find(r => r.source === "vpnapi")?.data as any;
+  if (vpnapi && !vpnapi.error) {
+    if (vpnapi.is_vpn === true && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (vpnapi.is_proxy === true) enrichment.isProxy = true;
+    if (vpnapi.is_tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
+    if (vpnapi.country && !enrichment.country) enrichment.country = vpnapi.country;
+    if (vpnapi.country_code && !enrichment.countryCode) enrichment.countryCode = vpnapi.country_code;
+    if (vpnapi.city && !enrichment.city) enrichment.city = vpnapi.city;
+    if (vpnapi.isp && !enrichment.isp) enrichment.isp = vpnapi.isp;
+    if (vpnapi.asn && !enrichment.asn) enrichment.asn = vpnapi.asn;
+  }
+
   return enrichment;
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -937,6 +1088,7 @@ Deno.serve(async (req: Request) => {
 
     const apiKeys = await getApiKeysForTier(ctx);
     const allowedSources = getSourcesForTier(ctx.tier, apiKeys);
+    const canPersist = ctx.tier !== "anon";
 
     if (path === "/ip" || path === "/ip/") {
       const body = await req.json();
@@ -963,8 +1115,10 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("teoh")) sourcePromises.push(checkTeohVPN(ctx, ip));
       if (allowedSources.includes("greynoise")) sourcePromises.push(checkGreyNoise(ctx, ip, apiKeys.greynoise ?? ""));
       if (allowedSources.includes("spamhaus")) sourcePromises.push(checkSpamhaus(ctx, ip));
+      if (allowedSources.includes("blocklistde")) sourcePromises.push(checkBlocklistDE(ctx, ip));
       if (allowedSources.includes("iphub")) sourcePromises.push(checkIPHub(ctx, ip, apiKeys.iphub ?? ""));
       if (allowedSources.includes("teamcymru")) sourcePromises.push(checkTeamCymru(ctx, ip));
+      if (allowedSources.includes("vpnapi")) sourcePromises.push(checkVPNAPI(ctx, ip, apiKeys.vpnapi ?? ""));
 
       const settledResults = await Promise.allSettled(sourcePromises);
       const results: ThreatResult[] = settledResults
@@ -1002,16 +1156,18 @@ Deno.serve(async (req: Request) => {
         sourcesAvailable: allowedSources,
       };
 
-      await serviceClient.from("ip_lookups").insert({
-        ip_address: ip,
-        results: aggregated.results,
-        threat_score: aggregated.overallThreatScore,
-        sources_checked: results.map(r => r.source),
-        user_id: ctx.userId,
-        context: ctx.cacheContext,
-      });
+      if (canPersist) {
+        await serviceClient.from("ip_lookups").insert({
+          ip_address: ip,
+          results: aggregated.results,
+          threat_score: aggregated.overallThreatScore,
+          sources_checked: results.map(r => r.source),
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
 
-      await logAuditEvent(ctx, "ip_lookup", "ip", ip, { sources: results.map(r => r.source), threat_score: aggregated.overallThreatScore });
+        await logAuditEvent(req, ctx, "ip_lookup", "ip", ip, { sources: results.map(r => r.source), threat_score: aggregated.overallThreatScore });
+      }
 
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -1048,16 +1204,18 @@ Deno.serve(async (req: Request) => {
         sourcesAvailable: allowedSources,
       };
 
-      await serviceClient.from("url_lookups").insert({
-        url: targetUrl,
-        results: aggregated.results,
-        is_malicious: isMalicious,
-        threat_types: threatTypes,
-        user_id: ctx.userId,
-        context: ctx.cacheContext,
-      });
+      if (canPersist) {
+        await serviceClient.from("url_lookups").insert({
+          url: targetUrl,
+          results: aggregated.results,
+          is_malicious: isMalicious,
+          threat_types: threatTypes,
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
 
-      await logAuditEvent(ctx, "url_lookup", "url", targetUrl, { sources: results.map(r => r.source), is_malicious: isMalicious });
+        await logAuditEvent(req, ctx, "url_lookup", "url", targetUrl, { sources: results.map(r => r.source), is_malicious: isMalicious });
+      }
 
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -1080,6 +1238,7 @@ Deno.serve(async (req: Request) => {
         if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhaus(ctx, ip));
         if (allowedSources.includes("greynoise")) sourcePromises.push(checkGreyNoise(ctx, ip, apiKeys.greynoise ?? ""));
         if (allowedSources.includes("spamhaus")) sourcePromises.push(checkSpamhaus(ctx, ip));
+        if (allowedSources.includes("blocklistde")) sourcePromises.push(checkBlocklistDE(ctx, ip));
 
         const settledResults = await Promise.allSettled(sourcePromises);
         const ipResults: ThreatResult[] = settledResults
@@ -1089,6 +1248,7 @@ Deno.serve(async (req: Request) => {
         const ipapi = ipResults.find(r => r.source === "ipapi")?.data as any;
         const greynoise = ipResults.find(r => r.source === "greynoise")?.data as any;
         const spamhaus = ipResults.find(r => r.source === "spamhaus")?.data as any;
+        const blocklistde = ipResults.find(r => r.source === "blocklistde")?.data as any;
         const scores = ipResults.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
         const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
         const hasMaliciousHit = ipResults.some(r => r.isMalicious);
@@ -1109,7 +1269,9 @@ Deno.serve(async (req: Request) => {
           isMassScanner: greynoise?.noise === true,
           greynoiseClassification: greynoise?.classification ?? null,
           spamhausListed: (spamhaus?.listedIn?.length ?? 0) > 0,
-          spamhausLists: spamhaus?.listedIn ?? []
+          spamhausLists: spamhaus?.listedIn ?? [],
+          blocklistdeListed: (blocklistde?.listedIn?.length ?? 0) > 0,
+          blocklistdeLists: blocklistde?.listedIn ?? []
         };
       }));
 
@@ -1117,36 +1279,36 @@ Deno.serve(async (req: Request) => {
         .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
         .map(r => r.value);
 
-      await logAuditEvent(ctx, "bulk_lookup", "ip_batch", `${results.length}_ips`, { count: results.length, tier: ctx.tier });
+      if (canPersist) {
+        await logAuditEvent(req, ctx, "bulk_lookup", "ip_batch", `${results.length}_ips`, { count: results.length, tier: ctx.tier });
+      }
 
       return new Response(JSON.stringify({ results, total: results.length, tier: ctx.tier }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (path === "/config" || path === "/config/") {
       const orgKeys = await getOrgApiKeys();
-      const configured = {
-        virustotal: ctx.tier === "dsbn" ? !!orgKeys.virustotal : !!apiKeys.virustotal,
-        abuseipdb: ctx.tier === "dsbn" ? !!orgKeys.abuseipdb : !!apiKeys.abuseipdb,
-        alienvault: ctx.tier === "dsbn" ? !!orgKeys.alienvault : !!apiKeys.alienvault,
-        shodan: ctx.tier === "dsbn" ? !!orgKeys.shodan : !!apiKeys.shodan,
-        ipqualityscore: ctx.tier === "dsbn" ? !!orgKeys.ipqualityscore : !!apiKeys.ipqualityscore,
-        urlscan: ctx.tier === "dsbn" ? !!orgKeys.urlscan : !!apiKeys.urlscan,
-        proxycheck: ctx.tier === "dsbn" ? !!orgKeys.proxycheck : !!apiKeys.proxycheck,
-        greynoise: ctx.tier === "dsbn" ? !!orgKeys.greynoise : !!apiKeys.greynoise,
-        ipapi: true,
-        threatfox: true,
-        urlhaus: true,
-        rdap: true,
-        teoh: true,
-        spamhaus: true,
-        teamcymru: true
-      };
-
       const configResponse = {
         configured: {
-          ...configured,
+          virustotal: ctx.tier === "dsbn" ? !!orgKeys.virustotal : !!apiKeys.virustotal,
+          abuseipdb: ctx.tier === "dsbn" ? !!orgKeys.abuseipdb : !!apiKeys.abuseipdb,
+          alienvault: ctx.tier === "dsbn" ? !!orgKeys.alienvault : !!apiKeys.alienvault,
+          shodan: ctx.tier === "dsbn" ? !!orgKeys.shodan : !!apiKeys.shodan,
+          ipqualityscore: ctx.tier === "dsbn" ? !!orgKeys.ipqualityscore : !!apiKeys.ipqualityscore,
+          urlscan: ctx.tier === "dsbn" ? !!orgKeys.urlscan : !!apiKeys.urlscan,
+          proxycheck: ctx.tier === "dsbn" ? !!orgKeys.proxycheck : !!apiKeys.proxycheck,
+          greynoise: ctx.tier === "dsbn" ? !!orgKeys.greynoise : !!apiKeys.greynoise,
           ip2proxy: ctx.tier === "dsbn" ? !!orgKeys.ip2proxy : !!apiKeys.ip2proxy,
           iphub: ctx.tier === "dsbn" ? !!orgKeys.iphub : !!apiKeys.iphub,
+          vpnapi: ctx.tier === "dsbn" ? !!orgKeys.vpnapi : !!apiKeys.vpnapi,
+          ipapi: true,
+          threatfox: true,
+          urlhaus: true,
+          rdap: true,
+          teoh: true,
+          spamhaus: true,
+          teamcymru: true,
+          blocklistde: true,
         },
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
