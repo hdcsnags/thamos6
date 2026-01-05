@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2 } from 'lucide-react';
+import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
+import VictimIntelligence from '../components/VictimIntelligence';
 
 interface FeedItem {
   id: string;
@@ -67,6 +68,7 @@ export default function NewsFeed() {
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [showAddWatchlist, setShowAddWatchlist] = useState(false);
+  const [activeView, setActiveView] = useState<'news' | 'ransomware'>('news');
   const [newFeed, setNewFeed] = useState({ name: '', url: '', category: 'news', description: '' });
   const [newWatchlistEntry, setNewWatchlistEntry] = useState({ type: 'keyword', value: '', description: '', severity: 'medium' });
   const { checkForNewMatches } = useAlerts();
@@ -423,15 +425,44 @@ export default function NewsFeed() {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 mb-4">
           <Newspaper className="w-8 h-8 text-white" />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Security News Feed</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Threat Intelligence Platform</h1>
         <p className="text-slate-400">
-          Stay updated with the latest vulnerabilities, exploits, threats, and cybersecurity news from trusted sources
+          Comprehensive threat intelligence combining real-time security news and ransomware victim tracking
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex flex-wrap gap-2">
-          {categories.map(cat => (
+      <div className="flex justify-center gap-3 mb-6">
+        <button
+          onClick={() => setActiveView('news')}
+          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+            activeView === 'news'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg'
+              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <Newspaper className="w-5 h-5" />
+          RSS News Feeds
+        </button>
+        <button
+          onClick={() => setActiveView('ransomware')}
+          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+            activeView === 'ransomware'
+              ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg'
+              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <Shield className="w-5 h-5" />
+          Ransomware Intelligence
+        </button>
+      </div>
+
+      {activeView === 'ransomware' ? (
+        <VictimIntelligence />
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-3 items-center justify-between">
+            <div className="flex flex-wrap gap-2">
+              {categories.map(cat => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
@@ -916,6 +947,8 @@ export default function NewsFeed() {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );

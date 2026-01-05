@@ -20,24 +20,58 @@ export default function IOCExtractor() {
 
   const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
-    const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|\b(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b/g;
+    const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|\b(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b|\b::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}\b/g;
     const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-    const defangedUrlRegex = /hxxps?:\/\/[^\s<>"{}|\\^`\[\]]+|https?\[:\]\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+    const defangedUrlRegex = /hxxps?:\/\/[^\s<>"{}|\\^`\[\]]+|https?\[:\]\/\/[^\s<>"{}|\\^`\[\]]+|h[tx]{2}ps?\[?:\]?\/\/[^\s<>"{}|\\^`\[\]]+/gi;
     const domainRegex = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|edu|gov|mil|int|io|co|uk|de|fr|jp|cn|ru|br|in|au|info|biz|xyz|online|site|app|dev|tech|cloud|ai|me|tv|cc|ws|to|ly|gl|bit|goo|gg|zip|mov|ninja|top|wang|win|bid|party|stream|download|racing|review|trade|webcam|date|faith|accountant|science|loan|men|work|click|link|help|gift|pics|photo|hosting|world|email|live|systems|software|solutions|network|digital|media|agency|services|group|company|ltd|limited)\b/gi;
-    const defangedDomainRegex = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\[\.\])+[a-zA-Z]{2,}\b/gi;
+    const defangedDomainRegex = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\[\.\])+[a-zA-Z]{2,}\b|\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\(\.\))+[a-zA-Z]{2,}\b/gi;
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
-    const defangedEmailRegex = /\b[A-Za-z0-9._%+-]+\[@\][A-Za-z0-9.-]+\[\.\][A-Z|a-z]{2,}\b/gi;
+    const defangedEmailRegex = /\b[A-Za-z0-9._%+-]+\[@\][A-Za-z0-9.-]+\[\.\][A-Z|a-z]{2,}\b|\b[A-Za-z0-9._%+-]+\(at\)[A-Za-z0-9.-]+\(dot\)[A-Z|a-z]{2,}\b/gi;
     const md5Regex = /\b[a-fA-F0-9]{32}\b/g;
     const sha1Regex = /\b[a-fA-F0-9]{40}\b/g;
     const sha256Regex = /\b[a-fA-F0-9]{64}\b/g;
     const cveRegex = /CVE-\d{4}-\d{4,}/gi;
 
+    const unwrapSafeLinks = (url: string): string => {
+      try {
+        if (url.includes('safelinks.protection.outlook.com')) {
+          const urlObj = new URL(url);
+          const actualUrl = urlObj.searchParams.get('url');
+          if (actualUrl) return decodeURIComponent(actualUrl);
+        }
+        if (url.includes('urldefense.proofpoint.com') || url.includes('urldefense.com')) {
+          const match = url.match(/u=([^&]+)/);
+          if (match) {
+            const encoded = match[1];
+            try {
+              return decodeURIComponent(encoded.replace(/-/g, '%').replace(/_/g, '/'));
+            } catch {
+              return url;
+            }
+          }
+        }
+        if (url.includes('google.com/url')) {
+          const urlObj = new URL(url);
+          const actualUrl = urlObj.searchParams.get('q') || urlObj.searchParams.get('url');
+          if (actualUrl) return decodeURIComponent(actualUrl);
+        }
+      } catch {
+        return url;
+      }
+      return url;
+    };
+
     const refang = (str: string): string => {
       return str
         .replace(/\[\.\]/g, '.')
+        .replace(/\(\.\)/g, '.')
         .replace(/\[@\]/g, '@')
+        .replace(/\(at\)/gi, '@')
+        .replace(/\(dot\)/gi, '.')
         .replace(/hxxp/gi, 'http')
-        .replace(/\[:\]/g, ':');
+        .replace(/h[tx]{2}p/gi, 'http')
+        .replace(/\[:\]/g, ':')
+        .replace(/\(:\)/g, ':');
     };
 
     const dedup = (arr: string[]): string[] => [...new Set(arr)];
@@ -49,8 +83,8 @@ export default function IOCExtractor() {
     const ipv6 = dedup(text.match(ipv6Regex) || []);
 
     const urls = dedup([
-      ...(text.match(urlRegex) || []),
-      ...(text.match(defangedUrlRegex) || []).map(refang),
+      ...(text.match(urlRegex) || []).map(unwrapSafeLinks),
+      ...(text.match(defangedUrlRegex) || []).map(refang).map(unwrapSafeLinks),
     ]);
 
     const allDomains = dedup([
