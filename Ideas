@@ -1,0 +1,72 @@
+1) Make the first page a “Smart IOC Intake” (like you described)
+
+Paste anything (email text, headers, URL, hash, random blob), then:
+
+auto-extract IOCs (IPs/domains/urls/hashes)
+show counts + dedupe
+run lookups by type in parallel
+return one unified verdict card: “Likely VPN”, “Tor exit”, “Residential”, “Known scanner”, “Malware URL”, etc.
+This turns your IOC Extractor into a workflow starter instead of a separate tool.
+
+2) Add confidence + “why” for VPN/Tor/Proxy
+
+Instead of a single boolean, show:
+
+isVPN: true (confidence: High)
+Signals: IP2Proxy=VPN, IPQS=vpn=true, org match “Nord”, TorExitList=false
+This prevents the “it feels wrong” problem because the analyst sees the evidence.
+3) Normalize and standardize provider names
+
+Create a small mapping layer:
+
+“AS9009 M247”, “DataCamp Limited”, “LeaseWeb” ⇒ Hosting/DC
+“Mullvad”, “Nord”, “Proton”, “Surfshark” ⇒ Commercial VPN
+Even a lightweight keyword + table approach (like your vpn_providers table idea) is gold.
+
+4) Add one-click actions (school-board reality)
+
+For your context, the “so what?” matters:
+
+Block recommendation (edge/firewall/WAF)
+Force password reset? (if correlated with suspicious sign-in)
+Add to watchlist (keyword or IOC)
+Open case note pre-filled (IOC + summary)
+
+5) Fill the gaps in the IOC extractor (so it catches real-world obfuscation)
+
+Right now it’s regex-based and useful
+
+acfa091b-c905-4fda-9a5d-90c7c2b…
+
+, but to make it field-ready:
+
+Detect defanged forms: hxxp, evil[.]com, example(.)com
+IPv6 support
+“URL in parentheses / punctuation” cleanup
+Strip common email gateway rewrites (Safe Links-style wrapping)
+Output in multiple formats: plain / defanged / CSV / JSON / STIX-ish
+6) Add more “sources” strategically (don’t just add random)
+
+What’s worth adding depends on what you investigate most:
+
+URL / Phishing
+
+Google Safe Browsing / similar category reputation
+Phish-focused feeds (OpenPhish / PhishTank-type)
+Screenshot/headless detonation (even a “submit to urlscan” button is already a good start)
+Domain
+
+Passive DNS / historical resolution (if you can)
+Registrar reputation + domain age (fast “new domain = suspicious” signal)
+Hash / Malware
+
+MalwareBazaar/abuse.ch family (good free coverage)
+Hybrid-analysis / detonation metadata (if you can)
+Internet exposure
+
+Censys-like or Shodan-like exposure info (you already have Shodan as a paid option in the design)
+7) Add rate limits + abuse controls (before you expose it wider)
+
+Your own manual flags no rate limiting as a risk.
+
+acfa091b-c905-4fda-9a5d-90c7c2b…
