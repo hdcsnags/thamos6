@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText } from 'lucide-react';
+import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { lookupIP } from '../lib/threatIntel';
 import { classifyIPVerdict, classifyDomainVerdict, classifyURLVerdict, classifyHashVerdict, exportToCSV, exportToJSON, exportToPlainText, exportToDefanged, IOCAnalysisResult } from '../lib/iocAnalysis';
 import { supabase } from '../lib/supabase';
@@ -527,6 +527,29 @@ export default function IOCExtractor() {
                           ))}
                         </ul>
                       </div>
+
+                      {result.sources && Object.keys(result.sources).length > 0 && (
+                        <div>
+                          <button
+                            onClick={() => setExpandedResult(expandedResult === result.ioc ? null : result.ioc)}
+                            className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase hover:text-slate-300 transition-colors"
+                          >
+                            {expandedResult === result.ioc ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                            Raw Threat Intel Data
+                          </button>
+                          {expandedResult === result.ioc && (
+                            <div className="mt-2 bg-slate-800/50 rounded-lg p-3 max-h-96 overflow-auto">
+                              <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap break-words">
+                                {JSON.stringify(result.sources, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex gap-2 pt-3 border-t border-slate-800">

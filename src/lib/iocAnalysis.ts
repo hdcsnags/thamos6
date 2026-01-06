@@ -29,11 +29,56 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
   if (enrichment.isTor) {
     verdict = 'Tor Exit Node';
     badges.push('Tor Network');
-    evidence.push('Confirmed Tor exit node from Tor Project list');
-    severity = 'medium';
-    color = 'amber';
+    evidence.push('Confirmed Tor exit node from official Tor Project list');
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (enrichment.org) {
+      evidence.push(`Organization: ${enrichment.org}`);
+    }
+
+    if (data.overallThreatScore > 0) {
+      evidence.push(`Threat score: ${data.overallThreatScore}/100`);
+      if (data.overallThreatScore > 60) {
+        badges.push('High Abuse');
+        severity = 'high';
+        color = 'orange';
+      } else {
+        severity = 'medium';
+        color = 'amber';
+      }
+    } else {
+      severity = 'medium';
+      color = 'amber';
+    }
+
+    if (enrichment.isMassScanner) {
+      badges.push('Mass Scanner');
+      evidence.push('Detected scanning large portions of internet');
+    }
+
+    if (data.sources?.abuseipdb?.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
     confidence = 95;
-    recommendations.push('Exercise caution - Tor traffic can indicate privacy-conscious user or malicious activity');
+
+    recommendations.push('BLOCK for most use cases - Tor exit nodes are frequently abused');
+    recommendations.push('Review any recent connections from this IP in your logs');
+    recommendations.push('Check if legitimate users need Tor access for your service');
+    recommendations.push('Consider implementing additional authentication for Tor users');
+    recommendations.push('Monitor for credential stuffing, scraping, or brute force attempts');
+
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
@@ -42,6 +87,26 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     verdict = `Commercial VPN`;
     badges.push(`VPN: ${provider}`);
     evidence.push(`Identified as VPN service: ${provider}`);
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (data.sources?.abuseipdb?.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
+    if (data.overallThreatScore > 0) {
+      evidence.push(`Threat score: ${data.overallThreatScore}/100`);
+    }
 
     if (provider.toLowerCase().includes('mullvad') || provider.toLowerCase().includes('proton')) {
       badges.push('Privacy-Focused');
@@ -53,7 +118,9 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     severity = 'low';
     color = 'blue';
     recommendations.push('VPN usage is common for privacy but can hide malicious activity');
-    recommendations.push('Check for suspicious behavior patterns');
+    recommendations.push('Check for suspicious behavior patterns in your logs');
+    recommendations.push('Verify if this aligns with expected user behavior');
+    recommendations.push('Consider rate limiting or CAPTCHA for VPN users if abuse occurs');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
@@ -61,6 +128,31 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     verdict = 'Proxy Server';
     badges.push('Proxy');
     evidence.push('Detected as proxy server');
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (enrichment.org) {
+      evidence.push(`Organization: ${enrichment.org}`);
+    }
+
+    if (data.overallThreatScore > 0) {
+      evidence.push(`Threat score: ${data.overallThreatScore}/100`);
+    }
+
+    if (data.sources?.abuseipdb?.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
     severity = 'medium';
     color = 'yellow';
     confidence = 80;
@@ -72,6 +164,8 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
 
     recommendations.push('Proxy servers can be used to anonymize traffic');
     recommendations.push('Investigate the purpose and origin of connection');
+    recommendations.push('Check for patterns indicating bot traffic or abuse');
+    recommendations.push('Consider blocking if no legitimate use case exists');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
@@ -79,9 +173,28 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     verdict = 'Known Malicious';
     badges.push('Active Threat');
     evidence.push(`High threat score: ${data.overallThreatScore}/100`);
-    severity = 'critical';
-    color = 'red';
-    confidence = 90;
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (enrichment.org) {
+      evidence.push(`Organization: ${enrichment.org}`);
+    }
+
+    if (data.sources?.abuseipdb) {
+      if (data.sources.abuseipdb.totalReports > 0) {
+        evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      }
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
 
     if (enrichment.spamhausListed) {
       badges.push('Spamhaus Listed');
@@ -90,12 +203,33 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
 
     if (enrichment.isMassScanner) {
       badges.push('Mass Scanner');
-      evidence.push('Observed scanning internet');
+      evidence.push('Observed scanning large portions of internet');
     }
+
+    if (enrichment.isTor) {
+      badges.push('Tor Network');
+      evidence.push('Also identified as Tor exit node');
+    }
+
+    if (enrichment.isVPN) {
+      badges.push('VPN');
+      evidence.push('Also identified as VPN endpoint');
+    }
+
+    if (enrichment.isProxy) {
+      badges.push('Proxy');
+      evidence.push('Also identified as proxy server');
+    }
+
+    severity = 'critical';
+    color = 'red';
+    confidence = 90;
 
     recommendations.push('BLOCK IMMEDIATELY - Known malicious activity');
     recommendations.push('Check for any connections from this IP in logs');
     recommendations.push('Consider force password reset if any successful authentication');
+    recommendations.push('Review and revoke any sessions from this IP');
+    recommendations.push('Add to threat intel feeds and WAF blocklists');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
