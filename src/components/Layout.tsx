@@ -33,7 +33,7 @@ const navCategories: NavCategory[] = [
   {
     label: 'Analysis Tools',
     items: [
-      { id: 'ioc', label: 'IOC Extractor', icon: FileSearch },
+      { id: 'ioc', label: 'Smart IOC Intake', icon: FileSearch },
       { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
       { id: 'decoder', label: 'Decoder', icon: Code },
     ],

@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { FileSearch, Copy, Check, Trash2, ExternalLink, Search } from 'lucide-react';
+import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText } from 'lucide-react';
+import { lookupIP } from '../lib/threatIntel';
+import { classifyIPVerdict, classifyDomainVerdict, classifyURLVerdict, classifyHashVerdict, exportToCSV, exportToJSON, exportToPlainText, exportToDefanged, IOCAnalysisResult } from '../lib/iocAnalysis';
+import { supabase } from '../lib/supabase';
 
 interface ExtractedIOCs {
   ips: string[];
@@ -17,6 +20,9 @@ export default function IOCExtractor() {
   const [input, setInput] = useState('');
   const [iocs, setIocs] = useState<ExtractedIOCs | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
+  const [expandedResult, setExpandedResult] = useState<string | null>(null);
 
   const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
@@ -78,7 +84,7 @@ export default function IOCExtractor() {
 
     const ips = dedup([
       ...(text.match(ipv4Regex) || []),
-    ]).filter(ip => !ip.startsWith('0.') && !ip.startsWith('255.'));
+    ]).filter(ip => !ip.startsWith('0.') && !ip.startsWith('255.') && !ip.startsWith('127.'));
 
     const ipv6 = dedup(text.match(ipv6Regex) || []);
 
@@ -122,6 +128,144 @@ export default function IOCExtractor() {
   const handleExtract = () => {
     if (!input.trim()) return;
     setIocs(extractIOCs(input));
+    setAnalysisResults([]);
+    setExpandedResult(null);
+  };
+
+  const handleAnalyze = async () => {
+    if (!iocs) return;
+
+    setAnalyzing(true);
+    const results: IOCAnalysisResult[] = [];
+
+    try {
+      const ipPromises = iocs.ips.slice(0, 10).map(async (ip) => {
+        try {
+          const data = await lookupIP(ip);
+          const enrichment = {
+            isTor: data.sources?.teoh?.is_tor || false,
+            isVPN: data.sources?.ipqualityscore?.vpn || data.sources?.ip2proxy?.proxy_type === 'VPN' || false,
+            isProxy: data.sources?.ipqualityscore?.proxy || data.sources?.ip2proxy?.proxy_type === 'PROXY' || false,
+            isHosting: data.sources?.ipapi?.hosting || data.sources?.ipqualityscore?.is_crawler || false,
+            vpnService: data.sources?.ipqualityscore?.organization || data.sources?.ipapi?.org || '',
+            country: data.sources?.ipapi?.country || data.sources?.ipqualityscore?.country_code || '',
+            isp: data.sources?.ipapi?.isp || '',
+            org: data.sources?.ipapi?.org || '',
+            spamhausListed: false,
+            spamhausLists: [],
+            isMassScanner: data.sources?.abuseipdb?.totalReports > 50 || false,
+            isKnownScanner: data.sources?.greynoise?.classification === 'benign' || false,
+            scannerType: data.sources?.greynoise?.classification || ''
+          };
+
+          const verdict = classifyIPVerdict(data, enrichment);
+
+          results.push({
+            ioc: ip,
+            type: 'ip',
+            verdict,
+            sources: data.sources || {},
+            enrichment,
+            checkedAt: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error(`Failed to analyze IP ${ip}:`, error);
+        }
+      });
+
+      await Promise.all(ipPromises);
+
+      setAnalysisResults(results);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleAddToWatchlist = async (ioc: string, type: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please sign in to add items to watchlist');
+        return;
+      }
+
+      await supabase.from('watchlist_entries').insert({
+        user_id: user.id,
+        entry_type: type,
+        value: ioc,
+        severity: 'medium',
+        is_active: true
+      });
+
+      alert('Added to watchlist');
+    } catch (error) {
+      console.error('Failed to add to watchlist:', error);
+      alert('Failed to add to watchlist');
+    }
+  };
+
+  const handleCreateCase = async (ioc: string, type: string, verdict: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please sign in to create case notes');
+        return;
+      }
+
+      const { error } = await supabase.from('case_notes').insert({
+        title: `Investigation: ${type.toUpperCase()} - ${ioc}`,
+        description: `Automated case created from Smart IOC Intake\n\nVerdict: ${verdict}\n\nIOC: ${ioc}`,
+        status: 'open',
+        priority: 'medium',
+        iocs: [{ type, value: ioc, notes: `Verdict: ${verdict}` }],
+        tags: ['automated', type]
+      });
+
+      if (error) throw error;
+      alert('Case note created successfully');
+    } catch (error) {
+      console.error('Failed to create case:', error);
+      alert('Failed to create case note');
+    }
+  };
+
+  const handleExport = (format: 'csv' | 'json' | 'plain' | 'defanged') => {
+    if (analysisResults.length === 0) return;
+
+    let content = '';
+    let filename = '';
+    let mimeType = '';
+
+    switch (format) {
+      case 'csv':
+        content = exportToCSV(analysisResults);
+        filename = 'ioc-analysis.csv';
+        mimeType = 'text/csv';
+        break;
+      case 'json':
+        content = exportToJSON(analysisResults);
+        filename = 'ioc-analysis.json';
+        mimeType = 'application/json';
+        break;
+      case 'plain':
+        content = exportToPlainText(analysisResults);
+        filename = 'ioc-analysis.txt';
+        mimeType = 'text/plain';
+        break;
+      case 'defanged':
+        content = exportToDefanged(analysisResults);
+        filename = 'ioc-defanged.txt';
+        mimeType = 'text/plain';
+        break;
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCopy = async (items: string[], type: string) => {
@@ -185,18 +329,6 @@ export default function IOCExtractor() {
             {items.map((item, i) => (
               <div key={i} className="flex items-center justify-between group p-2 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors">
                 <code className="text-sm text-slate-300 font-mono break-all">{item}</code>
-                {(type === 'ips' || type === 'domains') && (
-                  <a
-                    href={`#`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-cyan-400 transition-all"
-                    title="Lookup"
-                  >
-                    <Search className="w-4 h-4" />
-                  </a>
-                )}
               </div>
             ))}
           </div>
@@ -211,10 +343,10 @@ export default function IOCExtractor() {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
           <FileSearch className="w-8 h-8 text-white" />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">IOC Extractor</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Smart IOC Intake</h1>
         <p className="text-slate-400">
-          Paste raw logs, emails, reports, or any text to automatically extract
-          IPs, URLs, domains, hashes, emails, and CVEs. Supports defanged indicators.
+          Paste raw logs, emails, reports, or any text to automatically extract and analyze
+          IPs, URLs, domains, hashes, emails, and CVEs. Get instant verdicts with confidence scores.
         </p>
       </div>
 
@@ -222,12 +354,14 @@ export default function IOCExtractor() {
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
           <div className="flex items-center justify-between mb-3">
             <label className="text-sm font-medium text-slate-300">
-              Paste Text to Extract IOCs
+              Paste Text to Extract & Analyze IOCs
             </label>
             <button
               onClick={() => {
                 setInput('');
                 setIocs(null);
+                setAnalysisResults([]);
+                setExpandedResult(null);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
             >
@@ -238,7 +372,7 @@ export default function IOCExtractor() {
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Paste logs, threat reports, emails, or any text containing IOCs...&#10;&#10;Supports:&#10;- IPv4 & IPv6 addresses&#10;- URLs (including hxxp defanged)&#10;- Domains (including [.] defanged)&#10;- Email addresses&#10;- MD5, SHA1, SHA256 hashes&#10;- CVE identifiers"
+            placeholder="Paste logs, threat reports, emails, or any text containing IOCs...&#10;&#10;Supports:&#10;- IPv4 & IPv6 addresses&#10;- URLs (including hxxp defanged)&#10;- Domains (including [.] defanged)&#10;- Email addresses&#10;- MD5, SHA1, SHA256 hashes&#10;- CVE identifiers&#10;- Automatically unwraps SafeLinks and ProofPoint URLs"
             className="w-full h-48 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
           />
           <div className="mt-4 flex justify-end">
@@ -262,23 +396,160 @@ export default function IOCExtractor() {
                 {totalCount} IOCs Found
               </span>
             </div>
-            <button
-              onClick={handleCopyAll}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              {copied === 'all' ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Copied All
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Copy All IOCs
-                </>
+            <div className="flex gap-2">
+              {iocs.ips.length > 0 && (
+                <button
+                  onClick={handleAnalyze}
+                  disabled={analyzing}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 transition-all font-medium"
+                >
+                  {analyzing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Analyze IPs
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+              <button
+                onClick={handleCopyAll}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                {copied === 'all' ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy All
+                  </>
+                )}
+              </button>
+            </div>
           </div>
+
+          {analysisResults.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-emerald-400" />
+                  Analysis Results
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('json')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    JSON
+                  </button>
+                  <button
+                    onClick={() => handleExport('plain')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Text
+                  </button>
+                </div>
+              </div>
+
+              {analysisResults.map((result) => (
+                <div
+                  key={result.ioc}
+                  className={`bg-slate-900 rounded-xl border-2 transition-all ${
+                    result.verdict.severity === 'critical' ? 'border-red-500/50' :
+                    result.verdict.severity === 'high' ? 'border-orange-500/50' :
+                    result.verdict.severity === 'medium' ? 'border-yellow-500/50' :
+                    result.verdict.severity === 'low' ? 'border-blue-500/50' :
+                    'border-slate-700'
+                  }`}
+                >
+                  <div className="p-5">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <code className="text-lg font-semibold text-white font-mono">{result.ioc}</code>
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase bg-${result.verdict.color}-500/20 text-${result.verdict.color}-400`}>
+                            {result.type}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-3 py-1 rounded-lg text-sm font-semibold bg-${result.verdict.color}-500/20 text-${result.verdict.color}-400`}>
+                            {result.verdict.verdict}
+                          </span>
+                          <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded text-xs">
+                            Confidence: {result.verdict.confidence}%
+                          </span>
+                          {result.verdict.badges.map((badge, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-xs">
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 mb-4">
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-400 uppercase mb-1.5">Evidence</h4>
+                        <ul className="space-y-1">
+                          {result.verdict.evidence.map((ev, i) => (
+                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                              <span className="text-cyan-400 mt-1">•</span>
+                              <span>{ev}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-400 uppercase mb-1.5">Recommendations</h4>
+                        <ul className="space-y-1">
+                          {result.verdict.recommendations.map((rec, i) => (
+                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                              <span className="text-amber-400 mt-1">→</span>
+                              <span>{rec}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-3 border-t border-slate-800">
+                      <button
+                        onClick={() => handleAddToWatchlist(result.ioc, result.type)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 transition-colors"
+                      >
+                        <BookmarkPlus className="w-3.5 h-3.5" />
+                        Add to Watchlist
+                      </button>
+                      <button
+                        onClick={() => handleCreateCase(result.ioc, result.type, result.verdict.verdict)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        Create Case
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {totalCount === 0 ? (
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 text-center">
