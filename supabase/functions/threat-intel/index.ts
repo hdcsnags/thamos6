@@ -1154,13 +1154,25 @@ Deno.serve(async (req: Request) => {
       if (enrichment.spamhausListed) threatBoost += 25;
       if (enrichment.isMassScanner && enrichment.scannerType === "malicious") threatBoost += 30;
 
+      const normalizedSources: Record<string, any> = {};
+      for (const r of results) {
+        normalizedSources[r.source] = r.data;
+      }
+
+      const detectionSources: string[] = [];
+      if (enrichment.isTor) detectionSources.push("Tor Exit List");
+      if (enrichment.isVPN && enrichment.vpnService) detectionSources.push("IP2Proxy + VPN DB");
+      if (enrichment.isProxy) detectionSources.push("IP2Proxy + ProxyCheck");
+
       const aggregated = {
         ip,
         enrichment,
         overallThreatScore: Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100),
         maxThreatScore: maxScore,
         isMalicious: hasMaliciousHit || maxScore > 50,
-        results: Object.fromEntries(results.map(r => [r.source, r])),
+        sources: normalizedSources,
+        detectionSources,
+        detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
@@ -1242,7 +1254,10 @@ Deno.serve(async (req: Request) => {
       const bulkResults = await Promise.allSettled(limitedIps.map(async (ip) => {
         const sourcePromises: Promise<ThreatResult>[] = [];
 
+        sourcePromises.push(checkTorExitList(ip));
         if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
+        if (allowedSources.includes("ip2proxy")) sourcePromises.push(checkIP2Proxy(ctx, ip, apiKeys.ip2proxy ?? ""));
+        if (allowedSources.includes("teoh")) sourcePromises.push(checkTeohVPN(ctx, ip));
         if (allowedSources.includes("abuseipdb")) sourcePromises.push(checkAbuseIPDB(ctx, ip, apiKeys.abuseipdb ?? ""));
         if (allowedSources.includes("threatfox")) sourcePromises.push(checkThreatFox(ctx, ip));
         if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhaus(ctx, ip));
@@ -1256,6 +1271,13 @@ Deno.serve(async (req: Request) => {
           .map(r => r.value);
 
         const ipapi = ipResults.find(r => r.source === "ipapi")?.data as any;
+        const asn = ipapi?.as;
+        const org = ipapi?.org;
+        const vpnCheck = await checkVPNProvider(asn, org);
+        ipResults.push(vpnCheck);
+
+        const enrichment = extractEnrichment(ipResults);
+
         const greynoise = ipResults.find(r => r.source === "greynoise")?.data as any;
         const spamhaus = ipResults.find(r => r.source === "spamhaus")?.data as any;
         const blocklistde = ipResults.find(r => r.source === "blocklistde")?.data as any;
@@ -1263,16 +1285,28 @@ Deno.serve(async (req: Request) => {
         const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
         const hasMaliciousHit = ipResults.some(r => r.isMalicious);
 
+        let threatBoost = 0;
+        if (enrichment.isTor) threatBoost += 20;
+        if (enrichment.isVPN) threatBoost += 10;
+        if (enrichment.isProxy) threatBoost += 15;
+        if (enrichment.spamhausListed) threatBoost += 25;
+        if (enrichment.isMassScanner && enrichment.scannerType === "malicious") threatBoost += 30;
+
         return {
           ip,
-          threatScore: Math.max(avgScore, hasMaliciousHit ? 50 : 0),
+          threatScore: Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100),
           isMalicious: hasMaliciousHit || avgScore > 50,
-          country: ipapi?.country ?? null,
-          countryCode: ipapi?.countryCode ?? null,
-          city: ipapi?.city ?? null,
-          isp: ipapi?.isp ?? null,
-          isProxy: ipapi?.proxy === true,
-          isHosting: ipapi?.hosting === true,
+          enrichment,
+          country: enrichment.country ?? null,
+          countryCode: enrichment.countryCode ?? null,
+          city: enrichment.city ?? null,
+          isp: enrichment.isp ?? null,
+          org: enrichment.org ?? null,
+          isTor: enrichment.isTor ?? false,
+          isVPN: enrichment.isVPN ?? false,
+          isProxy: enrichment.isProxy ?? false,
+          isHosting: enrichment.isHosting ?? false,
+          vpnService: enrichment.vpnService ?? null,
           abuseConfidence: (ipResults.find(r => r.source === "abuseipdb")?.data as any)?.data?.abuseConfidenceScore ?? null,
           inThreatFox: ipResults.find(r => r.source === "threatfox")?.isMalicious ?? false,
           inURLhaus: ipResults.find(r => r.source === "urlhaus")?.isMalicious ?? false,

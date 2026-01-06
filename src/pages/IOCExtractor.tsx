@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText, ChevronDown, ChevronUp } from 'lucide-react';
-import { lookupIP } from '../lib/threatIntel';
+import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText, ChevronDown, ChevronUp, Ban, KeyRound, ArrowUpCircle } from 'lucide-react';
+import { bulkLookupIPs } from '../lib/threatIntel';
 import { classifyIPVerdict, classifyDomainVerdict, classifyURLVerdict, classifyHashVerdict, exportToCSV, exportToJSON, exportToPlainText, exportToDefanged, IOCAnalysisResult } from '../lib/iocAnalysis';
 import { supabase } from '../lib/supabase';
 
@@ -23,6 +23,7 @@ export default function IOCExtractor() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
+  const [analysisMode, setAnalysisMode] = useState<'fast' | 'full'>('fast');
 
   const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
@@ -139,43 +140,50 @@ export default function IOCExtractor() {
     const results: IOCAnalysisResult[] = [];
 
     try {
-      const ipPromises = iocs.ips.slice(0, 10).map(async (ip) => {
-        try {
-          const data = await lookupIP(ip);
-          const enrichment = {
-            isTor: data.sources?.teoh?.is_tor || false,
-            isVPN: data.sources?.ipqualityscore?.vpn || data.sources?.ip2proxy?.proxy_type === 'VPN' || false,
-            isProxy: data.sources?.ipqualityscore?.proxy || data.sources?.ip2proxy?.proxy_type === 'PROXY' || false,
-            isHosting: data.sources?.ipapi?.hosting || data.sources?.ipqualityscore?.is_crawler || false,
-            vpnService: data.sources?.ipqualityscore?.organization || data.sources?.ipapi?.org || '',
-            country: data.sources?.ipapi?.country || data.sources?.ipqualityscore?.country_code || '',
-            isp: data.sources?.ipapi?.isp || '',
-            org: data.sources?.ipapi?.org || '',
-            spamhausListed: false,
-            spamhausLists: [],
-            isMassScanner: data.sources?.abuseipdb?.totalReports > 50 || false,
-            isKnownScanner: data.sources?.greynoise?.classification === 'benign' || false,
-            scannerType: data.sources?.greynoise?.classification || ''
-          };
+      const ipsToAnalyze = analysisMode === 'fast' ? iocs.ips.slice(0, 10) : iocs.ips;
 
-          const verdict = classifyIPVerdict(data, enrichment);
+      const { results: bulkResults } = await bulkLookupIPs(ipsToAnalyze);
 
-          results.push({
-            ioc: ip,
-            type: 'ip',
-            verdict,
-            sources: data.sources || {},
-            enrichment,
-            checkedAt: new Date().toISOString()
-          });
-        } catch (error) {
-          console.error(`Failed to analyze IP ${ip}:`, error);
-        }
-      });
+      for (const ipData of bulkResults) {
+        const enrichment = {
+          isTor: ipData.isTor || false,
+          isVPN: ipData.isVPN || false,
+          isProxy: ipData.isProxy || false,
+          isHosting: ipData.isHosting || false,
+          vpnService: ipData.vpnService || '',
+          country: ipData.country || '',
+          isp: ipData.isp || '',
+          org: ipData.org || '',
+          spamhausListed: ipData.spamhausListed || false,
+          spamhausLists: ipData.spamhausLists || [],
+          isMassScanner: ipData.isMassScanner || false,
+          isKnownScanner: ipData.greynoiseClassification === 'benign' || false,
+          scannerType: ipData.greynoiseClassification || ''
+        };
 
-      await Promise.all(ipPromises);
+        const mockData = {
+          overallThreatScore: ipData.threatScore,
+          isMalicious: ipData.isMalicious,
+          sources: {
+            abuseipdb: { totalReports: 0, abuseConfidenceScore: ipData.abuseConfidence || 0 }
+          }
+        };
+
+        const verdict = classifyIPVerdict(mockData, enrichment);
+
+        results.push({
+          ioc: ipData.ip,
+          type: 'ip',
+          verdict,
+          sources: {},
+          enrichment,
+          checkedAt: new Date().toISOString()
+        });
+      }
 
       setAnalysisResults(results);
+    } catch (error) {
+      console.error('Failed to analyze IPs:', error);
     } finally {
       setAnalyzing(false);
     }
@@ -398,23 +406,47 @@ export default function IOCExtractor() {
             </div>
             <div className="flex gap-2">
               {iocs.ips.length > 0 && (
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 transition-all font-medium"
-                >
-                  {analyzing ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" />
-                      Analyze IPs
-                    </>
-                  )}
-                </button>
+                <>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg">
+                    <button
+                      onClick={() => setAnalysisMode('fast')}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        analysisMode === 'fast'
+                          ? 'bg-emerald-500 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Fast (10)
+                    </button>
+                    <button
+                      onClick={() => setAnalysisMode('full')}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        analysisMode === 'full'
+                          ? 'bg-emerald-500 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Full ({iocs.ips.length})
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 transition-all font-medium"
+                  >
+                    {analyzing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4" />
+                        Analyze IPs
+                      </>
+                    )}
+                  </button>
+                </>
               )}
               <button
                 onClick={handleCopyAll}
@@ -551,6 +583,54 @@ export default function IOCExtractor() {
                         </div>
                       )}
                     </div>
+
+                    {(result.verdict.severity === 'critical' || result.verdict.severity === 'high' || result.verdict.severity === 'medium') && (
+                      <div className="bg-slate-800/50 rounded-lg p-4 border-l-4 border-amber-500">
+                        <h4 className="text-xs font-semibold text-amber-400 uppercase mb-2">Operations Decision</h4>
+                        <div className="space-y-2">
+                          {result.verdict.severity === 'critical' && (
+                            <>
+                              <div className="flex items-start gap-2 text-sm">
+                                <Ban className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-red-400">BLOCK:</span> Add to firewall/WAF blocklist immediately</span>
+                              </div>
+                              <div className="flex items-start gap-2 text-sm">
+                                <KeyRound className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-orange-400">PASSWORD RESET:</span> Force password reset if any successful authentication</span>
+                              </div>
+                              <div className="flex items-start gap-2 text-sm">
+                                <ArrowUpCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-yellow-400">ESCALATE:</span> Create incident ticket and notify security team</span>
+                              </div>
+                            </>
+                          )}
+                          {result.verdict.severity === 'high' && (
+                            <>
+                              <div className="flex items-start gap-2 text-sm">
+                                <Ban className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-orange-400">BLOCK:</span> Consider adding to blocklist after log review</span>
+                              </div>
+                              <div className="flex items-start gap-2 text-sm">
+                                <ArrowUpCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-amber-400">ESCALATE:</span> Create case note and monitor for 24 hours</span>
+                              </div>
+                            </>
+                          )}
+                          {result.verdict.severity === 'medium' && result.enrichment?.isTor && (
+                            <>
+                              <div className="flex items-start gap-2 text-sm">
+                                <Ban className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-amber-400">BLOCK:</span> Recommended unless Tor access is required</span>
+                              </div>
+                              <div className="flex items-start gap-2 text-sm">
+                                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-300"><span className="font-semibold text-yellow-400">MONITOR:</span> Review authentication attempts and behavior patterns</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex gap-2 pt-3 border-t border-slate-800">
                       <button

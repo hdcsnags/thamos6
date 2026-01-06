@@ -86,7 +86,11 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     const provider = enrichment.vpnService || 'Unknown Provider';
     verdict = `Commercial VPN`;
     badges.push(`VPN: ${provider}`);
+
+    const detectionMethod = data.detectionSources?.join(', ') || 'IP2Proxy + VPN Database';
+    const detectionConfidence = data.detectionConfidence || 'high';
     evidence.push(`Identified as VPN service: ${provider}`);
+    evidence.push(`Detection: ${detectionMethod} (${detectionConfidence} confidence)`);
 
     if (enrichment.country) {
       evidence.push(`Location: ${enrichment.country}`);
@@ -110,9 +114,14 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
 
     if (provider.toLowerCase().includes('mullvad') || provider.toLowerCase().includes('proton')) {
       badges.push('Privacy-Focused');
+      badges.push('High Confidence');
       confidence = 90;
-    } else {
+    } else if (detectionConfidence === 'high') {
+      badges.push('High Confidence');
       confidence = 85;
+    } else {
+      badges.push('Medium Confidence');
+      confidence = 70;
     }
 
     severity = 'low';
