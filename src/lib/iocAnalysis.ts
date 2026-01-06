@@ -237,12 +237,62 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     verdict = 'Suspicious';
     badges.push('Suspicious Activity');
     evidence.push(`Moderate threat score: ${data.overallThreatScore}/100`);
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (enrichment.org) {
+      evidence.push(`Organization: ${enrichment.org}`);
+    }
+
+    if (data.sources?.abuseipdb) {
+      if (data.sources.abuseipdb.totalReports > 0) {
+        evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      }
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
+    if (enrichment.isTor) {
+      badges.push('Tor Network');
+      evidence.push('Also identified as Tor exit node');
+    }
+
+    if (enrichment.isVPN) {
+      badges.push('VPN');
+      evidence.push('Also identified as VPN endpoint');
+    }
+
+    if (enrichment.isProxy) {
+      badges.push('Proxy');
+      evidence.push('Also identified as proxy server');
+    }
+
+    if (enrichment.isHosting) {
+      badges.push('Datacenter');
+      evidence.push('Hosted in datacenter environment');
+    }
+
+    if (enrichment.isMassScanner) {
+      badges.push('Mass Scanner');
+      evidence.push('Observed scanning internet');
+    }
+
     severity = 'high';
     color = 'orange';
     confidence = 75;
 
     recommendations.push('Monitor closely for malicious behavior');
-    recommendations.push('Review associated logs and activity');
+    recommendations.push('Review associated logs and activity for this IP');
+    recommendations.push('Consider blocking if suspicious patterns continue');
+    recommendations.push('Implement rate limiting or additional verification');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
@@ -251,11 +301,55 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     badges.push('Datacenter');
     const org = enrichment.org || enrichment.isp || 'Unknown';
     evidence.push(`Hosting provider: ${org}`);
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp && enrichment.isp !== org) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (data.overallThreatScore > 0) {
+      evidence.push(`Threat score: ${data.overallThreatScore}/100`);
+    }
+
+    if (data.sources?.abuseipdb?.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
+    if (enrichment.isTor) {
+      badges.push('Tor Network');
+      evidence.push('Also identified as Tor exit node');
+    }
+
+    if (enrichment.isVPN) {
+      badges.push('VPN');
+      evidence.push('Also identified as VPN endpoint');
+    }
+
+    if (enrichment.isProxy) {
+      badges.push('Proxy');
+      evidence.push('Also identified as proxy server');
+    }
+
+    if (enrichment.isMassScanner) {
+      badges.push('Mass Scanner');
+      evidence.push('Observed scanning internet');
+    }
+
     severity = 'low';
     color = 'cyan';
     confidence = 85;
+
     recommendations.push('Datacenter IPs are common for servers and cloud services');
     recommendations.push('Verify if this is an expected service or API endpoint');
+    recommendations.push('Check if this aligns with known integrations or webhooks');
+    recommendations.push('Monitor for unexpected behavior patterns');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
@@ -263,24 +357,118 @@ export function classifyIPVerdict(data: any, enrichment: any): IOCVerdict {
     verdict = 'Known Scanner';
     badges.push(enrichment.scannerType === 'benign' ? 'Benign Scanner' : 'Scanner');
     evidence.push(`Scanner classification: ${enrichment.scannerType || 'unknown'}`);
+
+    if (enrichment.country) {
+      evidence.push(`Location: ${enrichment.country}`);
+      badges.push(enrichment.country);
+    }
+
+    if (enrichment.isp) {
+      evidence.push(`ISP: ${enrichment.isp}`);
+    }
+
+    if (enrichment.org) {
+      evidence.push(`Organization: ${enrichment.org}`);
+    }
+
+    if (data.overallThreatScore > 0) {
+      evidence.push(`Threat score: ${data.overallThreatScore}/100`);
+    }
+
+    if (data.sources?.abuseipdb?.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+
+    if (enrichment.isTor) {
+      badges.push('Tor Network');
+      evidence.push('Also identified as Tor exit node');
+    }
+
+    if (enrichment.isVPN) {
+      badges.push('VPN');
+      evidence.push('Also identified as VPN endpoint');
+    }
+
+    if (enrichment.isProxy) {
+      badges.push('Proxy');
+      evidence.push('Also identified as proxy server');
+    }
+
+    if (enrichment.isHosting) {
+      badges.push('Datacenter');
+      evidence.push('Hosted in datacenter environment');
+    }
+
     severity = enrichment.scannerType === 'benign' ? 'info' : 'medium';
     color = enrichment.scannerType === 'benign' ? 'green' : 'yellow';
     confidence = 80;
+
     recommendations.push('Scanning activity detected but may be legitimate research');
+    recommendations.push('Common sources include Shodan, Censys, and security researchers');
+    recommendations.push('Consider allowing if from known benign scanners');
+    recommendations.push('Block if causing performance issues or unwanted traffic');
     return { verdict, confidence, severity, color, badges, evidence, recommendations };
   }
 
   verdict = 'Clean Residential';
   badges.push('Residential');
+  evidence.push('No malicious indicators found');
+
   if (enrichment.country) {
+    evidence.push(`Location: ${enrichment.country}`);
     badges.push(enrichment.country);
   }
-  evidence.push('No malicious indicators found');
-  evidence.push(`ISP: ${enrichment.isp || 'Unknown'}`);
+
+  if (enrichment.isp) {
+    evidence.push(`ISP: ${enrichment.isp}`);
+  }
+
+  if (enrichment.org) {
+    evidence.push(`Organization: ${enrichment.org}`);
+  }
+
+  if (data.overallThreatScore === 0) {
+    evidence.push('Threat score: 0/100 (Clean)');
+  } else if (data.overallThreatScore > 0) {
+    evidence.push(`Threat score: ${data.overallThreatScore}/100 (Low risk)`);
+  }
+
+  if (data.sources?.abuseipdb) {
+    if (data.sources.abuseipdb.totalReports === 0) {
+      evidence.push('No abuse reports found');
+    } else if (data.sources.abuseipdb.totalReports > 0) {
+      evidence.push(`AbuseIPDB reports: ${data.sources.abuseipdb.totalReports}`);
+      if (data.sources.abuseipdb.abuseConfidenceScore > 0) {
+        evidence.push(`Abuse confidence: ${data.sources.abuseipdb.abuseConfidenceScore}%`);
+      }
+    }
+  }
+
+  if (enrichment.isTor) {
+    badges.push('Tor Network');
+    evidence.push('Also identified as Tor exit node');
+  }
+
+  if (enrichment.isVPN) {
+    badges.push('VPN');
+    evidence.push('Also identified as VPN endpoint');
+  }
+
+  if (enrichment.isProxy) {
+    badges.push('Proxy');
+    evidence.push('Also identified as proxy server');
+  }
+
   severity = 'info';
   color = 'green';
   confidence = 70;
+
   recommendations.push('Appears to be legitimate residential or business IP');
+  recommendations.push('Standard monitoring and logging is sufficient');
+  recommendations.push('No immediate action required');
 
   return { verdict, confidence, severity, color, badges, evidence, recommendations };
 }
