@@ -211,7 +211,7 @@ export default function IPLookup() {
                   </div>
 
                   {(() => {
-                    const abuseData = result.results.abuseipdb;
+                    const abuseData = result.sources?.abuseipdb;
                     const abuseScore = abuseData?.data?.data?.abuseConfidenceScore;
                     const totalReports = abuseData?.data?.data?.totalReports ?? 0;
                     const hasAbuseData = abuseScore !== undefined && abuseScore !== null;
@@ -332,7 +332,7 @@ export default function IPLookup() {
                 </div>
 
                 {(() => {
-                  const abuseData = result.results.abuseipdb;
+                  const abuseData = result.sources?.abuseipdb;
                   const abuseScore = abuseData?.data?.data?.abuseConfidenceScore;
                   const totalReports = abuseData?.data?.data?.totalReports ?? 0;
                   const isWhitelisted = abuseData?.data?.data?.isWhitelisted ?? false;
