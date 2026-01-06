@@ -120,6 +120,25 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
    - Stores in `ip_lookups` table and cache
 5. Results returned to frontend and displayed
 
+### Data Flow Example (Smart IOC Intake Auto-Analysis)
+
+1. User pastes raw text into Smart IOC Intake page
+2. Frontend extracts IOCs using regex patterns (client-side)
+3. User clicks "Analyze IPs" button
+4. Frontend calls `lookupIP()` for up to 10 IPs in parallel
+5. Each IP lookup follows the standard IP Lookup flow above
+6. Frontend receives raw threat data from edge function
+7. `classifyIPVerdict()` from `lib/iocAnalysis.ts` processes each result:
+   - Analyzes threat indicators (Tor, VPN, proxy, malicious, hosting)
+   - Assigns verdict label and confidence score
+   - Generates evidence bullets from data sources
+   - Creates actionable recommendations
+   - Assigns severity level and color coding
+8. Verdict cards displayed with one-click actions:
+   - "Add to Watchlist" → inserts into `watchlist_entries` table
+   - "Create Case" → inserts into `case_notes` table with pre-filled data
+9. User can export results in multiple formats (CSV, JSON, text, defanged)
+
 ---
 
 ## Page Capabilities Matrix
@@ -133,7 +152,7 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 | | Hash Lookup | No | - | `threat-intel/hash` | ThreatFox, VT | Check file hash against malware databases |
 | | Domain Intel | No | - | `threat-intel/domain` | RDAP, VT, others | WHOIS and reputation for domains |
 | **Analysis Tools** |
-| | IOC Extractor | No | - | No | No | Extract IPs, domains, URLs, hashes from text |
+| | Smart IOC Intake | No* | `watchlist_entries`, `case_notes` | `threat-intel/ip` | 13+ sources | Extract and analyze IOCs from raw text with instant verdicts |
 | | Defang/Refang | No | - | No | No | Convert IOCs to safe/active format |
 | | Decoder | No | - | No | No | Decode Base64, URL encoding, hex, etc. |
 | **Investigation** |
@@ -147,7 +166,7 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 | **Settings** |
 | | Settings | Yes | `user_api_keys`, `user_custom_sources` | `api-keys` | No | Manage API keys and custom sources |
 
-\* *Case Notes allows anonymous access but authenticated users get better features*
+\* *Smart IOC Intake extraction is always free; optional auto-analysis requires auth for paid sources*
 
 ### Page Details
 
@@ -189,21 +208,66 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 - **Sources**: RDAP (free), VirusTotal, others
 - **Database**: No persistence currently
 
-#### Analysis Tools (Client-side only)
+#### Analysis Tools
 
-**IOC Extractor** (`src/pages/IOCExtractor.tsx`)
-- **Functionality**: Regex-based extraction of:
-  - IPv4 addresses
-  - Domains
-  - URLs
-  - Email addresses
+**Smart IOC Intake** (`src/pages/IOCExtractor.tsx`)
+- **Functionality**: Advanced regex-based extraction of:
+  - IPv4 addresses (filters localhost/reserved ranges)
+  - IPv6 addresses
+  - Domains (including defanged formats: evil[.]com, example(.)com)
+  - URLs (including defanged: hxxp://, h[tt]ps://)
+  - Email addresses (including defanged: user[@]domain[.]com)
   - MD5/SHA1/SHA256 hashes
   - CVE identifiers
-- **Features**:
-  - Deduplication
-  - Copy to clipboard
-  - One-click lookup for extracted IOCs
-- **No Backend**: Runs entirely in browser
+- **Advanced Features**:
+  - **SafeLinks Unwrapping**: Automatically extracts real URLs from Outlook/ProofPoint wrappers
+  - **Auto-Analysis**: One-click parallel threat intel lookup for extracted IPs (up to 10)
+  - **Verdict Cards**: Smart classification system with:
+    - Verdict labels (Known Malicious, Tor Exit Node, Commercial VPN, Clean Residential, etc.)
+    - Confidence scores (70-95% based on evidence strength)
+    - Severity levels (Critical, High, Medium, Low, Info) with color-coded borders
+    - Evidence bullets explaining the verdict
+    - Actionable recommendations
+    - Visual badges (VPN provider, datacenter, Tor Network, etc.)
+  - **One-Click Actions**:
+    - Add to watchlist for monitoring
+    - Create case note with pre-filled investigation details
+  - **Export Options**:
+    - CSV (spreadsheet format with all analysis data)
+    - JSON (structured data for automation)
+    - Plain text (human-readable report)
+    - Defanged list (safe-to-share IOC list)
+  - Deduplication across all IOC types
+  - Copy to clipboard (individual sections or all IOCs)
+- **Integration**: Leverages `lib/threatIntel.ts` for auto-analysis and `lib/iocAnalysis.ts` for verdict classification
+- **Database**: Uses `watchlist_entries` and `case_notes` tables for one-click actions
+- **Architecture**: Hybrid approach - extraction runs in browser, optional analysis uses threat intel APIs
+
+**Verdict Classification Engine** (`src/lib/iocAnalysis.ts`)
+- **Purpose**: Unified threat verdict system for Smart IOC Intake
+- **Functions**:
+  - `classifyIPVerdict()`: Analyzes IP reputation data and returns verdict with:
+    - Detection of Tor exit nodes (95% confidence)
+    - Commercial VPN identification with provider names (85-90% confidence)
+    - Proxy server detection (80% confidence)
+    - Known malicious IP classification (90% confidence)
+    - Mass scanner identification
+    - Datacenter/hosting detection
+    - Clean residential IP classification (70% confidence)
+  - `classifyDomainVerdict()`: Domain reputation analysis
+  - `classifyURLVerdict()`: URL threat categorization
+  - `classifyHashVerdict()`: File hash analysis
+  - `exportToCSV()`, `exportToJSON()`, `exportToPlainText()`, `exportToDefanged()`: Export utilities
+  - `defangIOC()`: Safe IOC formatting
+- **Verdict Structure**:
+  - `verdict`: Human-readable classification
+  - `confidence`: 0-100% score based on evidence quality
+  - `severity`: critical | high | medium | low | info
+  - `color`: Visual indicator color
+  - `badges`: Quick-view tags (VPN provider, datacenter, etc.)
+  - `evidence`: Array of reasons for the verdict
+  - `recommendations`: Actionable security advice
+- **Integration**: Used by Smart IOC Intake for auto-analysis results
 
 **Defang/Refang** (`src/pages/DefangTool.tsx`)
 - **Defang**: Converts `http://evil.com` → `hxxp://evil[.]com`
@@ -976,7 +1040,8 @@ Before deploying to production:
 │   │   └── AlertContext.tsx  # Alert notifications
 │   ├── lib/              # Utility libraries
 │   │   ├── supabase.ts       # Supabase client config
-│   │   └── threatIntel.ts    # API wrapper functions
+│   │   ├── threatIntel.ts    # API wrapper functions
+│   │   └── iocAnalysis.ts    # Verdict classification engine
 │   ├── pages/            # Page components
 │   │   ├── IPLookup.tsx
 │   │   ├── URLScanner.tsx
