@@ -48,7 +48,7 @@ export default function IPLookup() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const sources = result ? Object.entries(result.results) : [];
+  const sources = result ? Object.entries(result.sources || {}) : [];
   const enrichment = result?.enrichment;
 
   return (
