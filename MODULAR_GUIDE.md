@@ -105,7 +105,14 @@ created_at (timestamptz)
 - **Connected To**: Bulk Lookup, Smart IOC Intake, Email Analyzer
 
 ### API Keys Used
-- VirusTotal, AbuseIPDB, Shodan, IPQualityScore, ProxyCheck, GreyNoise, IP2Proxy, IPHub, VPNAPI
+- **Free sources** (always available): IP-API, ThreatFox, URLhaus, RDAP, Teoh VPN, Spamhaus, AlienVault OTX, Team Cymru, Blocklist.de, Tor Exit List
+- **Paid sources** (require API keys): VirusTotal, AbuseIPDB, Shodan, IPQualityScore, ProxyCheck, GreyNoise, IP2Proxy, IPHub, VPNAPI
+
+**ProxyCheck Integration:**
+- Detects VPN, proxy, Tor, residential vs datacenter
+- Shows provider name when available
+- Provides risk score (0-100)
+- Results appear in both: "Privacy & Anonymization Analysis" section AND "Source Results" cards
 
 ---
 

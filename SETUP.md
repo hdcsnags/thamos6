@@ -245,16 +245,21 @@ LIMIT 10;
 ### Test 5: ProxyCheck.io Integration
 
 **Test that ProxyCheck is working:**
-1. Sign in with DSBN tier
-2. Make sure `PROXYCHECK_API_KEY` is set in Supabase secrets
+1. Sign in with your authenticated account
+2. Go to Settings and add your ProxyCheck API key
 3. Go to IP Lookup
-4. Enter a known VPN IP (e.g., try IPs from NordVPN, ExpressVPN)
-5. Look for "VPN" badge in the "Privacy & Anonymization Analysis" section
+4. Enter a known VPN/Proxy IP (e.g., NordVPN: `103.1.213.139`, or get fresh IPs from https://nordvpn.com/servers/tools/)
+5. Look for "Proxy Server" section in "Privacy & Anonymization Analysis"
 
 **Expected Result:**
-- Should show "VPN: DETECTED"
-- May show VPN provider name if detected
-- ProxyCheck data should appear in "Source Results" at the bottom
+- Should show "Proxy Server: DETECTED" (with "Residential proxy" or "Datacenter proxy")
+- ProxyCheck.io should appear as a source card in "Source Results" section
+- Card should show: Proxy=Yes, Type, Provider, Country, Risk Score
+
+**Important Notes:**
+- Results are cached for 6 hours
+- If you just added your key, try a different IP that hasn't been looked up yet
+- For external tier users, each user has their own API keys (not shared)
 
 ---
 
@@ -388,32 +393,36 @@ SELECT email FROM auth.users WHERE id = auth.uid();
      -d '{"service": "virustotal", "apiKey": "test123"}'
    ```
 
-### Issue: ProxyCheck not detecting VPNs
+### Issue: ProxyCheck not showing in Source Results
 
 **Symptoms:**
-- VPN IPs show as "Clean"
-- No VPN provider detected
+- Added ProxyCheck API key in Settings
+- Proxy detection is working (shows "DETECTED")
+- But ProxyCheck.io doesn't appear in "Source Results" section
+
+**Cause:**
+- **Cache is 6 hours** - You're seeing cached results from before you added the key
+- The IP you tested was looked up before your key was added
 
 **Solutions:**
 
-1. **Verify ProxyCheck key is set:**
-   - Check Supabase secrets for `PROXYCHECK_API_KEY`
-   - Verify key is valid at https://proxycheck.io/dashboard/
-
-2. **Check if ProxyCheck returned data:**
-   - Look at "Source Results" at bottom of IP Lookup
-   - Find "proxycheck" card
-   - Should show API response
-
-3. **Test ProxyCheck directly:**
-   ```bash
-   curl "https://proxycheck.io/v2/1.1.1.1?vpn=1&asn=1&key=YOUR_KEY"
-   ```
-
-4. **Try a known VPN IP:**
+1. **Look up a fresh IP that hasn't been cached:**
    - Use: https://nordvpn.com/servers/tools/
-   - Grab any NordVPN server IP
-   - Should be clearly detected
+   - Grab a random NordVPN server IP
+   - Should show ProxyCheck in Source Results
+
+2. **Wait 6 hours for cache to expire** (or look up a different IP)
+
+3. **Verify your key is saved:**
+   - Go to Settings page
+   - ProxyCheck should show as "encrypted" with a checkmark
+   - Check "Active Keys" count
+
+4. **Test ProxyCheck directly:**
+   ```bash
+   curl "https://proxycheck.io/v2/103.1.213.139?vpn=1&asn=1&risk=1&key=YOUR_KEY"
+   ```
+   Should return JSON with proxy="yes"
 
 ### Issue: Org keys not working for DSBN users
 
