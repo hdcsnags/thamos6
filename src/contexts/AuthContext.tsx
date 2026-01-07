@@ -12,6 +12,8 @@ interface AuthContextType {
   signInWithMicrosoft: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -106,6 +108,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/?reset=true`,
+    });
+    if (error) throw error;
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+  }, []);
+
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
@@ -122,6 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithMicrosoft,
       signInWithPassword,
       signUpWithPassword,
+      resetPassword,
+      updatePassword,
       signOut,
     }}>
       {children}
