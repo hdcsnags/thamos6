@@ -511,13 +511,27 @@ async function checkProxyCheck(ctx: TierContext, ip: string, apiKey: string): Pr
 
 async function checkVirusTotal(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "virustotal", data: {}, error: "API key not configured" };
-  const cached = await getCachedResponse(ctx, "virustotal", ip);
+
+  const cacheKey = `ip:${ip}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
   if (cached) return { source: "virustotal", data: cached, threatScore: calculateVTScore(cached) };
+
   try {
-    const response = await fetchWithTimeout(`https://www.virustotal.com/api/v3/ip_addresses/${ip}`, { headers: { "x-apikey": apiKey } });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    await setCachedResponse(ctx, "virustotal", ip, data);
+    const response = await fetchWithTimeout(
+      `https://www.virustotal.com/api/v3/ip_addresses/${encodeURIComponent(ip)}`,
+      { headers: { "x-apikey": apiKey } }
+    );
+
+    // VT may return JSON error bodies even on non-OK
+    const text = await response.text().catch(() => "");
+    const data = text ? (() => { try { return JSON.parse(text); } catch { return { raw: text }; } })() : {};
+
+    if (!response.ok) {
+      // cache negative-ish results only if you want; usually skip caching errors
+      return { source: "virustotal", data, error: `HTTP ${response.status}` };
+    }
+
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
     return { source: "virustotal", data, threatScore: calculateVTScore(data) };
   } catch (e) {
     return { source: "virustotal", data: {}, error: String(e) };
@@ -527,10 +541,23 @@ async function checkVirusTotal(ctx: TierContext, ip: string, apiKey: string): Pr
 function calculateVTScore(data: Record<string, unknown>): number {
   const stats = (data as any)?.data?.attributes?.last_analysis_stats;
   if (!stats) return 0;
-  const total = stats.malicious + stats.suspicious + stats.harmless + stats.undetected;
-  if (total === 0) return 0;
-  return Math.round(((stats.malicious * 100 + stats.suspicious * 50) / total) * 100) / 100;
+
+  const malicious = Number(stats.malicious ?? 0);
+  const suspicious = Number(stats.suspicious ?? 0);
+  const harmless = Number(stats.harmless ?? 0);
+  const undetected = Number(stats.undetected ?? 0);
+  const timeout = Number(stats.timeout ?? 0);
+
+  const total = malicious + suspicious + harmless + undetected + timeout;
+  if (total <= 0) return 0;
+
+  // Weighted score: malicious counts full, suspicious half
+  const score = ((malicious * 100) + (suspicious * 50)) / total;
+
+  // keep 2 decimals like your original
+  return Math.round(score * 100) / 100;
 }
+
 
 async function checkAbuseIPDB(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "abuseipdb", data: {}, error: "API key not configured" };
@@ -1036,23 +1063,72 @@ async function checkURLScan(ctx: TierContext, url: string, apiKey: string): Prom
 
 async function checkVirusTotalURL(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "virustotal_url", data: {}, error: "API key not configured" };
+
+  // Proper VT URL ID encoding = base64url of the URL (no "=" padding)
+  const toBase64Url = (input: string): string => {
+    const bytes = new TextEncoder().encode(input);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    const b64 = btoa(binary);
+    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+
+  const urlId = toBase64Url(url);
+  const cacheKey = `url:${urlId}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
+  if (cached) {
+    const stats = (cached as any)?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (Number(stats.malicious ?? 0) > 0 || Number(stats.suspicious ?? 0) > 0) : false;
+    return { source: "virustotal_url", data: cached, isMalicious };
+  }
+
   try {
-    const urlId = btoa(url).replace(/=/g, "");
-    const response = await fetchWithTimeout(`https://www.virustotal.com/api/v3/urls/${urlId}`, { headers: { "x-apikey": apiKey } });
+    const response = await fetchWithTimeout(
+      `https://www.virustotal.com/api/v3/urls/${urlId}`,
+      { headers: { "x-apikey": apiKey } }
+    );
+
+    // If VT doesn't know the URL yet, submit it for scanning
     if (response.status === 404) {
-      const scanResponse = await fetchWithTimeout("https://www.virustotal.com/api/v3/urls", { method: "POST", headers: { "x-apikey": apiKey, "Content-Type": "application/x-www-form-urlencoded" }, body: `url=${encodeURIComponent(url)}` });
-      const scanData = await scanResponse.json();
+      const scanResponse = await fetchWithTimeout(
+        "https://www.virustotal.com/api/v3/urls",
+        {
+          method: "POST",
+          headers: {
+            "x-apikey": apiKey,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: `url=${encodeURIComponent(url)}`,
+        }
+      );
+
+      const scanText = await scanResponse.text().catch(() => "");
+      const scanData = scanText ? (() => { try { return JSON.parse(scanText); } catch { return { raw: scanText }; } })() : {};
+
+      // Cache submission response lightly (optional). It may not include analysis yet.
+      await setCachedResponse(ctx, "virustotal", cacheKey, { submitted: true, ...scanData });
+
       return { source: "virustotal_url", data: { submitted: true, ...scanData } };
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const stats = data?.data?.attributes?.last_analysis_stats;
-    const isMalicious = stats ? (stats.malicious > 0 || stats.suspicious > 0) : false;
+
+    const text = await response.text().catch(() => "");
+    const data = text ? (() => { try { return JSON.parse(text); } catch { return { raw: text }; } })() : {};
+
+    if (!response.ok) {
+      return { source: "virustotal_url", data, error: `HTTP ${response.status}` };
+    }
+
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
+
+    const stats = (data as any)?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (Number(stats.malicious ?? 0) > 0 || Number(stats.suspicious ?? 0) > 0) : false;
+
     return { source: "virustotal_url", data, isMalicious };
   } catch (e) {
     return { source: "virustotal_url", data: {}, error: String(e) };
   }
 }
+
 
 async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatResult> {
   try {
