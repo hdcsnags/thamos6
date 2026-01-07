@@ -176,80 +176,171 @@ async function deriveEncryptionKeyLegacy(): Promise<CryptoKey> {
   );
 }
 
-async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }): Promise<string> {
+async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }, service?: string): Promise<string> {
+  const logPrefix = service ? `[decrypt:${service}]` : "[decrypt]";
   try {
     const iv = decodeB64(encrypted.iv);
     const ciphertext = decodeB64(encrypted.ciphertext);
+    console.log(`${logPrefix} Attempting decryption, iv length: ${iv.length}, ciphertext length: ${ciphertext.length}`);
 
     if (SUPABASE_SERVICE_ROLE_KEY) {
       try {
+        console.log(`${logPrefix} Trying PBKDF2 decryption...`);
         const legacyKey = await deriveEncryptionKeyLegacy();
         const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, ciphertext);
+        console.log(`${logPrefix} PBKDF2 decryption succeeded`);
         return new TextDecoder().decode(decrypted);
-      } catch {
+      } catch (e) {
+        console.log(`${logPrefix} PBKDF2 decryption failed: ${e}`);
       }
+    } else {
+      console.log(`${logPrefix} SUPABASE_SERVICE_ROLE_KEY not available`);
     }
 
     if (API_KEY_ENCRYPTION_KEY) {
       try {
+        console.log(`${logPrefix} Trying dedicated encryption key...`);
         const key = await getEncryptionKey();
         const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+        console.log(`${logPrefix} Dedicated key decryption succeeded`);
         return new TextDecoder().decode(decrypted);
-      } catch {
+      } catch (e) {
+        console.log(`${logPrefix} Dedicated key decryption failed: ${e}`);
       }
+    } else {
+      console.log(`${logPrefix} API_KEY_ENCRYPTION_KEY not available`);
     }
-  } catch {
+  } catch (e) {
+    console.log(`${logPrefix} Decryption setup error: ${e}`);
   }
 
+  console.log(`${logPrefix} All decryption attempts failed, returning empty string`);
   return "";
 }
 
-async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
+interface ApiKeyDebugInfo {
+  keys: Record<string, string>;
+  debug: {
+    rowsFound: number;
+    servicesFound: string[];
+    decryptionResults: Record<string, string>;
+    errors: string[];
+  };
+}
+
+async function getUserApiKeysWithDebug(userId: string): Promise<ApiKeyDebugInfo> {
+  const debug: ApiKeyDebugInfo["debug"] = {
+    rowsFound: 0,
+    servicesFound: [],
+    decryptionResults: {},
+    errors: []
+  };
+  const keys: Record<string, string> = {};
+
   try {
+    console.log(`[getUserApiKeys] Fetching keys for user: ${userId}`);
     const { data, error } = await serviceClient
       .from("user_api_keys")
       .select("service, encrypted_key, api_key")
       .eq("user_id", userId)
       .eq("is_active", true);
 
-    if (error || !data) return {};
+    if (error) {
+      console.log(`[getUserApiKeys] Database error: ${error.message}`);
+      debug.errors.push(`DB error: ${error.message}`);
+      return { keys, debug };
+    }
 
-    const keys: Record<string, string> = {};
+    if (!data || data.length === 0) {
+      console.log(`[getUserApiKeys] No API keys found for user`);
+      debug.errors.push("No API keys found in database");
+      return { keys, debug };
+    }
+
+    debug.rowsFound = data.length;
+    debug.servicesFound = data.map(r => r.service);
+    console.log(`[getUserApiKeys] Found ${data.length} API keys: ${debug.servicesFound.join(", ")}`);
+
     for (const row of data) {
       try {
         if (row.encrypted_key) {
-          const decrypted = await decryptApiKey(row.encrypted_key);
+          console.log(`[getUserApiKeys] Processing ${row.service} with encrypted_key`);
+          const hasValidStructure = row.encrypted_key &&
+            typeof row.encrypted_key === "object" &&
+            "iv" in row.encrypted_key &&
+            "ciphertext" in row.encrypted_key;
+
+          if (!hasValidStructure) {
+            console.log(`[getUserApiKeys] ${row.service}: Invalid encrypted_key structure`);
+            debug.decryptionResults[row.service] = "invalid_structure";
+            continue;
+          }
+
+          const decrypted = await decryptApiKey(row.encrypted_key, row.service);
           if (decrypted) {
             keys[row.service] = decrypted;
+            debug.decryptionResults[row.service] = "success";
+            console.log(`[getUserApiKeys] ${row.service}: Decryption successful`);
             continue;
+          } else {
+            debug.decryptionResults[row.service] = "decryption_failed";
+            console.log(`[getUserApiKeys] ${row.service}: Decryption returned empty`);
           }
         }
         if (row.api_key) {
+          console.log(`[getUserApiKeys] ${row.service}: Using plaintext api_key fallback`);
           keys[row.service] = row.api_key;
+          debug.decryptionResults[row.service] = "plaintext_fallback";
+        } else {
+          debug.decryptionResults[row.service] = "no_key_available";
         }
-      } catch {
+      } catch (e) {
+        console.log(`[getUserApiKeys] ${row.service}: Exception - ${e}`);
+        debug.decryptionResults[row.service] = `error: ${e}`;
+        debug.errors.push(`${row.service}: ${e}`);
       }
     }
-    return keys;
-  } catch {
-    return {};
+
+    console.log(`[getUserApiKeys] Successfully retrieved ${Object.keys(keys).length} keys: ${Object.keys(keys).join(", ")}`);
+    return { keys, debug };
+  } catch (e) {
+    console.log(`[getUserApiKeys] Top-level error: ${e}`);
+    debug.errors.push(`Top-level error: ${e}`);
+    return { keys, debug };
   }
 }
 
-async function getApiKeysForTier(ctx: TierContext): Promise<Record<string, string>> {
+async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
+  const result = await getUserApiKeysWithDebug(userId);
+  return result.keys;
+}
+
+interface ApiKeysResult {
+  keys: Record<string, string>;
+  debug?: ApiKeyDebugInfo["debug"];
+}
+
+async function getApiKeysForTierWithDebug(ctx: TierContext): Promise<ApiKeysResult> {
   if (ctx.tier === "anon") {
-    return {};
+    return { keys: {}, debug: { rowsFound: 0, servicesFound: [], decryptionResults: {}, errors: ["Anonymous user - no API keys"] } };
   }
 
   if (ctx.tier === "dsbn") {
-    return await getOrgApiKeys();
+    const keys = await getOrgApiKeys();
+    return { keys, debug: { rowsFound: Object.keys(keys).length, servicesFound: Object.keys(keys), decryptionResults: {}, errors: [] } };
   }
 
   if (ctx.tier === "external" && ctx.userId) {
-    return await getUserApiKeys(ctx.userId);
+    const result = await getUserApiKeysWithDebug(ctx.userId);
+    return { keys: result.keys, debug: result.debug };
   }
 
-  return {};
+  return { keys: {}, debug: { rowsFound: 0, servicesFound: [], decryptionResults: {}, errors: ["Unknown tier or missing userId"] } };
+}
+
+async function getApiKeysForTier(ctx: TierContext): Promise<Record<string, string>> {
+  const result = await getApiKeysForTierWithDebug(ctx);
+  return result.keys;
 }
 
 function getSourcesForTier(tier: UserTier, apiKeys: Record<string, string>): string[] {
@@ -1342,19 +1433,21 @@ Deno.serve(async (req: Request) => {
 
     if (path === "/config" || path === "/config/") {
       const orgKeys = await getOrgApiKeys();
+      const apiKeysResult = await getApiKeysForTierWithDebug(ctx);
+
       const configResponse = {
         configured: {
-          virustotal: ctx.tier === "dsbn" ? !!orgKeys.virustotal : !!apiKeys.virustotal,
-          abuseipdb: ctx.tier === "dsbn" ? !!orgKeys.abuseipdb : !!apiKeys.abuseipdb,
-          alienvault: ctx.tier === "dsbn" ? !!orgKeys.alienvault : !!apiKeys.alienvault,
-          shodan: ctx.tier === "dsbn" ? !!orgKeys.shodan : !!apiKeys.shodan,
-          ipqualityscore: ctx.tier === "dsbn" ? !!orgKeys.ipqualityscore : !!apiKeys.ipqualityscore,
-          urlscan: ctx.tier === "dsbn" ? !!orgKeys.urlscan : !!apiKeys.urlscan,
-          proxycheck: ctx.tier === "dsbn" ? !!orgKeys.proxycheck : !!apiKeys.proxycheck,
-          greynoise: ctx.tier === "dsbn" ? !!orgKeys.greynoise : !!apiKeys.greynoise,
-          ip2proxy: ctx.tier === "dsbn" ? !!orgKeys.ip2proxy : !!apiKeys.ip2proxy,
-          iphub: ctx.tier === "dsbn" ? !!orgKeys.iphub : !!apiKeys.iphub,
-          vpnapi: ctx.tier === "dsbn" ? !!orgKeys.vpnapi : !!apiKeys.vpnapi,
+          virustotal: ctx.tier === "dsbn" ? !!orgKeys.virustotal : !!apiKeysResult.keys.virustotal,
+          abuseipdb: ctx.tier === "dsbn" ? !!orgKeys.abuseipdb : !!apiKeysResult.keys.abuseipdb,
+          alienvault: ctx.tier === "dsbn" ? !!orgKeys.alienvault : !!apiKeysResult.keys.alienvault,
+          shodan: ctx.tier === "dsbn" ? !!orgKeys.shodan : !!apiKeysResult.keys.shodan,
+          ipqualityscore: ctx.tier === "dsbn" ? !!orgKeys.ipqualityscore : !!apiKeysResult.keys.ipqualityscore,
+          urlscan: ctx.tier === "dsbn" ? !!orgKeys.urlscan : !!apiKeysResult.keys.urlscan,
+          proxycheck: ctx.tier === "dsbn" ? !!orgKeys.proxycheck : !!apiKeysResult.keys.proxycheck,
+          greynoise: ctx.tier === "dsbn" ? !!orgKeys.greynoise : !!apiKeysResult.keys.greynoise,
+          ip2proxy: ctx.tier === "dsbn" ? !!orgKeys.ip2proxy : !!apiKeysResult.keys.ip2proxy,
+          iphub: ctx.tier === "dsbn" ? !!orgKeys.iphub : !!apiKeysResult.keys.iphub,
+          vpnapi: ctx.tier === "dsbn" ? !!orgKeys.vpnapi : !!apiKeysResult.keys.vpnapi,
           ipapi: true,
           threatfox: true,
           urlhaus: true,
@@ -1367,6 +1460,13 @@ Deno.serve(async (req: Request) => {
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
         user: ctx.email ? { email: ctx.email } : null,
+        userId: ctx.userId,
+        debug: {
+          apiKeyRetrieval: apiKeysResult.debug,
+          encryptionKeyAvailable: !!API_KEY_ENCRYPTION_KEY,
+          serviceRoleKeyAvailable: !!SUPABASE_SERVICE_ROLE_KEY,
+          keysSuccessfullyDecrypted: Object.keys(apiKeysResult.keys),
+        }
       };
 
       return new Response(JSON.stringify(configResponse), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
