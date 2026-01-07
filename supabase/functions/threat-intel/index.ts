@@ -475,17 +475,39 @@ async function checkIPAPI(ctx: TierContext, ip: string): Promise<ThreatResult> {
 async function checkProxyCheck(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "proxycheck", ip);
   if (cached) return { source: "proxycheck", data: cached };
+
   try {
-    const keyParam = apiKey ? `&key=${apiKey}` : "";
-    const response = await fetchWithTimeout(`https://proxycheck.io/v3/${ip}?vpn=1&asn=1&risk=1${keyParam}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
+    const qs = new URLSearchParams();
+
+    if (apiKey) qs.set("key", apiKey);
+
+    // v3: most v2 flags are retired; v3 returns a full nested result by default
+    // short=1 makes parsing easier for single-IP requests
+    qs.set("short", "1");
+
+    // optional: control how far back detections are considered (default is 7 days)
+    // qs.set("days", "7");
+
+    // optional: pin v3 dated beta version to avoid output changes
+    // qs.set("ver", "20-November-2025");
+
+    const url = `https://proxycheck.io/v3/${encodeURIComponent(ip)}?${qs.toString()}`;
+
+    const response = await fetchWithTimeout(url);
+    const data = await response.json().catch(() => ({}));
+
+    // Even on non-200, ProxyCheck can return structured JSON status/message
+    if (!response.ok) {
+      return { source: "proxycheck", data, error: `HTTP ${response.status}` };
+    }
+
     await setCachedResponse(ctx, "proxycheck", ip, data);
     return { source: "proxycheck", data };
   } catch (e) {
     return { source: "proxycheck", data: {}, error: String(e) };
   }
 }
+
 
 async function checkVirusTotal(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "virustotal", data: {}, error: "API key not configured" };
@@ -1089,21 +1111,53 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     enrichment.lon = ipapi.lon;
   }
 
-  const proxycheck = results.find(r => r.source === "proxycheck")?.data as any;
-  if (proxycheck) {
-    const ipData = Object.values(proxycheck).find((v: any) => typeof v === "object" && v !== null && "proxy" in v) as any;
-    if (ipData) {
-      if (ipData.proxy === "yes") enrichment.isProxy = true;
-      if (ipData.type === "VPN" && !enrichment.isVPN) {
-        enrichment.isVPN = true;
-        if (!enrichment.vpnService) enrichment.vpnService = ipData.provider || "Unknown VPN";
-      }
-      if (ipData.type === "TOR" && enrichment.isTor === undefined) enrichment.isTor = true;
-      if (!enrichment.country && ipData.country) enrichment.country = ipData.country;
-      if (!enrichment.isp && ipData.isp) enrichment.isp = ipData.isp;
-      if (!enrichment.asn && ipData.asn) enrichment.asn = ipData.asn;
+  const proxycheckRaw = results.find(r => r.source === "proxycheck")?.data as any;
+
+if (proxycheckRaw && (proxycheckRaw.status === "ok" || proxycheckRaw.status === "warning")) {
+  // If short=1, the result is flattened (easier).
+  // If not, the result is nested under the IP key.
+  const ipKey =
+    proxycheckRaw.ip ||
+    Object.keys(proxycheckRaw).find(k => k.includes(".") || k.includes(":")); // naive fallback for v4/v6
+
+  const ipResult = proxycheckRaw.network ? proxycheckRaw : (ipKey ? proxycheckRaw[ipKey] : undefined);
+
+  if (ipResult) {
+    const det = ipResult.detections || {};
+    const net = ipResult.network || {};
+    const loc = ipResult.location || {};
+    const op  = ipResult.operator || {};
+
+    // v3 detections are booleans (not "yes"/"no")
+    if (det.proxy === true) enrichment.isProxy = true;
+    if (det.vpn === true)  enrichment.isVPN = true;
+    if (det.tor === true)  enrichment.isTor = true;
+
+    // If you want "hosting/datacenter" as a strong signal:
+    if (det.hosting === true) enrichment.isHosting = true;
+
+    // VPN provider/operator (best case: operator.name; fallback: network.provider)
+    if (enrichment.isVPN && !enrichment.vpnService) {
+      enrichment.vpnService = op.name || net.provider || "Unknown VPN";
     }
+
+    // Network + geo enrichment
+    if (!enrichment.asn && net.asn) enrichment.asn = net.asn;
+    if (!enrichment.isp && net.provider) enrichment.isp = net.provider;
+
+    // Location field names vary; safest is to log one real response and map precisely
+    if (!enrichment.country && (loc.country || loc.country_name)) {
+      enrichment.country = loc.country || loc.country_name;
+    }
+
+    // If you’re scoring:
+    if (typeof ipResult.risk === "number") enrichment.riskScore = ipResult.risk;
+
+    // Confidence score lives under detections in newer v3 versions
+    if (typeof det.confidence === "number") enrichment.confidence = det.confidence;
   }
+}
+
 
   const ipqs = results.find(r => r.source === "ipqualityscore")?.data as any;
   if (ipqs && !ipqs.error) {
