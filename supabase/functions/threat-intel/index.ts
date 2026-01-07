@@ -326,8 +326,40 @@ async function getApiKeysForTierWithDebug(ctx: TierContext): Promise<ApiKeysResu
   }
 
   if (ctx.tier === "dsbn") {
-    const keys = await getOrgApiKeys();
-    return { keys, debug: { rowsFound: Object.keys(keys).length, servicesFound: Object.keys(keys), decryptionResults: {}, errors: [] } };
+    const orgKeys = await getOrgApiKeys();
+    const mergedKeys: Record<string, string> = {};
+    const debug: ApiKeyDebugInfo["debug"] = {
+      rowsFound: 0,
+      servicesFound: [],
+      decryptionResults: {},
+      errors: []
+    };
+
+    for (const [service, key] of Object.entries(orgKeys)) {
+      if (key) {
+        mergedKeys[service] = key;
+        debug.decryptionResults[service] = "org_env_var";
+      }
+    }
+
+    if (ctx.userId) {
+      const userResult = await getUserApiKeysWithDebug(ctx.userId);
+      debug.rowsFound = userResult.debug.rowsFound;
+      debug.servicesFound = userResult.debug.servicesFound;
+
+      for (const [service, key] of Object.entries(userResult.keys)) {
+        if (!mergedKeys[service] && key) {
+          mergedKeys[service] = key;
+          debug.decryptionResults[service] = userResult.debug.decryptionResults[service] || "user_key";
+        }
+      }
+
+      if (userResult.debug.errors.length > 0) {
+        debug.errors.push(...userResult.debug.errors);
+      }
+    }
+
+    return { keys: mergedKeys, debug };
   }
 
   if (ctx.tier === "external" && ctx.userId) {
