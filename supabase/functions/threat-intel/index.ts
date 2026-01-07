@@ -177,53 +177,63 @@ async function deriveEncryptionKeyLegacy(): Promise<CryptoKey> {
 }
 
 async function decryptApiKey(encrypted: { iv: string; ciphertext: string; keyVersion: number }): Promise<string> {
-  const iv = decodeB64(encrypted.iv);
-  const ciphertext = decodeB64(encrypted.ciphertext);
+  try {
+    const iv = decodeB64(encrypted.iv);
+    const ciphertext = decodeB64(encrypted.ciphertext);
 
-  if (API_KEY_ENCRYPTION_KEY) {
-    try {
-      const key = await getEncryptionKey();
-      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
-      return new TextDecoder().decode(decrypted);
-    } catch {
+    if (SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const legacyKey = await deriveEncryptionKeyLegacy();
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, ciphertext);
+        return new TextDecoder().decode(decrypted);
+      } catch {
+      }
     }
-  }
 
-  if (SUPABASE_SERVICE_ROLE_KEY) {
-    try {
-      const legacyKey = await deriveEncryptionKeyLegacy();
-      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, ciphertext);
-      return new TextDecoder().decode(decrypted);
-    } catch {
+    if (API_KEY_ENCRYPTION_KEY) {
+      try {
+        const key = await getEncryptionKey();
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+        return new TextDecoder().decode(decrypted);
+      } catch {
+      }
     }
+  } catch {
   }
 
   return "";
 }
 
 async function getUserApiKeys(userId: string): Promise<Record<string, string>> {
-  const { data } = await serviceClient
-    .from("user_api_keys")
-    .select("service, encrypted_key, api_key")
-    .eq("user_id", userId)
-    .eq("is_active", true);
+  try {
+    const { data, error } = await serviceClient
+      .from("user_api_keys")
+      .select("service, encrypted_key, api_key")
+      .eq("user_id", userId)
+      .eq("is_active", true);
 
-  if (!data) return {};
+    if (error || !data) return {};
 
-  const keys: Record<string, string> = {};
-  for (const row of data) {
-    if (row.encrypted_key) {
-      const decrypted = await decryptApiKey(row.encrypted_key);
-      if (decrypted) {
-        keys[row.service] = decrypted;
-        continue;
+    const keys: Record<string, string> = {};
+    for (const row of data) {
+      try {
+        if (row.encrypted_key) {
+          const decrypted = await decryptApiKey(row.encrypted_key);
+          if (decrypted) {
+            keys[row.service] = decrypted;
+            continue;
+          }
+        }
+        if (row.api_key) {
+          keys[row.service] = row.api_key;
+        }
+      } catch {
       }
     }
-    if (row.api_key) {
-      keys[row.service] = row.api_key;
-    }
+    return keys;
+  } catch {
+    return {};
   }
-  return keys;
 }
 
 async function getApiKeysForTier(ctx: TierContext): Promise<Record<string, string>> {

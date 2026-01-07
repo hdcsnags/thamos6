@@ -22,6 +22,7 @@ export default function IOCExtractor() {
   const [copied, setCopied] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
   const [analysisMode, setAnalysisMode] = useState<'fast' | 'full'>('fast');
 
@@ -130,19 +131,26 @@ export default function IOCExtractor() {
     if (!input.trim()) return;
     setIocs(extractIOCs(input));
     setAnalysisResults([]);
+    setAnalysisError(null);
     setExpandedResult(null);
   };
 
   const handleAnalyze = async () => {
-    if (!iocs) return;
+    if (!iocs || iocs.ips.length === 0) return;
 
     setAnalyzing(true);
+    setAnalysisError(null);
     const results: IOCAnalysisResult[] = [];
 
     try {
       const ipsToAnalyze = analysisMode === 'fast' ? iocs.ips.slice(0, 10) : iocs.ips;
 
       const { results: bulkResults } = await bulkLookupIPs(ipsToAnalyze);
+
+      if (!bulkResults || bulkResults.length === 0) {
+        setAnalysisError('No results returned from analysis. Please try again.');
+        return;
+      }
 
       for (const ipData of bulkResults) {
         const enrichment = {
@@ -184,6 +192,7 @@ export default function IOCExtractor() {
       setAnalysisResults(results);
     } catch (error) {
       console.error('Failed to analyze IPs:', error);
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze IPs. Please check your connection and try again.');
     } finally {
       setAnalyzing(false);
     }
@@ -466,6 +475,16 @@ export default function IOCExtractor() {
               </button>
             </div>
           </div>
+
+          {analysisError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-red-400 mb-1">Analysis Failed</h4>
+                <p className="text-sm text-slate-300">{analysisError}</p>
+              </div>
+            </div>
+          )}
 
           {analysisResults.length > 0 && (
             <div className="space-y-4">
