@@ -477,7 +477,7 @@ async function checkProxyCheck(ctx: TierContext, ip: string, apiKey: string): Pr
   if (cached) return { source: "proxycheck", data: cached };
   try {
     const keyParam = apiKey ? `&key=${apiKey}` : "";
-    const response = await fetchWithTimeout(`https://proxycheck.io/v2/${ip}?vpn=1&asn=1&risk=1${keyParam}`);
+    const response = await fetchWithTimeout(`https://proxycheck.io/v3/${ip}?vpn=1&asn=1&risk=1${keyParam}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     await setCachedResponse(ctx, "proxycheck", ip, data);
