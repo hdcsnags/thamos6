@@ -120,7 +120,8 @@ export default function HashLookup() {
         <h1 className="text-3xl font-bold text-white mb-2">Hash Lookup</h1>
         <p className="text-slate-400">
           Check file hashes (MD5, SHA1, SHA256) against VirusTotal, MalwareBazaar,
-          and other threat intelligence sources to identify known malware.
+          and other threat intelligence sources to identify known malware. NOTE DSBN, I have to finish hooking up the API calls to Data inline, so for now if you are seeing this page
+          and wondering why it shows up clean, its just placeholder, what you can do is click on the 4 links that will generate on the bottom and it'll load the external pages with your actual results. It should be faster working on this at work, but it isnt lol I need my weights.
         </p>
       </div>
 
