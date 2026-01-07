@@ -550,9 +550,9 @@ User-added custom RSS feeds
 | Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) |
 |---------|-----------|------------------|--------------------------|
 | Free sources (7) | ✅ | ✅ | ✅ |
-| Paid sources (6+) | ❌ | ✅ (org keys) | ✅ (own keys) |
+| Paid sources (6+) | ❌ | ✅ (org keys + own keys) | ✅ (own keys) |
 | Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs |
-| Add API keys | ❌ | ❌ | ✅ |
+| Add API keys | ❌ | ✅ (fallback for missing org keys) | ✅ |
 | Add custom feeds | ❌ | ✅ | ✅ |
 | Watchlist & alerts | ❌ | ✅ | ✅ |
 | Cache context | "anon" | "org:dsbn" | "user:{id}" |
@@ -617,9 +617,13 @@ CREATE POLICY "Allow public read on valid cache"
 ```typescript
 1. Determine user tier
 2. If DSBN tier:
-   - Decrypt org API keys (from admin user's user_api_keys)
+   - Load org API keys from environment variables first
+   - Then load user's personal API keys as fallback
+   - Merge: org keys take priority, user keys fill gaps
+   - This allows DSBN users to add their own keys for services
+     where org keys aren't configured
 3. If EXTERNAL tier:
-   - Decrypt user's own API keys
+   - Decrypt user's own API keys only
 4. If ANON tier:
    - No paid sources, only free sources
 ```
