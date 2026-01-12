@@ -6,9 +6,10 @@ This guide will help you configure the admin email, add API keys, and test that 
 1. [Environment Configuration](#environment-configuration)
 2. [Setting Up Admin Email](#setting-up-admin-email)
 3. [Adding Organization API Keys](#adding-organization-api-keys)
-4. [Testing the System](#testing-the-system)
-5. [User Tier Verification](#user-tier-verification)
-6. [Troubleshooting](#troubleshooting)
+4. [Setting Up Admin Panel Access](#setting-up-admin-panel-access)
+5. [Testing the System](#testing-the-system)
+6. [User Tier Verification](#user-tier-verification)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -126,6 +127,142 @@ These work for free without API keys:
 - Team Cymru (ASN lookup)
 - Blocklist.de
 - Tor Exit List (from database)
+
+---
+
+## Setting Up Admin Panel Access
+
+The admin panel provides platform administration capabilities including user management, tier assignment, and ban control.
+
+### What is the Admin Panel?
+
+The admin panel allows designated administrators to:
+- View all registered users and their activity statistics
+- See dashboard metrics (total users, active users, banned users, org tier users)
+- Toggle user tiers between Free and Org with one click
+- Ban or unban user accounts
+- Track user activity (API lookups, case notes, API keys configured)
+- Monitor last login timestamps
+- Search users by email
+
+### Step 1: Grant Admin Privileges
+
+Admin access is controlled by the `is_admin` flag in the `profiles` table.
+
+**To make yourself an admin:**
+
+1. Go to Supabase SQL Editor: https://supabase.com/dashboard/project/aufxheaofpzbovgqwcdr/editor
+2. Run this SQL command (replace with your email):
+
+```sql
+UPDATE profiles
+SET is_admin = true
+WHERE email = 'your-email@example.com';
+```
+
+3. Verify the update:
+
+```sql
+SELECT email, is_admin, tier, is_banned
+FROM profiles
+WHERE is_admin = true;
+```
+
+### Step 2: Access the Admin Panel
+
+Once you have admin privileges:
+
+1. **Sign in** to the platform with your admin account
+2. **Click your avatar** in the top-right corner
+3. **Select "Admin Panel"** from the dropdown menu
+4. You should see the admin dashboard with user statistics and management table
+
+### Step 3: Verify Admin Functionality
+
+Test the admin panel features:
+
+**View User Statistics:**
+- Dashboard should show total users, active users, org tier users, banned users
+- User table should display all registered users with their stats
+
+**Test Tier Management:**
+- Click the tier badge (Free/Org) on any user to toggle their tier
+- Verify the tier changes immediately (excluding your own account)
+
+**Test Ban System:**
+- Click "Ban" on a test user account
+- Verify status changes to "Banned" with red badge
+- Click "Unban" to restore access
+- Note: You cannot ban yourself
+
+**Search Users:**
+- Use the search box to filter users by email
+- Verify search works instantly
+
+### Admin Panel Security
+
+- Only users with `is_admin = true` can access the panel
+- Non-admin users see "Access Denied" if they try to visit /admin
+- Admins cannot ban themselves (prevented by database function)
+- Admins cannot change their own tier (UI prevents this)
+- All actions are logged in the database with timestamps
+- RLS policies ensure only admins can view all user profiles
+
+### Managing Multiple Admins
+
+To add additional admins:
+
+```sql
+-- Add admin privileges
+UPDATE profiles
+SET is_admin = true
+WHERE email IN ('admin1@example.com', 'admin2@example.com');
+
+-- Remove admin privileges
+UPDATE profiles
+SET is_admin = false
+WHERE email = 'former-admin@example.com';
+
+-- View all current admins
+SELECT email, created_at, last_login_at
+FROM profiles
+WHERE is_admin = true
+ORDER BY created_at;
+```
+
+### Admin Panel Database Functions
+
+The admin panel uses two secure database functions:
+
+**`update_user_tier(target_user_id, new_tier)`**
+- Changes user tier between 'free' and 'org'
+- Only callable by admins
+- Validates admin status before execution
+
+**`update_user_ban_status(target_user_id, banned)`**
+- Bans or unbans a user account
+- Only callable by admins
+- Prevents self-banning
+
+Both functions use `SECURITY DEFINER` and check admin privileges before executing.
+
+### User Tier Meanings
+
+When assigning tiers via the admin panel:
+
+**Free Tier:**
+- Access to 7 free threat intelligence sources
+- Bulk lookup limit: 50 IPs
+- Must provide own API keys for paid sources
+- No org-level API key access
+
+**Org Tier:**
+- Access to all 13+ threat intelligence sources
+- Bulk lookup limit: 100 IPs
+- Uses organization API keys (configured in edge function secrets)
+- Can also add personal API keys as fallback
+
+**Note:** The admin panel tier assignment (`tier` column in `profiles`) is separate from the DSBN tier logic in edge functions. DSBN tier is determined by email domain (@dsbn.org) at runtime. Use the admin panel tier to grant org-level access to external users.
 
 ---
 
@@ -294,16 +431,20 @@ SELECT email FROM auth.users WHERE id = auth.uid();
 
 ### Tier Capabilities Summary
 
-| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) |
-|---------|-----------|------------------|--------------------------|
-| Free sources (9) | ✅ | ✅ | ✅ |
-| Paid sources | ❌ | ✅ (org keys) | ✅ (own keys) |
-| Add API keys | ❌ | ❌ (uses org keys) | ✅ |
-| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs |
-| Watchlist & alerts | ❌ | ✅ | ✅ |
-| Custom RSS feeds | ❌ | ✅ | ✅ |
-| Case notes | ✅ (read/write) | ✅ | ✅ |
-| History | ✅ (read/write) | ✅ | ✅ |
+| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) | Admin |
+|---------|-----------|------------------|--------------------------|-------|
+| Free sources (9) | ✅ | ✅ | ✅ | ✅ |
+| Paid sources | ❌ | ✅ (org keys) | ✅ (own keys) | ✅ |
+| Add API keys | ❌ | ❌ (uses org keys) | ✅ | ✅ |
+| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs | 100 IPs |
+| Watchlist & alerts | ❌ | ✅ | ✅ | ✅ |
+| Custom RSS feeds | ❌ | ✅ | ✅ | ✅ |
+| Case notes | ✅ (read/write) | ✅ | ✅ | ✅ |
+| History | ✅ (read/write) | ✅ | ✅ | ✅ |
+| Admin panel access | ❌ | ❌ | ❌ | ✅ |
+| Manage user tiers | ❌ | ❌ | ❌ | ✅ |
+| Ban/unban users | ❌ | ❌ | ❌ | ✅ |
+| View all user stats | ❌ | ❌ | ❌ | ✅ |
 
 ---
 
@@ -423,6 +564,121 @@ SELECT email FROM auth.users WHERE id = auth.uid();
    curl "https://proxycheck.io/v2/103.1.213.139?vpn=1&asn=1&risk=1&key=YOUR_KEY"
    ```
    Should return JSON with proxy="yes"
+
+### Issue: Can't access Admin Panel
+
+**Symptoms:**
+- "Access Denied" message when trying to access admin panel
+- No "Admin Panel" option in user menu
+- Signed in but can't see admin features
+
+**Solutions:**
+
+1. **Verify admin status in database:**
+   ```sql
+   SELECT email, is_admin FROM profiles WHERE email = 'your-email@example.com';
+   ```
+   Should return `is_admin = true`
+
+2. **Grant admin privileges if needed:**
+   ```sql
+   UPDATE profiles SET is_admin = true WHERE email = 'your-email@example.com';
+   ```
+
+3. **Clear browser cache and refresh:**
+   - Admin status is checked on component mount
+   - Try logging out and back in
+
+4. **Check browser console for errors:**
+   - F12 → Console
+   - Look for RLS policy errors or auth issues
+
+### Issue: Tier toggle not working in Admin Panel
+
+**Symptoms:**
+- Clicking tier badge doesn't change user tier
+- Error message when trying to update tier
+- Changes don't persist
+
+**Solutions:**
+
+1. **Verify you're admin:**
+   ```sql
+   SELECT is_admin FROM profiles WHERE id = auth.uid();
+   ```
+
+2. **Check RLS policies:**
+   ```sql
+   -- Test if you can update profiles
+   SELECT * FROM profiles WHERE is_admin IN (SELECT id FROM profiles WHERE is_admin = true);
+   ```
+
+3. **Verify database function exists:**
+   ```sql
+   SELECT proname FROM pg_proc WHERE proname = 'update_user_tier';
+   ```
+
+4. **Test function directly:**
+   ```sql
+   SELECT update_user_tier('target-user-id'::uuid, 'org'::user_tier);
+   ```
+
+### Issue: Can't ban users
+
+**Symptoms:**
+- Ban button doesn't work
+- "Cannot ban yourself" error when trying to ban others
+- Ban status doesn't update
+
+**Solutions:**
+
+1. **Verify you're not trying to ban yourself:**
+   - Admin UI should disable ban button for your own account
+   - Database function prevents self-banning
+
+2. **Check function exists:**
+   ```sql
+   SELECT proname FROM pg_proc WHERE proname = 'update_user_ban_status';
+   ```
+
+3. **Test function directly:**
+   ```sql
+   SELECT update_user_ban_status('target-user-id'::uuid, true);
+   ```
+
+4. **Verify RLS allows updates:**
+   ```sql
+   -- Should return rows if you're admin
+   SELECT * FROM profiles WHERE auth.uid() IN (SELECT id FROM profiles WHERE is_admin = true);
+   ```
+
+### Issue: Admin dashboard shows no users
+
+**Symptoms:**
+- Admin panel loads but user table is empty
+- Statistics show 0 users
+- "No users found" message
+
+**Solutions:**
+
+1. **Verify admin_user_overview view exists:**
+   ```sql
+   SELECT * FROM admin_user_overview LIMIT 5;
+   ```
+
+2. **Check if profiles table has data:**
+   ```sql
+   SELECT COUNT(*) FROM profiles;
+   ```
+
+3. **Verify RLS allows reading:**
+   ```sql
+   -- Should see all users if you're admin
+   SELECT email, tier, is_banned FROM profiles;
+   ```
+
+4. **Check browser console for API errors:**
+   - Look for 403 forbidden or RLS policy errors
 
 ### Issue: Org keys not working for DSBN users
 

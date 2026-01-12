@@ -29,6 +29,7 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 1. **Anonymous** - Free sources only (7 sources)
 2. **DSBN** - Users with @dsbn.org email get all 13+ sources with org API keys
 3. **External** - Authenticated non-DSBN users can add their own API keys
+4. **Admin** - Special users with platform management capabilities (user management, tier assignment, ban control)
 
 ---
 
@@ -165,6 +166,8 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 | | History | No | `ip_lookups`, `url_lookups` | No | No | View past lookups (shared across team) |
 | **Settings** |
 | | Settings | Yes | `user_api_keys`, `user_custom_sources` | `api-keys` | No | Manage API keys and custom sources |
+| **Admin** |
+| | Admin Panel | Yes (Admin Only) | `profiles`, `admin_user_overview`, `usage_stats`, `user_api_keys`, `case_notes` | No | No | Platform administration - user management, tier control, ban system |
 
 \* *Smart IOC Intake extraction is always free; optional auto-analysis requires auth for paid sources*
 
@@ -372,6 +375,45 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
   - `user_custom_sources` - User RSS feeds
 - **Edge Function**: `api-keys` (encryption/decryption)
 
+#### Admin Panel
+
+**Admin Panel** (`src/pages/Admin.tsx`)
+- **Requires**: Admin privileges (`is_admin = true` in profiles table)
+- **Purpose**: Platform administration and user management
+- **Features**:
+  - **Dashboard Statistics**:
+    - Total registered users
+    - Active users (not banned)
+    - Org tier users count
+    - Banned users count
+  - **User Management Table**:
+    - Search users by email
+    - View comprehensive user statistics:
+      - Total API lookups performed
+      - Number of API keys configured
+      - Number of case notes created
+      - Last login timestamp
+    - Toggle user tier (Free ↔ Org) with single click
+    - Ban/unban users instantly
+    - Visual admin badges for admin users
+  - **Access Control**:
+    - Only admins can access the panel
+    - Admins cannot ban themselves
+    - Admins cannot change their own tier
+- **Database**:
+  - `profiles` - User profiles with admin flags
+  - `admin_user_overview` - View aggregating user statistics
+  - `usage_stats` - User activity metrics
+  - `user_api_keys` - API key counts
+  - `case_notes` - Case note counts
+- **Security Functions**:
+  - `update_user_tier(target_user_id, new_tier)` - Admin-only tier changes
+  - `update_user_ban_status(target_user_id, banned)` - Admin-only ban control
+- **Access**:
+  - Visible only to users with `is_admin = true`
+  - Accessible via user menu dropdown (click avatar → "Admin Panel")
+  - Direct route: `/admin` (auto-protected by component)
+
 ---
 
 ## Database Schema
@@ -525,6 +567,63 @@ User-added custom RSS feeds
 ```
 **RLS**: Users manage only their own sources
 
+#### `profiles`
+User profile and administrative data
+```sql
+- id (uuid, PK, FK → auth.users)
+- email (text)
+- full_name (text)
+- avatar_url (text)
+- role (text)
+- is_admin (boolean, default: false) - Admin panel access
+- tier (user_tier enum: 'free' | 'org', default: 'free') - User tier for API access
+- is_banned (boolean, default: false) - Ban status
+- last_login_at (timestamptz, default: now()) - Last login timestamp
+- created_at (timestamptz)
+- updated_at (timestamptz)
+```
+**RLS**:
+- All users can read their own profile
+- Admins can read all profiles
+- Admins can update tier and ban status of other users
+**Indexes**: email, is_admin, tier, is_banned
+
+#### `admin_user_overview` (View)
+Aggregated user statistics for admin panel
+```sql
+SELECT
+  p.id as user_id,
+  p.email,
+  p.tier,
+  p.is_admin,
+  p.is_banned,
+  p.created_at,
+  p.last_login_at,
+  p.updated_at,
+  COUNT(DISTINCT uak.id) as api_key_count,
+  COUNT(DISTINCT cn.id) as case_note_count,
+  COALESCE(SUM(us.count), 0) as total_lookups,
+  MAX(us.date) as last_activity_date
+FROM profiles p
+LEFT JOIN user_api_keys uak ON uak.user_id = p.id
+LEFT JOIN case_notes cn ON cn.user_id = p.id
+LEFT JOIN usage_stats us ON us.user_id = p.id
+GROUP BY p.id
+ORDER BY p.created_at DESC
+```
+**Access**: Read-only for admins via RLS
+
+#### `usage_stats`
+Tracks user activity for statistics
+```sql
+- id (uuid, PK)
+- user_id (uuid, FK → auth.users)
+- date (date, indexed)
+- count (integer) - Number of lookups performed
+- created_at (timestamptz)
+```
+**Purpose**: Powers admin dashboard statistics and usage analytics
+
 ---
 
 ## Authentication & Authorization
@@ -547,15 +646,19 @@ User-added custom RSS feeds
 
 **Tier Capabilities**:
 
-| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) |
-|---------|-----------|------------------|--------------------------|
-| Free sources (7) | ✅ | ✅ | ✅ |
-| Paid sources (6+) | ❌ | ✅ (org keys + own keys) | ✅ (own keys) |
-| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs |
-| Add API keys | ❌ | ✅ (fallback for missing org keys) | ✅ |
-| Add custom feeds | ❌ | ✅ | ✅ |
-| Watchlist & alerts | ❌ | ✅ | ✅ |
-| Cache context | "anon" | "org:dsbn" | "user:{id}" |
+| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) | Admin |
+|---------|-----------|------------------|--------------------------|-------|
+| Free sources (7) | ✅ | ✅ | ✅ | ✅ |
+| Paid sources (6+) | ❌ | ✅ (org keys + own keys) | ✅ (own keys) | ✅ |
+| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs | 100 IPs |
+| Add API keys | ❌ | ✅ (fallback for missing org keys) | ✅ | ✅ |
+| Add custom feeds | ❌ | ✅ | ✅ | ✅ |
+| Watchlist & alerts | ❌ | ✅ | ✅ | ✅ |
+| Admin panel access | ❌ | ❌ | ❌ | ✅ |
+| Manage user tiers | ❌ | ❌ | ❌ | ✅ |
+| Ban/unban users | ❌ | ❌ | ❌ | ✅ |
+| View all user stats | ❌ | ❌ | ❌ | ✅ |
+| Cache context | "anon" | "org:dsbn" | "user:{id}" | "user:{id}" |
 
 **Cache Isolation**:
 - Anonymous users share cache ("anon" context)
@@ -588,7 +691,45 @@ CREATE POLICY "Allow public read on valid cache"
   ON api_cache FOR SELECT
   TO anon, authenticated
   USING (expires_at > now());
+
+-- Admin-restricted (profiles)
+CREATE POLICY "Admins can view all user profiles"
+  ON profiles FOR SELECT
+  TO authenticated
+  USING (
+    auth.uid() IN (SELECT id FROM profiles WHERE is_admin = true)
+    OR auth.uid() = id
+  );
+
+CREATE POLICY "Admins can update user status"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (
+    auth.uid() IN (SELECT id FROM profiles WHERE is_admin = true)
+  )
+  WITH CHECK (
+    auth.uid() IN (SELECT id FROM profiles WHERE is_admin = true)
+  );
 ```
+
+### Admin Functions
+
+**`update_user_tier(target_user_id uuid, new_tier user_tier)`**
+- **Purpose**: Change user tier between 'free' and 'org'
+- **Security**: SECURITY DEFINER function, only callable by admins
+- **Validation**: Checks caller has `is_admin = true`
+- **Returns**: JSON with success status and message
+- **Usage**: Powers tier toggle in admin panel
+
+**`update_user_ban_status(target_user_id uuid, banned boolean)`**
+- **Purpose**: Ban or unban a user account
+- **Security**: SECURITY DEFINER function, only callable by admins
+- **Validation**:
+  - Checks caller has `is_admin = true`
+  - Prevents admins from banning themselves
+- **Returns**: JSON with success status and message
+- **Usage**: Powers ban/unban buttons in admin panel
+- **Note**: Banned users can't access protected features
 
 ---
 
@@ -1007,13 +1148,20 @@ Before deploying to production:
 - [ ] Review and adjust RLS policies based on team needs
 - [ ] Add CAPTCHA or rate limiting for anonymous users
 - [ ] Set up monitoring and error tracking (Sentry, Supabase Logs)
-- [ ] Test all user tiers (anon, DSBN, external)
+- [ ] Test all user tiers (anon, DSBN, external, admin)
 - [ ] Verify API keys are encrypted and never exposed
 - [ ] Run security audit (SQL injection, XSS, CSRF)
 - [ ] Set up automated backups for database
 - [ ] Document API key setup process for external users
 - [ ] Create admin guide for managing org API keys
 - [ ] Load test bulk lookup with max IPs (100)
+- [ ] **Assign initial admin users** by running SQL:
+  ```sql
+  UPDATE profiles SET is_admin = true WHERE email = 'admin@example.com';
+  ```
+- [ ] Test admin panel functionality (view users, tier toggle, ban/unban)
+- [ ] Verify admin-only RLS policies are working correctly
+- [ ] Document admin procedures for user management
 
 ---
 
