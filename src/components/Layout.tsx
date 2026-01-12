@@ -26,6 +26,7 @@ const navCategories: NavCategory[] = [
   {
     label: 'Threat Intel',
     items: [
+      { id: 'news', label: 'Intel Stream', icon: Newspaper },
       { id: 'ip', label: 'IP Lookup', icon: Search },
       { id: 'hash', label: 'Hash Lookup', icon: Hash },
       { id: 'domain', label: 'Domain Intel', icon: Globe },
@@ -37,12 +38,6 @@ const navCategories: NavCategory[] = [
       { id: 'ioc', label: 'Smart IOC Intake', icon: FileSearch },
       { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
       { id: 'decoder', label: 'Decoder', icon: Code },
-    ],
-  },
-  {
-    label: 'Investigation',
-    items: [
-      { id: 'news', label: 'News Feed', icon: Newspaper },
     ],
   },
 ];
