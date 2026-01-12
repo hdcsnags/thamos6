@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield } from 'lucide-react';
+import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -38,6 +38,12 @@ export default function Settings() {
   const [newKey, setNewKey] = useState({ service: '', key: '' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -72,6 +78,39 @@ export default function Settings() {
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 3000);
+  };
+
+  const changePassword = async () => {
+    if (!passwordForm.newPassword || !passwordForm.confirmPassword) {
+      showMessage('error', 'Please fill in all fields');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showMessage('error', 'New passwords do not match');
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      showMessage('error', 'Password must be at least 8 characters');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: passwordForm.newPassword,
+      });
+
+      if (error) throw error;
+
+      showMessage('success', 'Password changed successfully');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      showMessage('error', err instanceof Error ? err.message : 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const addKey = async () => {
@@ -246,6 +285,53 @@ export default function Settings() {
           {message.text}
         </div>
       )}
+
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-8">
+        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-6">
+          <Lock className="w-5 h-5 text-cyan-400" />
+          Change Password
+        </h2>
+
+        <div className="space-y-4 max-w-md">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              New Password
+            </label>
+            <input
+              type="password"
+              value={passwordForm.newPassword}
+              onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+              placeholder="Enter new password..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+              placeholder="Confirm new password..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+          </div>
+
+          <button
+            onClick={changePassword}
+            disabled={!passwordForm.newPassword || !passwordForm.confirmPassword || changingPassword}
+            className="w-full px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all font-medium"
+          >
+            {changingPassword ? 'Changing Password...' : 'Change Password'}
+          </button>
+
+          <p className="text-xs text-slate-500">
+            Password must be at least 8 characters long
+          </p>
+        </div>
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
         <div className="space-y-6">
