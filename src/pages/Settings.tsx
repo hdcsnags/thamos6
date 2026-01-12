@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock } from 'lucide-react';
+import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock, User, Settings as SettingsIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+
+type TabType = 'account' | 'api-keys' | 'usage';
 
 interface ApiKey {
   id: string;
@@ -32,6 +34,7 @@ const AVAILABLE_SERVICES = [
 
 export default function Settings() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabType>('account');
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -270,11 +273,17 @@ export default function Settings() {
     );
   }
 
+  const tabs = [
+    { id: 'account' as TabType, name: 'Account', icon: User },
+    { id: 'api-keys' as TabType, name: 'API Keys', icon: Key },
+    { id: 'usage' as TabType, name: 'Usage & Stats', icon: BarChart3 },
+  ];
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white mb-2">Settings</h1>
-        <p className="text-slate-400">Manage your API keys and view usage statistics</p>
+        <p className="text-slate-400">Manage your account, API keys, and view usage statistics</p>
       </div>
 
       {message && (
@@ -286,226 +295,296 @@ export default function Settings() {
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-8">
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-6">
-          <Lock className="w-5 h-5 text-cyan-400" />
-          Change Password
-        </h2>
-
-        <div className="space-y-4 max-w-md">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              New Password
-            </label>
-            <input
-              type="password"
-              value={passwordForm.newPassword}
-              onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-              placeholder="Enter new password..."
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Confirm New Password
-            </label>
-            <input
-              type="password"
-              value={passwordForm.confirmPassword}
-              onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-              placeholder="Confirm new password..."
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            />
-          </div>
-
-          <button
-            onClick={changePassword}
-            disabled={!passwordForm.newPassword || !passwordForm.confirmPassword || changingPassword}
-            className="w-full px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all font-medium"
-          >
-            {changingPassword ? 'Changing Password...' : 'Change Password'}
-          </button>
-
-          <p className="text-xs text-slate-500">
-            Password must be at least 8 characters long
-          </p>
+      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="flex border-b border-slate-800">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-6 py-4 font-medium transition-all ${
+                  activeTab === tab.id
+                    ? 'text-cyan-400 border-b-2 border-cyan-400 bg-slate-800/50'
+                    : 'text-slate-400 hover:text-slate-300 hover:bg-slate-800/30'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                {tab.name}
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      <div className="grid lg:grid-cols-2 gap-8">
-        <div className="space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Key className="w-5 h-5 text-cyan-400" />
-                API Keys
-              </h2>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer transition-all text-sm">
-                  <Upload className="w-4 h-4" />
-                  Import
-                  <input type="file" accept=".txt,.env" onChange={handleFileUpload} className="hidden" />
-                </label>
-                {apiKeys.length > 0 && (
+        <div className="p-6">
+          {activeTab === 'account' && (
+            <div className="space-y-8 max-w-2xl">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                  <User className="w-5 h-5 text-cyan-400" />
+                  Account Information
+                </h2>
+                <div className="bg-slate-800/50 rounded-lg p-4">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm text-slate-400">Email</p>
+                      <p className="text-white font-medium">{user?.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Account Created</p>
+                      <p className="text-white font-medium">
+                        {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                  <Lock className="w-5 h-5 text-cyan-400" />
+                  Change Password
+                </h2>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      placeholder="Enter new password..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      placeholder="Confirm new password..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                  </div>
+
                   <button
-                    onClick={exportKeys}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all text-sm"
+                    onClick={changePassword}
+                    disabled={!passwordForm.newPassword || !passwordForm.confirmPassword || changingPassword}
+                    className="w-full px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all font-medium"
                   >
-                    <Download className="w-4 h-4" />
-                    Export
+                    {changingPassword ? 'Changing Password...' : 'Change Password'}
                   </button>
+
+                  <p className="text-xs text-slate-500">
+                    Password must be at least 8 characters long
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'api-keys' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-cyan-400" />
+                  API Keys Management
+                </h2>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer transition-all text-sm">
+                    <Upload className="w-4 h-4" />
+                    Import
+                    <input type="file" accept=".txt,.env" onChange={handleFileUpload} className="hidden" />
+                  </label>
+                  {apiKeys.length > 0 && (
+                    <button
+                      onClick={exportKeys}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div className="flex gap-2">
+                  <select
+                    value={newKey.service}
+                    onChange={e => setNewKey(prev => ({ ...prev, service: e.target.value }))}
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">Select service...</option>
+                    {AVAILABLE_SERVICES.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={newKey.key}
+                    onChange={e => setNewKey(prev => ({ ...prev, key: e.target.value }))}
+                    placeholder="Enter API key..."
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                  <button
+                    onClick={addKey}
+                    disabled={!newKey.service || !newKey.key || saving}
+                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {apiKeys.length === 0 ? (
+                <p className="text-slate-500 text-center py-8">No API keys configured yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {apiKeys.map(key => {
+                    const serviceInfo = AVAILABLE_SERVICES.find(s => s.id === key.service);
+                    return (
+                      <div
+                        key={key.id}
+                        className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-white">{serviceInfo?.name || key.service}</p>
+                          <div className="flex items-center gap-2 text-sm">
+                            <code className="text-slate-400 font-mono">
+                              {'•'.repeat(32)}
+                            </code>
+                            <span className="text-xs text-emerald-400 flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              Encrypted
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => deleteKey(key.id, key.service)}
+                            className="p-2 text-slate-400 hover:text-red-400 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-6 p-4 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center gap-2 text-emerald-400 text-sm mb-3">
+                  <Shield className="w-4 h-4" />
+                  All API keys are encrypted at rest using AES-256-GCM
+                </div>
+                <p className="text-sm text-slate-400 mb-2">
+                  <span className="text-slate-300 font-medium">Manual Entry:</span> Select service from dropdown, then enter just the API key
+                </p>
+                <p className="text-sm text-slate-400">
+                  <span className="text-slate-300 font-medium">File Import Format:</span> One key per line as{' '}
+                  <code className="text-cyan-400">service=apikey</code>
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Example: abuseipdb=abc123...
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold text-white mb-4">Supported Services</h2>
+                <div className="grid md:grid-cols-2 gap-2">
+                  {AVAILABLE_SERVICES.map(service => {
+                    const hasKey = apiKeys.some(k => k.service === service.id);
+                    return (
+                      <div
+                        key={service.id}
+                        className={`flex items-center justify-between p-3 rounded-lg ${
+                          hasKey ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-800/50'
+                        }`}
+                      >
+                        <div>
+                          <p className={`font-medium ${hasKey ? 'text-emerald-400' : 'text-slate-300'}`}>
+                            {service.name}
+                          </p>
+                          <p className="text-xs text-slate-500">{service.description}</p>
+                        </div>
+                        {hasKey && <Check className="w-5 h-5 text-emerald-400" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'usage' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-6">
+                  <BarChart3 className="w-5 h-5 text-cyan-400" />
+                  Usage Statistics (Last 30 Days)
+                </h2>
+
+                <div className="grid md:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-slate-800/50 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-white">{totalLookups}</p>
+                    <p className="text-sm text-slate-400">Total Lookups</p>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-white">{apiKeys.length}</p>
+                    <p className="text-sm text-slate-400">Active Keys</p>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-white">{Object.keys(lookupsByType).length}</p>
+                    <p className="text-sm text-slate-400">Tool Types</p>
+                  </div>
+                </div>
+
+                {Object.keys(lookupsByType).length > 0 ? (
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Lookups by Type</h3>
+                    <div className="space-y-2">
+                      {Object.entries(lookupsByType)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([type, count]) => {
+                          const percentage = totalLookups > 0 ? (count / totalLookups) * 100 : 0;
+                          return (
+                            <div key={type} className="space-y-1">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-300 capitalize">{type.replace('_', ' ')}</span>
+                                <span className="text-white font-medium">{count}</span>
+                              </div>
+                              <div className="w-full bg-slate-800 rounded-full h-2">
+                                <div
+                                  className="bg-cyan-500 h-2 rounded-full transition-all"
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <BarChart3 className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                    <p className="text-slate-500">No usage data yet</p>
+                    <p className="text-sm text-slate-600 mt-1">Start using the tools to see statistics</p>
+                  </div>
                 )}
               </div>
             </div>
-
-            <div className="space-y-4 mb-6">
-              <div className="flex gap-2">
-                <select
-                  value={newKey.service}
-                  onChange={e => setNewKey(prev => ({ ...prev, service: e.target.value }))}
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                >
-                  <option value="">Select service...</option>
-                  {AVAILABLE_SERVICES.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={newKey.key}
-                  onChange={e => setNewKey(prev => ({ ...prev, key: e.target.value }))}
-                  placeholder="Enter API key..."
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-                <button
-                  onClick={addKey}
-                  disabled={!newKey.service || !newKey.key || saving}
-                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add
-                </button>
-              </div>
-            </div>
-
-            {apiKeys.length === 0 ? (
-              <p className="text-slate-500 text-center py-8">No API keys configured yet</p>
-            ) : (
-              <div className="space-y-2">
-                {apiKeys.map(key => {
-                  const serviceInfo = AVAILABLE_SERVICES.find(s => s.id === key.service);
-                  return (
-                    <div
-                      key={key.id}
-                      className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-white">{serviceInfo?.name || key.service}</p>
-                        <div className="flex items-center gap-2 text-sm">
-                          <code className="text-slate-400 font-mono">
-                            {'•'.repeat(32)}
-                          </code>
-                          <span className="text-xs text-emerald-400 flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            Encrypted
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => deleteKey(key.id, key.service)}
-                          className="p-2 text-slate-400 hover:text-red-400 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="mt-6 p-4 bg-slate-800/50 rounded-lg">
-              <div className="flex items-center gap-2 text-emerald-400 text-sm mb-3">
-                <Shield className="w-4 h-4" />
-                All API keys are encrypted at rest using AES-256-GCM
-              </div>
-              <p className="text-sm text-slate-400 mb-2">
-                <span className="text-slate-300 font-medium">Manual Entry:</span> Select service from dropdown, then enter just the API key
-              </p>
-              <p className="text-sm text-slate-400">
-                <span className="text-slate-300 font-medium">File Import Format:</span> One key per line as{' '}
-                <code className="text-cyan-400">service=apikey</code>
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Example: abuseipdb=abc123...
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-6">
-              <BarChart3 className="w-5 h-5 text-cyan-400" />
-              Usage Statistics (30 days)
-            </h2>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-slate-800/50 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-white">{totalLookups}</p>
-                <p className="text-sm text-slate-400">Total Lookups</p>
-              </div>
-              <div className="bg-slate-800/50 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-white">{apiKeys.length}</p>
-                <p className="text-sm text-slate-400">Active Keys</p>
-              </div>
-            </div>
-
-            {Object.keys(lookupsByType).length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-slate-400">By Type</p>
-                {Object.entries(lookupsByType)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([type, count]) => (
-                    <div key={type} className="flex items-center justify-between">
-                      <span className="text-slate-300 capitalize">{type.replace('_', ' ')}</span>
-                      <span className="text-white font-medium">{count}</span>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <p className="text-slate-500 text-center py-4">No usage data yet</p>
-            )}
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Supported Services</h2>
-            <div className="grid gap-2">
-              {AVAILABLE_SERVICES.map(service => {
-                const hasKey = apiKeys.some(k => k.service === service.id);
-                return (
-                  <div
-                    key={service.id}
-                    className={`flex items-center justify-between p-3 rounded-lg ${
-                      hasKey ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-800/50'
-                    }`}
-                  >
-                    <div>
-                      <p className={`font-medium ${hasKey ? 'text-emerald-400' : 'text-slate-300'}`}>
-                        {service.name}
-                      </p>
-                      <p className="text-xs text-slate-500">{service.description}</p>
-                    </div>
-                    {hasKey && <Check className="w-5 h-5 text-emerald-400" />}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
