@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Hash, Search, Loader2, AlertTriangle, CheckCircle, XCircle, Copy, Check, ExternalLink } from 'lucide-react';
-import { lookupHash, isValidHash, getSourceDisplayName } from '../lib/threatintel';
+import { lookupHash, isValidHash, getSourceDisplayName } from '../lib/threatIntel';
 
 interface HashResult {
   hash: string;
