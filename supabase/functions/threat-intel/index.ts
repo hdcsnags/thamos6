@@ -826,123 +826,182 @@ async function checkVPNProvider(asn: string | undefined, org: string | undefined
           data: {
             provider: asnMatch.provider_name,
             confidence: asnMatch.confidence,
-            asn: asnNumber,
-            match_type: "asn"
+            matched_by: "asn"
           }
         };
       }
     }
 
     if (org) {
-      const normalizedOrg = org.toLowerCase();
-      const { data: orgMatches, error } = await serviceClient
+      const { data: providers, error } = await serviceClient
         .from("vpn_providers")
         .select("provider_name, confidence, asn, org_pattern")
         .not("org_pattern", "is", null);
 
       if (error) throw error;
 
-      if (orgMatches && orgMatches.length > 0) {
-        for (const match of orgMatches) {
-          if (match.org_pattern && normalizedOrg.includes(match.org_pattern.toLowerCase())) {
-            return {
-              source: "vpn_provider",
-              data: {
-                provider: match.provider_name,
-                confidence: match.confidence,
-                asn: match.asn,
-                match_type: "org_pattern",
-                matched_pattern: match.org_pattern
-              }
-            };
-          }
+      if (providers) {
+        const orgLower = org.toLowerCase();
+        const match = providers.find(p =>
+          p.org_pattern && orgLower.includes(p.org_pattern.toLowerCase())
+        );
+
+        if (match) {
+          return {
+            source: "vpn_provider",
+            data: {
+              provider: match.provider_name,
+              confidence: match.confidence,
+              matched_by: "org_pattern"
+            }
+          };
         }
+      }
+
+      const vpnKeywords = ["vpn", "proxy", "mullvad", "nord", "express", "proton", "surfshark", "cyberghost", "private internet access"];
+      const hasVpnKeyword = vpnKeywords.some(keyword => org.toLowerCase().includes(keyword));
+
+      if (hasVpnKeyword) {
+        return {
+          source: "vpn_provider",
+          data: {
+            provider: "Unknown VPN",
+            confidence: "low",
+            matched_by: "keyword_heuristic"
+          }
+        };
       }
     }
 
     return { source: "vpn_provider", data: { provider: null, confidence: null } };
   } catch (e) {
-    return { source: "vpn_provider", data: { provider: null, confidence: null }, error: String(e) };
+    return { source: "vpn_provider", data: {}, error: String(e) };
   }
 }
 
 async function checkGreyNoise(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
-  if (!apiKey) return { source: "greynoise", data: {}, error: "API key not configured" };
   const cached = await getCachedResponse(ctx, "greynoise", ip);
-  if (cached) return { source: "greynoise", data: cached };
+  if (cached) {
+    const isRiot = (cached as any)?.riot === true;
+    const isNoise = (cached as any)?.noise === true;
+    const classification = (cached as any)?.classification;
+    let threatScore = 0;
+    if (classification === "malicious") threatScore = 80;
+    else if (classification === "unknown" && isNoise) threatScore = 30;
+    return { source: "greynoise", data: cached, threatScore, isMalicious: classification === "malicious" };
+  }
   try {
-    const response = await fetchWithTimeout(`https://api.greynoise.io/v3/community/${ip}`, {
-      headers: { "key": apiKey }
-    });
+    const headers: Record<string, string> = { "Accept": "application/json" };
+    if (apiKey) headers["key"] = apiKey;
+    const response = await fetchWithTimeout(`https://api.greynoise.io/v3/community/${ip}`, { headers });
+    if (response.status === 404) {
+      const notFound = { noise: false, riot: false, message: "IP not observed scanning the internet" };
+      await setCachedResponse(ctx, "greynoise", ip, notFound);
+      return { source: "greynoise", data: notFound, threatScore: 0 };
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     await setCachedResponse(ctx, "greynoise", ip, data);
-    return { source: "greynoise", data };
+    const classification = data?.classification;
+    let threatScore = 0;
+    if (classification === "malicious") threatScore = 80;
+    else if (classification === "unknown" && data?.noise) threatScore = 30;
+    return { source: "greynoise", data, threatScore, isMalicious: classification === "malicious" };
   } catch (e) {
     return { source: "greynoise", data: {}, error: String(e) };
   }
 }
 
+const SPAMHAUS_ZONES = [
+  { zone: "zen.spamhaus.org", name: "Spamhaus ZEN", description: "Combined blocklist (SBL+XBL+PBL)" },
+  { zone: "sbl.spamhaus.org", name: "Spamhaus SBL", description: "Spamhaus Block List - known spam sources" },
+  { zone: "xbl.spamhaus.org", name: "Spamhaus XBL", description: "Exploits Block List - hijacked PCs/bots" },
+  { zone: "pbl.spamhaus.org", name: "Spamhaus PBL", description: "Policy Block List - end-user IPs" },
+];
+
 async function checkSpamhaus(ctx: TierContext, ip: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "spamhaus", ip);
-  if (cached) return { source: "spamhaus", data: cached };
+  if (cached) {
+    const lists = (cached as any)?.listedIn ?? [];
+    return { source: "spamhaus", data: cached, isMalicious: lists.length > 0, threatScore: lists.length > 0 ? 60 : 0 };
+  }
   try {
     const reversed = ip.split(".").reverse().join(".");
-    const zones = [
-      { zone: "zen.spamhaus.org", list: "ZEN (combined)" },
-      { zone: "sbl.spamhaus.org", list: "SBL" },
-      { zone: "xbl.spamhaus.org", list: "XBL" },
-      { zone: "pbl.spamhaus.org", list: "PBL" },
-    ];
+    const listedIn: string[] = [];
+    const details: Record<string, any> = {};
 
-    const checks = await Promise.allSettled(
-      zones.map(async ({ zone, list }) => {
-        const response = await fetchWithTimeout(
-          `https://cloudflare-dns.com/dns-query?name=${reversed}.${zone}&type=A`,
-          { headers: { "Accept": "application/dns-json" } }
-        );
-        const data = await response.json();
-        const isListed = data?.Answer && data.Answer.length > 0;
-        return { list, isListed };
+    const zoneChecks = await Promise.allSettled(
+      SPAMHAUS_ZONES.map(async ({ zone, name, description }) => {
+        const response = await fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${reversed}.${zone}&type=A`, {
+          headers: { "Accept": "application/dns-json" }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.Answer && data.Answer.length > 0) {
+            return { zone, name, description, listed: true, returnCodes: data.Answer.map((a: any) => a.data) };
+          }
+        }
+        return null;
       })
     );
 
-    const results = checks
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
-      .map(r => r.value);
+    for (const result of zoneChecks) {
+      if (result.status === "fulfilled" && result.value) {
+        listedIn.push(result.value.name);
+        details[result.value.zone] = result.value;
+      }
+    }
 
-    const listedIn = results.filter(r => r.isListed).map(r => r.list);
-    const isListed = listedIn.length > 0;
-
-    const data = { ip, isListed, listedIn };
-    await setCachedResponse(ctx, "spamhaus", ip, data);
-    return { source: "spamhaus", data };
+    const result = { ip, listedIn, details, checked: SPAMHAUS_ZONES.map(z => z.name) };
+    await setCachedResponse(ctx, "spamhaus", ip, result);
+    return { source: "spamhaus", data: result, isMalicious: listedIn.length > 0, threatScore: listedIn.length > 0 ? 60 : 0 };
   } catch (e) {
     return { source: "spamhaus", data: {}, error: String(e) };
   }
 }
 
+const BLOCKLIST_DE_ZONES = [
+  { zone: "all.bl.blocklist.de", name: "Blocklist.de All", description: "All attacking IPs in last 48h" },
+  { zone: "ssh.bl.blocklist.de", name: "Blocklist.de SSH", description: "SSH brute-force attackers" },
+  { zone: "mail.bl.blocklist.de", name: "Blocklist.de Mail", description: "Mail server attackers" },
+];
+
 async function checkBlocklistDE(ctx: TierContext, ip: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "blocklistde", ip);
-  if (cached) return { source: "blocklistde", data: cached };
+  if (cached) {
+    const lists = (cached as any)?.listedIn ?? [];
+    return { source: "blocklistde", data: cached, isMalicious: lists.length > 0, threatScore: lists.length > 0 ? 70 : 0 };
+  }
   try {
-    const lists = [
-      "all", "ssh", "mail", "apache", "imap", "ftp", "sip", "bots", "strongips", "bruteforcelogin"
-    ];
+    const reversed = ip.split(".").reverse().join(".");
+    const listedIn: string[] = [];
+    const details: Record<string, any> = {};
 
-    const response = await fetchWithTimeout(`https://api.blocklist.de/api.php?ip=${ip}&start=1`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
+    const zoneChecks = await Promise.allSettled(
+      BLOCKLIST_DE_ZONES.map(async ({ zone, name, description }) => {
+        const response = await fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${reversed}.${zone}&type=A`, {
+          headers: { "Accept": "application/dns-json" }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.Answer && data.Answer.length > 0) {
+            return { zone, name, description, listed: true, returnCodes: data.Answer.map((a: any) => a.data) };
+          }
+        }
+        return null;
+      })
+    );
 
-    const data = {
-      ip,
-      isListed: text.includes("attacks") && !text.includes("not found"),
-      rawResponse: text,
-      listedIn: text.includes("attacks") ? ["blocklist.de"] : []
-    };
+    for (const result of zoneChecks) {
+      if (result.status === "fulfilled" && result.value) {
+        listedIn.push(result.value.name);
+        details[result.value.zone] = result.value;
+      }
+    }
 
-    await setCachedResponse(ctx, "blocklistde", ip, data);
-    return { source: "blocklistde", data };
+    const result = { ip, listedIn, details, checked: BLOCKLIST_DE_ZONES.map(z => z.name) };
+    await setCachedResponse(ctx, "blocklistde", ip, result);
+    return { source: "blocklistde", data: result, isMalicious: listedIn.length > 0, threatScore: listedIn.length > 0 ? 70 : 0 };
   } catch (e) {
     return { source: "blocklistde", data: {}, error: String(e) };
   }
@@ -969,8 +1028,8 @@ async function checkVPNAPI(ctx: TierContext, ip: string, apiKey: string): Promis
         country_code: data.location?.country_code,
         city: data.location?.city,
         isp: data.network?.autonomous_system_organization,
-        asn: data.network?.autonomous_system_number,
-        source: "VPN API"
+        asn: data.network?.autonomous_system_number ? `AS${data.network.autonomous_system_number}` : null,
+        source: "VPNAPI.io"
       }
     };
   } catch (e) {
@@ -978,11 +1037,110 @@ async function checkVPNAPI(ctx: TierContext, ip: string, apiKey: string): Promis
   }
 }
 
+async function checkURLScan(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "urlscan", data: {}, error: "API key not configured" };
+  try {
+    const submitResponse = await fetchWithTimeout("https://urlscan.io/api/v1/scan/", { method: "POST", headers: { "API-Key": apiKey, "Content-Type": "application/json" }, body: JSON.stringify({ url, visibility: "public" }) });
+    if (!submitResponse.ok) throw new Error(`HTTP ${submitResponse.status}`);
+    const submitData = await submitResponse.json();
+    return { source: "urlscan", data: { submitted: true, uuid: submitData.uuid, resultUrl: submitData.result } };
+  } catch (e) {
+    return { source: "urlscan", data: {}, error: String(e) };
+  }
+}
+
+async function checkVirusTotalURL(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "virustotal_url", data: {}, error: "API key not configured" };
+
+  const toBase64Url = (input: string): string => {
+    const bytes = new TextEncoder().encode(input);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    const b64 = btoa(binary);
+    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+
+  const urlId = toBase64Url(url);
+  const cacheKey = `url:${urlId}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
+  if (cached) {
+    const stats = (cached as any)?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (Number(stats.malicious ?? 0) > 0 || Number(stats.suspicious ?? 0) > 0) : false;
+    return { source: "virustotal_url", data: cached, isMalicious };
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `https://www.virustotal.com/api/v3/urls/${urlId}`,
+      { headers: { "x-apikey": apiKey } }
+    );
+
+    if (response.status === 404) {
+      const scanResponse = await fetchWithTimeout(
+        "https://www.virustotal.com/api/v3/urls",
+        {
+          method: "POST",
+          headers: {
+            "x-apikey": apiKey,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: `url=${encodeURIComponent(url)}`,
+        }
+      );
+
+      const scanText = await scanResponse.text().catch(() => "");
+      const scanData = scanText ? (() => { try { return JSON.parse(scanText); } catch { return { raw: scanText }; } })() : {};
+
+      await setCachedResponse(ctx, "virustotal", cacheKey, { submitted: true, ...scanData });
+
+      return { source: "virustotal_url", data: { submitted: true, ...scanData } };
+    }
+
+    const text = await response.text().catch(() => "");
+    const data = text ? (() => { try { return JSON.parse(text); } catch { return { raw: text }; } })() : {};
+
+    if (!response.ok) {
+      return { source: "virustotal_url", data, error: `HTTP ${response.status}` };
+    }
+
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
+
+    const stats = (data as any)?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (Number(stats.malicious ?? 0) > 0 || Number(stats.suspicious ?? 0) > 0) : false;
+
+    return { source: "virustotal_url", data, isMalicious };
+  } catch (e) {
+    return { source: "virustotal_url", data: {}, error: String(e) };
+  }
+}
+
+
+async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatResult> {
+  try {
+    const formData = new FormData();
+    formData.append("url", url);
+    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/url/", { method: "POST", body: formData });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return { source: "urlhaus_url", data, isMalicious: data?.query_status === "ok" };
+  } catch (e) {
+    return { source: "urlhaus_url", data: {}, error: String(e) };
+  }
+}
+
 async function checkVirusTotalHash(ctx: TierContext, hash: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "virustotal_hash", data: {}, error: "API key not configured" };
 
-  const cached = await getCachedResponse(ctx, "virustotal_hash", hash);
-  if (cached) return { source: "virustotal_hash", data: cached, threatScore: calculateVTHashScore(cached) };
+  const cacheKey = `hash:${hash}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
+  if (cached) {
+    const stats = (cached as any)?.data?.attributes?.last_analysis_stats;
+    const malicious = Number(stats?.malicious ?? 0);
+    const suspicious = Number(stats?.suspicious ?? 0);
+    const isMalicious = malicious > 0 || suspicious > 0;
+    const threatScore = calculateVTHashScore(cached);
+    return { source: "virustotal_hash", data: cached, isMalicious, threatScore };
+  }
 
   try {
     const response = await fetchWithTimeout(
@@ -997,14 +1155,15 @@ async function checkVirusTotalHash(ctx: TierContext, hash: string, apiKey: strin
       return { source: "virustotal_hash", data, error: `HTTP ${response.status}` };
     }
 
-    await setCachedResponse(ctx, "virustotal_hash", hash, data);
-    const score = calculateVTHashScore(data);
-    return {
-      source: "virustotal_hash",
-      data,
-      threatScore: score,
-      isMalicious: score > 50
-    };
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
+
+    const stats = (data as any)?.data?.attributes?.last_analysis_stats;
+    const malicious = Number(stats?.malicious ?? 0);
+    const suspicious = Number(stats?.suspicious ?? 0);
+    const isMalicious = malicious > 0 || suspicious > 0;
+    const threatScore = calculateVTHashScore(data);
+
+    return { source: "virustotal_hash", data, isMalicious, threatScore };
   } catch (e) {
     return { source: "virustotal_hash", data: {}, error: String(e) };
   }
@@ -1023,13 +1182,15 @@ function calculateVTHashScore(data: Record<string, unknown>): number {
   if (total <= 0) return 0;
 
   const score = ((malicious * 100) + (suspicious * 50)) / total;
-
   return Math.round(score * 100) / 100;
 }
 
 async function checkMalwareBazaarHash(ctx: TierContext, hash: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "malwarebazaar", hash);
-  if (cached) return { source: "malwarebazaar", data: cached, isMalicious: (cached as any)?.query_status === "ok" };
+  if (cached) {
+    const isMalicious = (cached as any)?.query_status === "ok";
+    return { source: "malwarebazaar", data: cached, isMalicious, threatScore: isMalicious ? 90 : 0 };
+  }
 
   try {
     const formData = new FormData();
@@ -1043,14 +1204,11 @@ async function checkMalwareBazaarHash(ctx: TierContext, hash: string): Promise<T
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
+
     await setCachedResponse(ctx, "malwarebazaar", hash, data);
 
-    return {
-      source: "malwarebazaar",
-      data,
-      isMalicious: data?.query_status === "ok",
-      threatScore: data?.query_status === "ok" ? 100 : 0
-    };
+    const isMalicious = data?.query_status === "ok";
+    return { source: "malwarebazaar", data, isMalicious, threatScore: isMalicious ? 90 : 0 };
   } catch (e) {
     return { source: "malwarebazaar", data: {}, error: String(e) };
   }
@@ -1060,7 +1218,12 @@ async function checkHybridAnalysisHash(ctx: TierContext, hash: string, apiKey: s
   if (!apiKey) return { source: "hybrid_analysis", data: {}, error: "API key not configured" };
 
   const cached = await getCachedResponse(ctx, "hybrid_analysis", hash);
-  if (cached) return { source: "hybrid_analysis", data: cached, threatScore: calculateHAScore(cached) };
+  if (cached) {
+    const verdict = (cached as any)?.[0]?.verdict;
+    const isMalicious = verdict === "malicious";
+    const threatScore = verdict === "malicious" ? 85 : verdict === "suspicious" ? 50 : 0;
+    return { source: "hybrid_analysis", data: cached, isMalicious, threatScore };
+  }
 
   try {
     const response = await fetchWithTimeout(
@@ -1078,33 +1241,27 @@ async function checkHybridAnalysisHash(ctx: TierContext, hash: string, apiKey: s
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
+
     await setCachedResponse(ctx, "hybrid_analysis", hash, data);
 
-    const score = calculateHAScore(data);
-    return {
-      source: "hybrid_analysis",
-      data,
-      threatScore: score,
-      isMalicious: score > 50
-    };
+    const verdict = (data as any)?.[0]?.verdict;
+    const isMalicious = verdict === "malicious";
+    const threatScore = verdict === "malicious" ? 85 : verdict === "suspicious" ? 50 : 0;
+
+    return { source: "hybrid_analysis", data, isMalicious, threatScore };
   } catch (e) {
     return { source: "hybrid_analysis", data: {}, error: String(e) };
   }
 }
 
-function calculateHAScore(data: Record<string, unknown>): number {
-  if (Array.isArray(data) && data.length > 0) {
-    const threatScore = data[0]?.threat_score;
-    if (typeof threatScore === "number") {
-      return threatScore;
-    }
-  }
-  return 0;
-}
-
 async function checkAlienVaultHash(ctx: TierContext, hash: string, apiKey: string): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "alienvault_hash", hash);
-  if (cached) return { source: "alienvault_hash", data: cached, threatScore: calculateOTXHashScore(cached) };
+  if (cached) {
+    const pulseCount = (cached as any)?.pulse_info?.count ?? 0;
+    const isMalicious = pulseCount > 0;
+    const threatScore = Math.min(pulseCount * 10, 100);
+    return { source: "alienvault_hash", data: cached, isMalicious, threatScore };
+  }
 
   try {
     const headers: Record<string, string> = { "Accept": "application/json" };
@@ -1117,109 +1274,49 @@ async function checkAlienVaultHash(ctx: TierContext, hash: string, apiKey: strin
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
+
     await setCachedResponse(ctx, "alienvault_hash", hash, data);
 
-    const score = calculateOTXHashScore(data);
-    return {
-      source: "alienvault_hash",
-      data,
-      threatScore: score,
-      isMalicious: score > 50
-    };
+    const pulseCount = (data as any)?.pulse_info?.count ?? 0;
+    const isMalicious = pulseCount > 0;
+    const threatScore = Math.min(pulseCount * 10, 100);
+
+    return { source: "alienvault_hash", data, isMalicious, threatScore };
   } catch (e) {
     return { source: "alienvault_hash", data: {}, error: String(e) };
-  }
-}
-
-function calculateOTXHashScore(data: Record<string, unknown>): number {
-  const pulseCount = (data as any)?.pulse_info?.count ?? 0;
-  return Math.min(pulseCount * 10, 100);
-}
-
-async function checkVirusTotalURL(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
-  if (!apiKey) return { source: "virustotal_url", data: {}, error: "API key not configured" };
-
-  const urlId = btoa(url).replace(/=/g, "");
-  const cached = await getCachedResponse(ctx, "virustotal_url", urlId);
-  if (cached) return { source: "virustotal_url", data: cached };
-
-  try {
-    const response = await fetchWithTimeout(
-      `https://www.virustotal.com/api/v3/urls/${urlId}`,
-      { headers: { "x-apikey": apiKey } }
-    );
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    await setCachedResponse(ctx, "virustotal_url", urlId, data);
-
-    return { source: "virustotal_url", data };
-  } catch (e) {
-    return { source: "virustotal_url", data: {}, error: String(e) };
-  }
-}
-
-async function checkURLScan(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
-  if (!apiKey) return { source: "urlscan", data: {}, error: "API key not configured" };
-
-  const cached = await getCachedResponse(ctx, "urlscan", url);
-  if (cached) return { source: "urlscan", data: cached };
-
-  try {
-    const response = await fetchWithTimeout(
-      "https://urlscan.io/api/v1/scan/",
-      {
-        method: "POST",
-        headers: {
-          "API-Key": apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ url, visibility: "private" })
-      }
-    );
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    await setCachedResponse(ctx, "urlscan", url, data);
-
-    return { source: "urlscan", data };
-  } catch (e) {
-    return { source: "urlscan", data: {}, error: String(e) };
-  }
-}
-
-async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatResult> {
-  const cached = await getCachedResponse(ctx, "urlhaus_url", url);
-  if (cached) return { source: "urlhaus_url", data: cached, isMalicious: (cached as any)?.query_status === "ok" };
-
-  try {
-    const formData = new FormData();
-    formData.append("url", url);
-
-    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/url/", {
-      method: "POST",
-      body: formData
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    await setCachedResponse(ctx, "urlhaus_url", url, data);
-
-    return {
-      source: "urlhaus_url",
-      data,
-      isMalicious: data?.query_status === "ok"
-    };
-  } catch (e) {
-    return { source: "urlhaus_url", data: {}, error: String(e) };
   }
 }
 
 function extractEnrichment(results: ThreatResult[]): IPEnrichment {
   const enrichment: IPEnrichment = {};
 
+  const torExitList = results.find(r => r.source === "tor_exit_list")?.data as any;
+  if (torExitList && torExitList.is_tor_exit === true) {
+    enrichment.isTor = true;
+  }
+
+  const ip2proxy = results.find(r => r.source === "ip2proxy")?.data as any;
+  if (ip2proxy && ip2proxy.is_proxy === true) {
+    if (ip2proxy.proxy_type === "VPN") {
+      enrichment.isVPN = true;
+      enrichment.vpnService = ip2proxy.isp || "Unknown VPN";
+    } else if (ip2proxy.proxy_type === "DCH") {
+      enrichment.isHosting = true;
+    } else if (ip2proxy.proxy_type === "PUB") {
+      enrichment.isProxy = true;
+    } else if (ip2proxy.proxy_type === "TOR") {
+      enrichment.isTor = true;
+    }
+  }
+
+  const vpnProvider = results.find(r => r.source === "vpn_provider")?.data as any;
+  if (vpnProvider && vpnProvider.provider) {
+    enrichment.isVPN = true;
+    enrichment.vpnService = vpnProvider.provider;
+  }
+
   const ipapi = results.find(r => r.source === "ipapi")?.data as any;
-  if (ipapi) {
+  if (ipapi && !ipapi.error) {
     enrichment.country = ipapi.country;
     enrichment.countryCode = ipapi.countryCode;
     enrichment.city = ipapi.city;
@@ -1227,81 +1324,154 @@ function extractEnrichment(results: ThreatResult[]): IPEnrichment {
     enrichment.isp = ipapi.isp;
     enrichment.org = ipapi.org;
     enrichment.asn = ipapi.as;
+    enrichment.isProxy = ipapi.proxy === true;
+    enrichment.isHosting = ipapi.hosting === true;
     enrichment.timezone = ipapi.timezone;
     enrichment.lat = ipapi.lat;
     enrichment.lon = ipapi.lon;
-    enrichment.isProxy = ipapi.proxy === true;
-    enrichment.isHosting = ipapi.hosting === true;
   }
 
-  const tor = results.find(r => r.source === "tor_exit_list")?.data as any;
-  if (tor?.is_tor_exit) enrichment.isTor = true;
+  const proxycheckRaw = results.find(r => r.source === "proxycheck")?.data as any;
 
-  const ip2proxy = results.find(r => r.source === "ip2proxy")?.data as any;
-  if (ip2proxy) {
-    if (ip2proxy.is_proxy) enrichment.isProxy = true;
-    if (ip2proxy.provider) enrichment.vpnService = ip2proxy.provider;
-    if (ip2proxy.usage_type?.toLowerCase().includes("dch")) enrichment.isHosting = true;
-    if (!enrichment.country && ip2proxy.country_name) enrichment.country = ip2proxy.country_name;
-    if (!enrichment.countryCode && ip2proxy.country_code) enrichment.countryCode = ip2proxy.country_code;
-    if (!enrichment.isp && ip2proxy.isp) enrichment.isp = ip2proxy.isp;
-    if (!enrichment.asn && ip2proxy.asn) enrichment.asn = ip2proxy.asn;
+if (proxycheckRaw && (proxycheckRaw.status === "ok" || proxycheckRaw.status === "warning")) {
+  const ipKey =
+    proxycheckRaw.ip ||
+    Object.keys(proxycheckRaw).find(k => k.includes(".") || k.includes(":")); 
+
+  const ipResult = proxycheckRaw.network ? proxycheckRaw : (ipKey ? proxycheckRaw[ipKey] : undefined);
+
+  if (ipResult) {
+    const det = ipResult.detections || {};
+    const net = ipResult.network || {};
+    const loc = ipResult.location || {};
+    const op  = ipResult.operator || {};
+
+    if (det.proxy === true) enrichment.isProxy = true;
+    if (det.vpn === true)  enrichment.isVPN = true;
+    if (det.tor === true)  enrichment.isTor = true;
+
+    if (det.hosting === true) enrichment.isHosting = true;
+
+    if (enrichment.isVPN && !enrichment.vpnService) {
+      enrichment.vpnService = op.name || net.provider || "Unknown VPN";
+    }
+
+    if (!enrichment.asn && net.asn) enrichment.asn = net.asn;
+    if (!enrichment.isp && net.provider) enrichment.isp = net.provider;
+
+    if (!enrichment.country && (loc.country || loc.country_name)) {
+      enrichment.country = loc.country || loc.country_name;
+    }
+
+    if (typeof ipResult.risk === "number") enrichment.riskScore = ipResult.risk;
+
+    if (typeof det.confidence === "number") enrichment.confidence = det.confidence;
+  }
+}
+
+
+  const ipqs = results.find(r => r.source === "ipqualityscore")?.data as any;
+  if (ipqs && !ipqs.error) {
+    if (ipqs.vpn === true && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (ipqs.tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
+    if (ipqs.proxy === true) enrichment.isProxy = true;
+    if (ipqs.bot_status === true) enrichment.isBot = true;
+    if (ipqs.ISP && !enrichment.isp) enrichment.isp = ipqs.ISP;
+    if (ipqs.organization && !enrichment.org) enrichment.org = ipqs.organization;
+    if (ipqs.country_code && !enrichment.countryCode) enrichment.countryCode = ipqs.country_code;
+    if (ipqs.city && !enrichment.city) enrichment.city = ipqs.city;
+    if (ipqs.region && !enrichment.region) enrichment.region = ipqs.region;
+  }
+
+  const abuseipdb = results.find(r => r.source === "abuseipdb")?.data as any;
+  if (abuseipdb?.data) {
+    if (abuseipdb.data.isTor === true && enrichment.isTor === undefined) enrichment.isTor = true;
+    if (abuseipdb.data.countryCode && !enrichment.countryCode) enrichment.countryCode = abuseipdb.data.countryCode;
+    if (abuseipdb.data.isp && !enrichment.isp) enrichment.isp = abuseipdb.data.isp;
+    if (abuseipdb.data.usageType) {
+      const ut = abuseipdb.data.usageType.toLowerCase();
+      if ((ut.includes("vpn") || ut.includes("commercial")) && enrichment.isVPN === undefined) enrichment.isVPN = true;
+      if (ut.includes("hosting") || ut.includes("data center")) enrichment.isHosting = true;
+    }
+  }
+
+  const shodan = results.find(r => r.source === "shodan")?.data as any;
+  if (shodan && !shodan.error) {
+    if (shodan.country_name && !enrichment.country) enrichment.country = shodan.country_name;
+    if (shodan.country_code && !enrichment.countryCode) enrichment.countryCode = shodan.country_code;
+    if (shodan.city && !enrichment.city) enrichment.city = shodan.city;
+    if (shodan.org && !enrichment.org) enrichment.org = shodan.org;
+    if (shodan.isp && !enrichment.isp) enrichment.isp = shodan.isp;
+    if (shodan.asn && !enrichment.asn) enrichment.asn = shodan.asn;
+  }
+
+  const alienvault = results.find(r => r.source === "alienvault")?.data as any;
+  if (alienvault && !alienvault.error) {
+    if (alienvault.country_name && !enrichment.country) enrichment.country = alienvault.country_name;
+    if (alienvault.country_code && !enrichment.countryCode) enrichment.countryCode = alienvault.country_code;
+    if (alienvault.city && !enrichment.city) enrichment.city = alienvault.city;
+    if (alienvault.asn && !enrichment.asn) enrichment.asn = `AS${alienvault.asn}`;
   }
 
   const teoh = results.find(r => r.source === "teoh")?.data as any;
-  if (teoh) {
-    if (teoh["is_vpn?"]) enrichment.isVPN = true;
-    if (teoh["is_proxy?"]) enrichment.isProxy = true;
-  }
-
-  const vpnProvider = results.find(r => r.source === "vpn_provider")?.data as any;
-  if (vpnProvider?.provider) {
-    enrichment.isVPN = true;
-    enrichment.vpnService = vpnProvider.provider;
-  }
-
-  const proxycheck = results.find(r => r.source === "proxycheck")?.data as any;
-  if (proxycheck) {
-    const ipData = proxycheck[Object.keys(proxycheck).find(k => k !== "status" && k !== "node") ?? ""];
-    if (ipData) {
-      if (ipData.proxy === "yes") enrichment.isProxy = true;
-      if (ipData.type === "VPN") enrichment.isVPN = true;
-    }
+  if (teoh && !teoh.error) {
+    if ((teoh.vpn_or_proxy === "yes" || teoh.is_vpn === true) && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (teoh.is_tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
+    if (teoh.is_datacenter === true || teoh.hosting === true) enrichment.isHosting = true;
+    if (teoh.vpn_name && !enrichment.vpnService) enrichment.vpnService = teoh.vpn_name;
   }
 
   const greynoise = results.find(r => r.source === "greynoise")?.data as any;
-  if (greynoise) {
-    if (greynoise.classification === "malicious") {
+  if (greynoise && !greynoise.error) {
+    if (greynoise.noise === true) {
       enrichment.isMassScanner = true;
-      enrichment.scannerType = "malicious";
-    } else if (greynoise.classification === "benign") {
+      enrichment.isKnownScanner = true;
+    }
+    if (greynoise.riot === true) {
       enrichment.isKnownScanner = true;
       enrichment.scannerType = "benign";
     }
-    if (greynoise.bot) enrichment.isBot = true;
+    if (greynoise.classification) {
+      enrichment.scannerType = greynoise.classification;
+    }
+    if (greynoise.name && !enrichment.org) {
+      enrichment.org = greynoise.name;
+    }
   }
 
   const spamhaus = results.find(r => r.source === "spamhaus")?.data as any;
-  if (spamhaus?.isListed) {
-    enrichment.spamhausListed = true;
-    enrichment.spamhausLists = spamhaus.listedIn;
+  if (spamhaus && !spamhaus.error) {
+    if (spamhaus.listedIn && spamhaus.listedIn.length > 0) {
+      enrichment.spamhausListed = true;
+      enrichment.spamhausLists = spamhaus.listedIn;
+    }
   }
 
   const iphub = results.find(r => r.source === "iphub")?.data as any;
-  if (iphub) {
-    if (iphub.block === 1) enrichment.isProxy = true;
-    if (iphub.block === 2) enrichment.isHosting = true;
-    if (!enrichment.country && iphub.country_name) enrichment.country = iphub.country_name;
-    if (!enrichment.countryCode && iphub.country_code) enrichment.countryCode = iphub.country_code;
-    if (!enrichment.isp && iphub.isp) enrichment.isp = iphub.isp;
-    if (!enrichment.asn && iphub.asn) enrichment.asn = iphub.asn.toString();
+  if (iphub && !iphub.error) {
+    if (iphub.block === 1) {
+      enrichment.isProxy = true;
+      enrichment.isHosting = true;
+    } else if (iphub.block === 2) {
+      enrichment.isProxy = true;
+    }
+    if (iphub.country_code && !enrichment.countryCode) enrichment.countryCode = iphub.country_code;
+    if (iphub.country_name && !enrichment.country) enrichment.country = iphub.country_name;
+    if (iphub.isp && !enrichment.isp) enrichment.isp = iphub.isp;
+    if (iphub.asn && !enrichment.asn) enrichment.asn = `AS${iphub.asn}`;
+  }
+
+  const teamcymru = results.find(r => r.source === "teamcymru")?.data as any;
+  if (teamcymru && teamcymru.found && !teamcymru.error) {
+    if (teamcymru.asn && !enrichment.asn) enrichment.asn = `AS${teamcymru.asn}`;
+    if (teamcymru.country_code && !enrichment.countryCode) enrichment.countryCode = teamcymru.country_code;
   }
 
   const vpnapi = results.find(r => r.source === "vpnapi")?.data as any;
-  if (vpnapi) {
-    if (vpnapi.is_vpn) enrichment.isVPN = true;
-    if (vpnapi.is_proxy) enrichment.isProxy = true;
-    if (vpnapi.is_tor) enrichment.isTor = true;
+  if (vpnapi && !vpnapi.error) {
+    if (vpnapi.is_vpn === true && enrichment.isVPN === undefined) enrichment.isVPN = true;
+    if (vpnapi.is_proxy === true) enrichment.isProxy = true;
+    if (vpnapi.is_tor === true && enrichment.isTor === undefined) enrichment.isTor = true;
     if (vpnapi.country && !enrichment.country) enrichment.country = vpnapi.country;
     if (vpnapi.country_code && !enrichment.countryCode) enrichment.countryCode = vpnapi.country_code;
     if (vpnapi.city && !enrichment.city) enrichment.city = vpnapi.city;
@@ -1606,11 +1776,6 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: "Hash required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const hashRegex = /^[a-f0-9]{32}$|^[a-f0-9]{40}$|^[a-f0-9]{64}$/;
-      if (!hashRegex.test(hash)) {
-        return new Response(JSON.stringify({ error: "Invalid hash format. Must be MD5 (32), SHA1 (40), or SHA256 (64) hex characters." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
       const sourcePromises: Promise<ThreatResult>[] = [];
 
       if (allowedSources.includes("malwarebazaar")) sourcePromises.push(checkMalwareBazaarHash(ctx, hash));
@@ -1669,7 +1834,7 @@ Deno.serve(async (req: Request) => {
       const aggregated = {
         hash,
         isMalicious,
-        overallThreatScore: maxScore,
+        overallThreatScore: Math.max(avgScore, maxScore),
         maxThreatScore: maxScore,
         sources: normalizedSources,
         detections: {
