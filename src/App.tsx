@@ -13,6 +13,7 @@ import DecoderTool from './pages/DecoderTool';
 import CaseNotes from './pages/CaseNotes';
 import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('ip');
@@ -45,6 +46,8 @@ function App() {
         return <NewsFeed />;
       case 'settings':
         return <Settings />;
+      case 'admin':
+        return <Admin />;
       default:
         return <IPLookup />;
     }

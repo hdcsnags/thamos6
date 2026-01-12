@@ -7,8 +7,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
+import { supabase } from '../lib/supabase';
 
-export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings';
+export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin';
 
 interface LayoutProps {
   currentPage: Page;
@@ -503,6 +504,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
 function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const { user, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -514,6 +516,23 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (data?.is_admin) {
+        setIsAdmin(true);
+      }
+    };
+    checkAdmin();
+  }, [user]);
 
   if (!user) return null;
 
@@ -544,6 +563,15 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
             <p className="text-sm text-slate-400 truncate">{email}</p>
           </div>
           <div className="p-2">
+            {isAdmin && (
+              <button
+                onClick={() => { onNavigate('admin'); setOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-cyan-400 transition-all"
+              >
+                <Shield className="w-4 h-4" />
+                <span>Admin Panel</span>
+              </button>
+            )}
             <button
               onClick={() => { onNavigate('settings'); setOpen(false); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
