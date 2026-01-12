@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Hash, Search, Loader2, AlertTriangle, CheckCircle, XCircle, Copy, Check, ExternalLink } from 'lucide-react';
+import { lookupHash, isValidHash, getSourceDisplayName } from '../lib/threatintel';
 
 interface HashResult {
   hash: string;
@@ -39,64 +40,47 @@ export default function HashLookup() {
       return;
     }
 
-    const hashType = detectHashType(trimmedHash);
-    if (hashType === 'Unknown') {
+    if (!isValidHash(trimmedHash)) {
       setError('Invalid hash format. Please enter a valid MD5 (32 chars), SHA1 (40 chars), or SHA256 (64 chars) hash.');
       return;
     }
+
+    const hashType = detectHashType(trimmedHash);
 
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const data = await lookupHash(trimmedHash);
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/threat-intel`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ type: 'hash', hash: trimmedHash }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to lookup hash');
+      interface SourceData {
+        found: boolean;
+        malicious: boolean;
+        details: Record<string, unknown>;
+        error?: string;
       }
 
-      const data = await response.json();
+      const sourcesArray = Object.entries(data.sources || {}).map(([name, sourceData]: [string, unknown]) => {
+        const source = sourceData as SourceData;
+        return {
+          name: getSourceDisplayName(name),
+          found: source.found,
+          malicious: source.malicious,
+          details: source.details || {},
+          error: source.error,
+        };
+      });
+
       setResult({
         hash: trimmedHash,
         hashType,
-        sources: data.sources || [],
+        sources: sourcesArray,
         isMalicious: data.isMalicious || false,
-        checkedAt: new Date().toISOString(),
+        checkedAt: data.checkedAt || new Date().toISOString(),
       });
     } catch (err) {
-      setResult({
-        hash: trimmedHash,
-        hashType,
-        sources: [
-          {
-            name: 'VirusTotal',
-            found: false,
-            malicious: false,
-            details: {},
-            error: 'API key required for VirusTotal lookups',
-          },
-          {
-            name: 'MalwareBazaar',
-            found: false,
-            malicious: false,
-            details: {},
-            error: 'Free API - checking...',
-          },
-        ],
-        isMalicious: false,
-        checkedAt: new Date().toISOString(),
-      });
+      setError(err instanceof Error ? err.message : 'Failed to lookup hash');
     } finally {
       setLoading(false);
     }
@@ -120,8 +104,7 @@ export default function HashLookup() {
         <h1 className="text-3xl font-bold text-white mb-2">Hash Lookup</h1>
         <p className="text-slate-400">
           Check file hashes (MD5, SHA1, SHA256) against VirusTotal, MalwareBazaar,
-          and other threat intelligence sources to identify known malware. NOTE DSBN, I have to finish hooking up the API calls to Data inline, so for now if you are seeing this page
-          and wondering why it shows up clean, its just placeholder, what you can do is click on the 4 links that will generate on the bottom and it'll load the external pages with your actual results. It should be faster working on this at work, but it isnt lol I need my weights.
+          Hybrid Analysis, AlienVault OTX, and other threat intelligence sources to identify known malware.
         </p>
       </div>
 
