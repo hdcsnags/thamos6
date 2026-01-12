@@ -47,6 +47,56 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
 
   return response.json();
 }
+export type HashLookupResult = {
+  hash: string;
+  sources: Record<
+    string,
+    {
+      found: boolean;
+      malicious: boolean;
+      details?: Record<string, unknown>;
+      error?: string;
+    }
+  >;
+  isMalicious?: boolean;
+  checkedAt?: string;
+  tier?: string;
+};
+
+export function isValidHash(hash: string): boolean {
+  const h = hash.trim().toLowerCase();
+  return /^[a-f0-9]{32}$/.test(h) || /^[a-f0-9]{40}$/.test(h) || /^[a-f0-9]{64}$/.test(h);
+}
+
+export function getSourceDisplayName(source: string): string {
+  const map: Record<string, string> = {
+    virustotal: "VirusTotal",
+    malwarebazaar: "MalwareBazaar",
+    hybridanalysis: "Hybrid Analysis",
+    otx: "AlienVault OTX",
+    urlhaus: "URLhaus",
+    abuseipdb: "AbuseIPDB",
+    proxycheck: "ProxyCheck",
+    ipqualityscore: "IPQualityScore",
+  };
+  return map[source] ?? source;
+}
+
+export async function lookupHash(hash: string): Promise<HashLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/hash`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ hash }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to lookup hash: ${response.statusText}`);
+  }
+
+  return response.json();
+}
 
 export async function bulkLookupIPs(ips: string[]): Promise<{ results: BulkIPResult[]; total: number; tier?: string }> {
   const headers = await getAuthHeaders();
