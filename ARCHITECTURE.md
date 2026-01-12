@@ -294,15 +294,38 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 - **Sources**:
   - Default security news feeds (Bleeping Computer, Krebs, etc.)
   - User-added custom RSS/Atom feeds (if authenticated)
-- **Features**:
+- **Quick-Win Features**:
+  - **Trending Keywords Panel** (NEW)
+    - Analyzes last 24 hours of articles
+    - Shows top 8 trending keywords with mention counts
+    - Click any keyword to instantly filter feed
+    - Filters common stop words for relevance
+    - Dismissible panel with persistent state
+  - **One-Click IOC Extraction** (NEW)
+    - Extract IOCs from any article with single button click
+    - Opens full-screen modal with categorized results:
+      - IP Addresses (IPv4 with filtering of localhost/reserved)
+      - Domains (including defanged formats)
+      - URLs (full HTTP/HTTPS links)
+      - Hashes (MD5/SHA1/SHA256)
+    - Per-category copy-to-clipboard
+    - Add individual IOCs to watchlist directly from modal
+    - Shows count badge of total IOCs found
+- **Core Features**:
   - Auto-refresh every 5 minutes
-  - Watchlist matching (alerts user when keywords appear)
-  - Filter by source
-  - Open in new tab
+  - Watchlist matching (alerts user when keywords appear in articles)
+  - Multi-level filtering: category, read/unread, saved, watchlist alerts
+  - Read/unread tracking and save/unsave articles
+  - Sort by newest/oldest
+  - Two-pane layout: article list + preview pane
+  - Article navigation (Previous/Next buttons)
+  - Read full article in new tab
+  - Toggle between Intel Stream and Ransomware Tracker views
 - **Database**:
   - `feed_items` - Cached news items
   - `feed_sources` - Feed URLs and metadata
   - `user_custom_sources` - User-added feeds
+  - `user_feed_items` - Per-user read/saved status
   - `watchlist_entries` - Keywords/IOCs to monitor
   - `user_alerts` - Generated alerts
 - **Edge Function**: `news-feeds` fetches and parses RSS/Atom

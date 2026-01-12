@@ -373,7 +373,7 @@ No database usage - client-side only
 
 ## Module: News Feed
 
-**Purpose**: Aggregate security news RSS feeds with watchlist alerting
+**Purpose**: Aggregate security news RSS feeds with watchlist alerting, trending keyword analysis, and one-click IOC extraction
 
 ### Files Required
 ```
@@ -385,6 +385,9 @@ CORE FILES +
 # Alert Context
 /src/contexts/AlertContext.tsx
 
+# Victim Intelligence (Ransomware Tracker)
+/src/components/VictimIntelligence.tsx
+
 # Edge Function
 /supabase/functions/news-feeds/index.ts
 
@@ -392,6 +395,7 @@ CORE FILES +
 feed_items - Cached news items
 feed_sources - RSS/Atom feed URLs
 user_custom_sources - User-added feeds
+user_feed_items - Per-user read/saved status
 watchlist_entries - Keywords/IOCs to monitor
 user_alerts - Generated alerts
 ```
@@ -455,7 +459,12 @@ created_at (timestamptz)
 - **Refresh**: Auto-refresh every 5 minutes or manual trigger
 - **Watchlist Matching**: Edge function checks new items against `watchlist_entries`
 - **Alerting**: Creates `user_alerts` for matches, displayed via `AlertContext`
-- **Connected To**: Watchlist, Settings (custom feeds)
+- **Trending Keywords**: Client-side analysis of last 24h articles, filters common stop words
+- **IOC Extraction**: Client-side regex extraction from article title + description
+  - Extracts: IPv4, domains, URLs, hashes (MD5/SHA1/SHA256)
+  - Add to watchlist directly from modal
+  - Copy extracted IOCs to clipboard
+- **Connected To**: Watchlist, Settings (custom feeds), Smart IOC Intake (extraction logic)
 
 ### Edge Function Routes
 ```typescript
@@ -686,6 +695,11 @@ Page Display (results)
 **News Feed ←→ Watchlist**
 - Feed items checked against watchlist entries
 - Matches create user alerts
+- One-click IOC extraction → add directly to watchlist
+
+**News Feed → Smart IOC Intake**
+- Shares IOC extraction regex patterns and logic
+- Quick extraction without full Smart IOC Intake workflow
 
 **Email Analyzer → IP Lookup**
 - Extracted IPs can be looked up with one click
