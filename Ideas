@@ -1,72 +1,140 @@
-1) Make the first page a “Smart IOC Intake” (like you described)
+Rename + reposition: “Threat Intel” as a first-class module
 
-Paste anything (email text, headers, URL, hash, random blob), then:
+Instead of “News Feed” with two buttons, make the nav item Threat Intel and inside it you have:
 
-auto-extract IOCs (IPs/domains/urls/hashes)
-show counts + dedupe
-run lookups by type in parallel
-return one unified verdict card: “Likely VPN”, “Tor exit”, “Residential”, “Known scanner”, “Malware URL”, etc.
-This turns your IOC Extractor into a workflow starter instead of a separate tool.
+Intel Stream (news + advisories + your watchlist matches)
 
-2) Add confidence + “why” for VPN/Tor/Proxy
+Ransomware Tracker
 
-Instead of a single boolean, show:
+Intel Digest (daily/weekly summary)
 
-isVPN: true (confidence: High)
-Signals: IP2Proxy=VPN, IPQS=vpn=true, org match “Nord”, TorExitList=false
-This prevents the “it feels wrong” problem because the analyst sees the evidence.
-3) Normalize and standardize provider names
+Watchlists (entities + IOCs)
 
-Create a small mapping layer:
+Saved / Cases (your triage work)
 
-“AS9009 M247”, “DataCamp Limited”, “LeaseWeb” ⇒ Hosting/DC
-“Mullvad”, “Nord”, “Proton”, “Surfshark” ⇒ Commercial VPN
-Even a lightweight keyword + table approach (like your vpn_providers table idea) is gold.
+This instantly turns it from “RSS page” into “Intel Center”.
 
-4) Add one-click actions (school-board reality)
+2) Change the core layout to feel premium: “List + Preview” (like Outlook / Sentinel)
 
-For your context, the “so what?” matters:
+Right now it’s a vertical stack of cards. That’s fine, but premium tools do this:
 
-Block recommendation (edge/firewall/WAF)
-Force password reset? (if correlated with suspicious sign-in)
-Add to watchlist (keyword or IOC)
-Open case note pre-filled (IOC + summary)
+Left: stream list (fast scroll, dense, filterable)
+Right: preview panel (full article, extracted IOCs, actions)
 
-5) Fill the gaps in the IOC extractor (so it catches real-world obfuscation)
+Why it’s elite: you stop bouncing between “open article” and “back”. You triage at speed.
 
-Right now it’s regex-based and useful
+Add top bar actions:
 
-acfa091b-c905-4fda-9a5d-90c7c2b…
+Search
 
-, but to make it field-ready:
+Filters
 
-Detect defanged forms: hxxp, evil[.]com, example(.)com
-IPv6 support
-“URL in parentheses / punctuation” cleanup
-Strip common email gateway rewrites (Safe Links-style wrapping)
-Output in multiple formats: plain / defanged / CSV / JSON / STIX-ish
-6) Add more “sources” strategically (don’t just add random)
+Sort (Newest / Most relevant / Most severe)
 
-What’s worth adding depends on what you investigate most:
+“Mark reviewed”, “Save”, “Create case”, “Add to watchlist”
 
-URL / Phishing
+3) Make the stream “intel-aware”, not “RSS-aware”
+A. Fix the CDATA ugliness
 
-Google Safe Browsing / similar category reputation
-Phish-focused feeds (OpenPhish / PhishTank-type)
-Screenshot/headless detonation (even a “submit to urlscan” button is already a good start)
-Domain
+Your SANS item showing <![CDATA[ ... ]]> is the exact kind of “vibe-coded” blemish that kills premium feel.
+Fix by stripping CDATA + decoding entities before render.
 
-Passive DNS / historical resolution (if you can)
-Registrar reputation + domain age (fast “new domain = suspicious” signal)
-Hash / Malware
+B. Enrich every item automatically (lightweight)
 
-MalwareBazaar/abuse.ch family (good free coverage)
-Hybrid-analysis / detonation metadata (if you can)
-Internet exposure
+For each article:
 
-Censys-like or Shodan-like exposure info (you already have Shodan as a paid option in the design)
-7) Add rate limits + abuse controls (before you expose it wider)
+Extract IOCs (IPs, domains, URLs, hashes, CVEs)
 
-Your own manual flags no rate limiting as a risk.
+Show them as clickable chips
 
-acfa091b-c905-4fda-9a5d-90c7c2b…
+Clicking a chip runs your existing lookups (IP/Domain/Hash) in a side drawer
+
+That one move makes the page feel like a threat intel platform, not a feed reader.
+
+4) Add “Signal” scoring so the feed isn’t noisy
+
+Give each item a simple score badge:
+
+Impact (ransomware? auth bypass? 0-day? education sector?)
+
+Proximity (matches DSBN keywords, tech stack: M365, Fortinet, Netskope, Google, etc.)
+
+Confidence (source trust + cross-source duplication)
+
+Then allow sorting by Top Signals.
+
+Even basic scoring makes it feel “expensive”.
+
+5) Tighten the taxonomy: Vulnerabilities / Alerts / Threats / News → “Intel Lenses”
+
+Your tabs are good — make them feel more purposeful:
+
+Vulns (CVE focused, EPSS/CVSS, exploit status)
+
+Campaigns (phishing kits, AITM, current waves)
+
+Ransomware (your existing tracker)
+
+Education (curated lens: schoolboard-relevant)
+
+My Watchlist (always personal)
+
+This makes it feel tailored, not generic.
+
+6) Turn “Watchlist” into a killer feature
+
+Premium move: watchlist isn’t just saved articles — it’s entities.
+
+Watchlist types:
+
+Org names (DSBN vendors, local municipalities)
+
+Domains (your brands)
+
+Threat actors (“Scattered Spider”, “LockBit”, etc.)
+
+Keywords (“MFA fatigue”, “AiTM”, “OAuth consent phishing”)
+
+When matched:
+
+highlight articles
+
+generate an alert card
+
+optionally email/teams notification later
+
+7) Ransomware page: it’s already strong — add a “Details Drawer” + filters
+
+It already looks premium. Make it operate premium:
+
+Filter pills: Sector, Country, Actor, Last 7/30/90 days
+
+Click a victim → right-side drawer with:
+
+actor profile
+
+timeline
+
+leak site link (safe open)
+
+related victims
+
+tags + notes
+
+This turns it from “dashboard” to “analyst workflow.”
+
+8) One premium cherry: “Daily Intel Digest”
+
+A small card at the top:
+
+“Today’s Intel Digest”
+
+5 bullets summary
+
+3 top vulns to watch
+
+2 active campaigns
+
+1 ransomware highlight
+
+Even if it’s simple at first, it screams “enterprise product.”
