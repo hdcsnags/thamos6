@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2, Shield } from 'lucide-react';
+import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2, Shield, Fingerprint, TrendingUp, Copy, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
 import VictimIntelligence from '../components/VictimIntelligence';
@@ -75,6 +75,10 @@ export default function NewsFeed() {
   const [newWatchlistEntry, setNewWatchlistEntry] = useState({ type: 'keyword', value: '', description: '', severity: 'medium' });
   const { checkForNewMatches } = useAlerts();
   const hasAutoRefreshed = useRef(false);
+  const [extractedIOCs, setExtractedIOCs] = useState<{ ips: string[], domains: string[], urls: string[], hashes: string[] } | null>(null);
+  const [showIOCExtractor, setShowIOCExtractor] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [showTrending, setShowTrending] = useState(true);
 
   const categories = [
     { id: 'all', name: 'All News', color: 'slate' },
@@ -434,6 +438,79 @@ export default function NewsFeed() {
     return cat?.color || 'slate';
   };
 
+  const extractIOCsFromArticle = (item: FeedItem) => {
+    const text = `${item.title} ${item.description || ''}`;
+
+    const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+    const domainRegex = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|edu|gov|mil|int|io|co|uk|de|fr|jp|cn|ru|br|in|au|info|biz|xyz|online|site|app|dev|tech|cloud|ai|me|tv|cc)\b/gi;
+    const hashRegex = /\b[a-fA-F0-9]{32,64}\b/g;
+
+    const ips = [...new Set((text.match(ipv4Regex) || []).filter(ip => !ip.startsWith('0.') && !ip.startsWith('127.')))];
+    const urls = [...new Set(text.match(urlRegex) || [])];
+    const domains = [...new Set(text.match(domainRegex) || [])];
+    const hashes = [...new Set(text.match(hashRegex) || [])];
+
+    return { ips, urls, domains, hashes };
+  };
+
+  const handleExtractIOCs = (item: FeedItem) => {
+    const iocs = extractIOCsFromArticle(item);
+    setExtractedIOCs(iocs);
+    setShowIOCExtractor(true);
+  };
+
+  const handleCopyIOCs = async (iocs: string[], type: string) => {
+    await navigator.clipboard.writeText(iocs.join('\n'));
+    setCopied(type);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleAddIOCToWatchlist = async (ioc: string, type: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert('Please sign in to add to watchlist');
+      return;
+    }
+
+    await supabase.from('watchlist_entries').insert({
+      user_id: user.id,
+      entry_type: type,
+      value: ioc,
+      severity: 'medium',
+      is_active: true
+    });
+
+    alert('Added to watchlist');
+  };
+
+  const getTrendingKeywords = () => {
+    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentItems = items.filter(item => new Date(item.pub_date) > last24Hours);
+
+    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'been', 'be', 'has', 'have', 'had', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'it', 'its', 'new', 'more', 'their', 'them']);
+
+    const wordCount: { [key: string]: number } = {};
+
+    recentItems.forEach(item => {
+      const text = `${item.title} ${item.description || ''}`.toLowerCase();
+      const words = text.match(/\b[a-z]{4,}\b/g) || [];
+
+      words.forEach(word => {
+        if (!stopWords.has(word)) {
+          wordCount[word] = (wordCount[word] || 0) + 1;
+        }
+      });
+    });
+
+    return Object.entries(wordCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .filter(([_, count]) => count > 2);
+  };
+
+  const trendingKeywords = getTrendingKeywords();
+
   return (
     <div className="space-y-4">
       <div className="text-center max-w-3xl mx-auto">
@@ -571,6 +648,40 @@ export default function NewsFeed() {
               </button>
             </div>
           </div>
+
+          {trendingKeywords.length > 0 && showTrending && (
+            <div className="bg-gradient-to-r from-emerald-900/20 to-teal-900/20 rounded-xl border border-emerald-500/30 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-lg font-semibold text-white">Trending in Last 24h</h3>
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-semibold">
+                    HOT
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowTrending(false)}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {trendingKeywords.map(([keyword, count]) => (
+                  <button
+                    key={keyword}
+                    onClick={() => setSearchTerm(keyword)}
+                    className="group flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-500/20 border border-slate-700 hover:border-emerald-500/50 rounded-lg transition-all"
+                  >
+                    <span className="text-white font-medium capitalize">{keyword}</span>
+                    <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-bold group-hover:bg-emerald-500/30">
+                      {count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {showWatchlist && (
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-4">
@@ -1000,6 +1111,13 @@ export default function NewsFeed() {
                             Read Full Article
                           </a>
                           <button
+                            onClick={() => handleExtractIOCs(selectedItem)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:from-cyan-400 hover:to-blue-500 transition-all font-medium"
+                          >
+                            <Fingerprint className="w-4 h-4" />
+                            Extract IOCs
+                          </button>
+                          <button
                             onClick={() => toggleRead(selectedItem.id, selectedItem.is_read || false)}
                             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
                           >
@@ -1057,6 +1175,174 @@ export default function NewsFeed() {
               </div>
             </div>
           </div>
+
+          {showIOCExtractor && extractedIOCs && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+              <div className="bg-slate-900 rounded-xl border border-slate-800 max-w-3xl w-full max-h-[80vh] overflow-auto">
+                <div className="sticky top-0 bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-cyan-400" />
+                    <h3 className="text-lg font-semibold text-white">Extracted IOCs</h3>
+                    <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded text-xs font-semibold">
+                      {extractedIOCs.ips.length + extractedIOCs.domains.length + extractedIOCs.urls.length + extractedIOCs.hashes.length} Found
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowIOCExtractor(false);
+                      setExtractedIOCs(null);
+                    }}
+                    className="text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  {extractedIOCs.ips.length === 0 && extractedIOCs.domains.length === 0 && extractedIOCs.urls.length === 0 && extractedIOCs.hashes.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Fingerprint className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                      <p className="text-slate-400">No IOCs found in this article</p>
+                    </div>
+                  ) : (
+                    <>
+                      {extractedIOCs.ips.length > 0 && (
+                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-bold">
+                                {extractedIOCs.ips.length}
+                              </span>
+                              <span className="font-semibold text-white">IP Addresses</span>
+                            </div>
+                            <button
+                              onClick={() => handleCopyIOCs(extractedIOCs.ips, 'ips')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
+                            >
+                              {copied === 'ips' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              Copy
+                            </button>
+                          </div>
+                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {extractedIOCs.ips.map((ip, i) => (
+                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
+                                <code className="text-sm text-slate-300 font-mono">{ip}</code>
+                                <button
+                                  onClick={() => handleAddIOCToWatchlist(ip, 'ip')}
+                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors"
+                                >
+                                  + Watchlist
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {extractedIOCs.domains.length > 0 && (
+                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded text-xs font-bold">
+                                {extractedIOCs.domains.length}
+                              </span>
+                              <span className="font-semibold text-white">Domains</span>
+                            </div>
+                            <button
+                              onClick={() => handleCopyIOCs(extractedIOCs.domains, 'domains')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
+                            >
+                              {copied === 'domains' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              Copy
+                            </button>
+                          </div>
+                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {extractedIOCs.domains.map((domain, i) => (
+                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
+                                <code className="text-sm text-slate-300 font-mono">{domain}</code>
+                                <button
+                                  onClick={() => handleAddIOCToWatchlist(domain, 'domain')}
+                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors"
+                                >
+                                  + Watchlist
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {extractedIOCs.urls.length > 0 && (
+                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-bold">
+                                {extractedIOCs.urls.length}
+                              </span>
+                              <span className="font-semibold text-white">URLs</span>
+                            </div>
+                            <button
+                              onClick={() => handleCopyIOCs(extractedIOCs.urls, 'urls')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
+                            >
+                              {copied === 'urls' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              Copy
+                            </button>
+                          </div>
+                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {extractedIOCs.urls.map((url, i) => (
+                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
+                                <code className="text-sm text-slate-300 font-mono break-all">{url}</code>
+                                <button
+                                  onClick={() => handleAddIOCToWatchlist(url, 'url')}
+                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors flex-shrink-0 ml-2"
+                                >
+                                  + Watchlist
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {extractedIOCs.hashes.length > 0 && (
+                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 rounded text-xs font-bold">
+                                {extractedIOCs.hashes.length}
+                              </span>
+                              <span className="font-semibold text-white">Hashes</span>
+                            </div>
+                            <button
+                              onClick={() => handleCopyIOCs(extractedIOCs.hashes, 'hashes')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
+                            >
+                              {copied === 'hashes' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              Copy
+                            </button>
+                          </div>
+                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {extractedIOCs.hashes.map((hash, i) => (
+                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
+                                <code className="text-sm text-slate-300 font-mono break-all">{hash}</code>
+                                <button
+                                  onClick={() => handleAddIOCToWatchlist(hash, 'hash')}
+                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors flex-shrink-0 ml-2"
+                                >
+                                  + Watchlist
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
