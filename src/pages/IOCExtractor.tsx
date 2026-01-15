@@ -538,11 +538,14 @@ const extractIOCs = (text: string): ExtractedIOCs => {
             <FileSearch className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-white">Smart IOC Intake</h1>
-            <p className="text-slate-400 mt-1">
-              Paste any text to extract IOCs. Single mode auto-detects and runs the correct lookup.
-              Bulk mode enriches IPs (others extract/export only).
-            </p>
+           <h1 className="text-3xl font-bold text-slate-100">Smart IOC Intake</h1>
+<p className="text-slate-400 mt-2">
+  Paste any text to extract IOCs. Single mode auto-detects and runs the correct lookup.
+</p>
+
+<p className="text-xs text-slate-500 mt-2">
+  IOCExtractor build: PHASE1-2026-01-15-A
+</p>
           </div>
         </div>
 
