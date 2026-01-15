@@ -1,7 +1,30 @@
-import { useState } from 'react';
-import { FileSearch, Copy, Check, Trash2, ExternalLink, Search, Play, AlertTriangle, Shield, Download, Plus, BookmarkPlus, FileText, ChevronDown, ChevronUp, Ban, KeyRound, ArrowUpCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  FileSearch,
+  Copy,
+  Check,
+  Trash2,
+  Download,
+  Play,
+  Shield,
+  AlertTriangle,
+  BookmarkPlus,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import ThreatScore from '../components/ThreatScore';
+import {
+  classifyIPVerdict,
+  classifyURLVerdict,
+  classifyHashVerdict,
+  exportToCSV,
+  exportToJSON,
+  exportToPlainText,
+  exportToDefanged,
+  IOCAnalysisResult,
+} from '../lib/iocAnalysis';
 import { bulkLookupIPs } from '../lib/threatIntel';
-import { classifyIPVerdict, classifyDomainVerdict, classifyURLVerdict, classifyHashVerdict, exportToCSV, exportToJSON, exportToPlainText, exportToDefanged, IOCAnalysisResult } from '../lib/iocAnalysis';
 import { supabase } from '../lib/supabase';
 
 interface ExtractedIOCs {
@@ -16,17 +39,51 @@ interface ExtractedIOCs {
   cves: string[];
 }
 
+type InputMode = 'single' | 'bulk';
+type PrimaryType = 'ip' | 'url' | 'domain' | 'hash' | 'email' | 'cve';
+type PrimaryIOC = { type: PrimaryType; value: string } | null;
+
+function countIOCs(iocs: ExtractedIOCs): number {
+  return (
+    iocs.ips.length +
+    iocs.ipv6.length +
+    iocs.urls.length +
+    iocs.domains.length +
+    iocs.emails.length +
+    iocs.md5.length +
+    iocs.sha1.length +
+    iocs.sha256.length +
+    iocs.cves.length
+  );
+}
+
+function pickPrimaryIOC(iocs: ExtractedIOCs): PrimaryIOC {
+  if (iocs.urls[0]) return { type: 'url', value: iocs.urls[0] };
+  if (iocs.domains[0]) return { type: 'domain', value: iocs.domains[0] };
+  if (iocs.ips[0]) return { type: 'ip', value: iocs.ips[0] };
+  if (iocs.ipv6[0]) return { type: 'ip', value: iocs.ipv6[0] };
+  const hash = iocs.sha256[0] || iocs.sha1[0] || iocs.md5[0];
+  if (hash) return { type: 'hash', value: hash };
+  if (iocs.emails[0]) return { type: 'email', value: iocs.emails[0] };
+  if (iocs.cves[0]) return { type: 'cve', value: iocs.cves[0] };
+  return null;
+}
+
 export default function IOCExtractor() {
   const [input, setInput] = useState('');
+  const [mode, setMode] = useState<InputMode>('single');
+  const [analysisMode, setAnalysisMode] = useState<'fast' | 'full'>('fast');
+
   const [iocs, setIocs] = useState<ExtractedIOCs | null>(null);
+  const [primary, setPrimary] = useState<PrimaryIOC>(null);
+
   const [copied, setCopied] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
-  const [analysisMode, setAnalysisMode] = useState<'fast' | 'full'>('fast');
 
-  const extractIOCs = (text: string): ExtractedIOCs => {
+const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
     const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|\b(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b|\b::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}\b/g;
     const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
@@ -125,573 +182,559 @@ export default function IOCExtractor() {
     const cves = dedup(text.match(cveRegex) || []).map(c => c.toUpperCase());
 
     return { ips, ipv6, urls, domains, emails, md5, sha1, sha256, cves };
-  };
+  }
+
+  const totalFound = useMemo(() => (iocs ? countIOCs(iocs) : 0), [iocs]);
 
   const handleExtract = () => {
     if (!input.trim()) return;
-    setIocs(extractIOCs(input));
+    const extracted = extractIOCs(input);
+    setIocs(extracted);
+    setPrimary(pickPrimaryIOC(extracted));
     setAnalysisResults([]);
     setAnalysisError(null);
     setExpandedResult(null);
   };
 
+  const handleClear = () => {
+    setInput('');
+    setIocs(null);
+    setPrimary(null);
+    setCopied(null);
+    setAnalysisResults([]);
+    setAnalysisError(null);
+    setExpandedResult(null);
+  };
+
+  const handleCopy = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1200);
+    } catch {
+      setAnalysisError('Clipboard copy failed (browser permissions).');
+    }
+  };
+
+  const callThreatIntel = async (path: '/ip' | '/url' | '/hash', body: Record<string, any>) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+    if (!supabaseUrl) throw new Error('Missing VITE_SUPABASE_URL in env.');
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (anonKey) headers['apikey'] = anonKey;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const resp = await fetch(`${supabaseUrl}/functions/v1/threat-intel${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(json?.error || `Threat intel request failed (${resp.status})`);
+    }
+    return json;
+  };
+
+  const buildHashMockData = (hashResponse: any) => {
+    return {
+      overallThreatScore: hashResponse?.threatScore ?? hashResponse?.overallThreatScore ?? 0,
+      isMalicious: hashResponse?.isMalicious ?? false,
+      sources: hashResponse?.sources ?? {},
+      ...hashResponse,
+    };
+  };
+
+  const buildUrlMockData = (urlResponse: any) => {
+    return {
+      overallThreatScore: urlResponse?.threatScore ?? urlResponse?.overallThreatScore ?? 0,
+      isMalicious: urlResponse?.isMalicious ?? false,
+      sources: urlResponse?.sources ?? {},
+      ...urlResponse,
+    };
+  };
+
+  const buildIpMockData = (ipResponse: any) => {
+    return {
+      overallThreatScore: ipResponse?.threatScore ?? ipResponse?.overallThreatScore ?? 0,
+      isMalicious: ipResponse?.isMalicious ?? false,
+      sources: ipResponse?.sources ?? {},
+      ...ipResponse,
+    };
+  };
+
   const handleAnalyze = async () => {
-    if (!iocs || iocs.ips.length === 0) return;
+    if (!iocs) return;
 
     setAnalyzing(true);
     setAnalysisError(null);
-    const results: IOCAnalysisResult[] = [];
+    setAnalysisResults([]);
+    setExpandedResult(null);
 
     try {
-      const ipsToAnalyze = analysisMode === 'fast' ? iocs.ips.slice(0, 10) : iocs.ips;
+      // BULK MODE: only IP enrichment
+      if (mode === 'bulk') {
+        if (iocs.ips.length === 0 && iocs.ipv6.length === 0) {
+          setAnalysisError('Bulk mode currently supports IP enrichment only. Paste IPs or switch to Single mode.');
+          return;
+        }
 
-      const { results: bulkResults } = await bulkLookupIPs(ipsToAnalyze);
+        const allIps = [...iocs.ips, ...iocs.ipv6];
+        const ipsToAnalyze = analysisMode === 'fast' ? allIps.slice(0, 10) : allIps;
 
-      if (!bulkResults || bulkResults.length === 0) {
-        setAnalysisError('No results returned from analysis. Please try again.');
+        const { results: bulkResults } = await bulkLookupIPs(ipsToAnalyze);
+
+        if (!bulkResults || bulkResults.length === 0) {
+          setAnalysisError('No results returned from analysis. Please try again.');
+          return;
+        }
+
+        const results: IOCAnalysisResult[] = bulkResults.map((ipData: any) => {
+          const enrichment = {
+            isTor: ipData.isTor || false,
+            isVPN: ipData.isVPN || false,
+            isProxy: ipData.isProxy || false,
+            isHosting: ipData.isHosting || false,
+            vpnService: ipData.vpnService || '',
+            country: ipData.country || '',
+            city: ipData.city || '',
+            org: ipData.organization || ipData.org || '',
+            asn: ipData.asn || '',
+            isp: ipData.isp || '',
+            classification: ipData.greynoiseClassification || ipData.classification || '',
+          };
+
+          const mockData = {
+            overallThreatScore: ipData.threatScore ?? 0,
+            isMalicious: ipData.isMalicious ?? false,
+            sources: ipData.sources ?? {
+              abuseipdb: { abuseConfidenceScore: ipData.abuseConfidence || 0, totalReports: ipData.abuseReports || 0 },
+              greynoise: { classification: ipData.greynoiseClassification || '' },
+            },
+            ...ipData,
+          };
+
+          return {
+            ioc: ipData.ip || ipData.value || '',
+            type: 'ip',
+            verdict: classifyIPVerdict(mockData, enrichment),
+            sources: mockData.sources ?? {},
+            enrichment,
+          };
+        });
+
+        setAnalysisResults(results);
         return;
       }
 
-      for (const ipData of bulkResults) {
-        const enrichment = {
-          isTor: ipData.isTor || false,
-          isVPN: ipData.isVPN || false,
-          isProxy: ipData.isProxy || false,
-          isHosting: ipData.isHosting || false,
-          vpnService: ipData.vpnService || '',
-          country: ipData.country || '',
-          isp: ipData.isp || '',
-          org: ipData.org || '',
-          spamhausListed: ipData.spamhausListed || false,
-          spamhausLists: ipData.spamhausLists || [],
-          isMassScanner: ipData.isMassScanner || false,
-          isKnownScanner: ipData.greynoiseClassification === 'benign' || false,
-          scannerType: ipData.greynoiseClassification || ''
-        };
+      // SINGLE MODE: analyze the "primary" IOC only
+      const chosen = primary ?? pickPrimaryIOC(iocs);
+      if (!chosen) {
+        setAnalysisError('No IOC detected to analyze.');
+        return;
+      }
 
-        const mockData = {
-          overallThreatScore: ipData.threatScore,
-          isMalicious: ipData.isMalicious,
-          sources: {
-            abuseipdb: { totalReports: 0, abuseConfidenceScore: ipData.abuseConfidence || 0 }
-          }
+      if (chosen.type === 'email' || chosen.type === 'cve') {
+        setAnalysisError(`Single-mode analysis for ${chosen.type.toUpperCase()} is coming soon. For now, you can still extract/copy/export it.`);
+        return;
+      }
+
+      if (chosen.type === 'hash') {
+        const data = await callThreatIntel('/hash', { hash: chosen.value });
+        const mockData = buildHashMockData(data);
+        const verdict = classifyHashVerdict(mockData);
+
+        setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
+        return;
+      }
+
+      if (chosen.type === 'url' || chosen.type === 'domain') {
+        const url = chosen.type === 'domain' ? `https://${chosen.value}` : chosen.value;
+        const data = await callThreatIntel('/url', { url });
+        const mockData = buildUrlMockData(data);
+        const verdict = classifyURLVerdict(mockData);
+
+        setAnalysisResults([
+          {
+            ioc: chosen.value,
+            type: chosen.type === 'domain' ? 'domain' : 'url',
+            verdict,
+            sources: mockData.sources ?? mockData,
+          } as IOCAnalysisResult,
+        ]);
+        return;
+      }
+
+      // IP (single)
+      if (chosen.type === 'ip') {
+        const data = await callThreatIntel('/ip', { ip: chosen.value });
+        const mockData = buildIpMockData(data);
+
+        const enrichment = {
+          isTor: mockData.isTor || false,
+          isVPN: mockData.isVPN || false,
+          isProxy: mockData.isProxy || false,
+          isHosting: mockData.isHosting || false,
+          vpnService: mockData.vpnService || '',
+          country: mockData.country || '',
+          city: mockData.city || '',
+          org: mockData.org || mockData.organization || '',
+          asn: mockData.asn || '',
+          isp: mockData.isp || '',
+          classification: mockData.greynoiseClassification || mockData.classification || '',
         };
 
         const verdict = classifyIPVerdict(mockData, enrichment);
-
-        results.push({
-          ioc: ipData.ip,
-          type: 'ip',
-          verdict,
-          sources: {},
-          enrichment,
-          checkedAt: new Date().toISOString()
-        });
+        setAnalysisResults([{ ioc: chosen.value, type: 'ip', verdict, sources: mockData.sources ?? mockData, enrichment }]);
+        return;
       }
 
-      setAnalysisResults(results);
-    } catch (error) {
-      console.error('Failed to analyze IPs:', error);
-      setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze IPs. Please check your connection and try again.');
+      setAnalysisError('Unsupported IOC type.');
+    } catch (e: any) {
+      setAnalysisError(e?.message || 'Analysis failed.');
     } finally {
       setAnalyzing(false);
     }
   };
 
-  const handleAddToWatchlist = async (ioc: string, type: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert('Please sign in to add items to watchlist');
-        return;
-      }
-
-      await supabase.from('watchlist_entries').insert({
-        user_id: user.id,
-        entry_type: type,
-        value: ioc,
-        severity: 'medium',
-        is_active: true
-      });
-
-      alert('Added to watchlist');
-    } catch (error) {
-      console.error('Failed to add to watchlist:', error);
-      alert('Failed to add to watchlist');
-    }
-  };
-
-  const handleCreateCase = async (ioc: string, type: string, verdict: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert('Please sign in to create case notes');
-        return;
-      }
-
-      const { error } = await supabase.from('case_notes').insert({
-        title: `Investigation: ${type.toUpperCase()} - ${ioc}`,
-        description: `Automated case created from Smart IOC Intake\n\nVerdict: ${verdict}\n\nIOC: ${ioc}`,
-        status: 'open',
-        priority: 'medium',
-        iocs: [{ type, value: ioc, notes: `Verdict: ${verdict}` }],
-        tags: ['automated', type]
-      });
-
-      if (error) throw error;
-      alert('Case note created successfully');
-    } catch (error) {
-      console.error('Failed to create case:', error);
-      alert('Failed to create case note');
-    }
-  };
-
-  const handleExport = (format: 'csv' | 'json' | 'plain' | 'defanged') => {
-    if (analysisResults.length === 0) return;
-
-    let content = '';
-    let filename = '';
-    let mimeType = '';
-
-    switch (format) {
-      case 'csv':
-        content = exportToCSV(analysisResults);
-        filename = 'ioc-analysis.csv';
-        mimeType = 'text/csv';
-        break;
-      case 'json':
-        content = exportToJSON(analysisResults);
-        filename = 'ioc-analysis.json';
-        mimeType = 'application/json';
-        break;
-      case 'plain':
-        content = exportToPlainText(analysisResults);
-        filename = 'ioc-analysis.txt';
-        mimeType = 'text/plain';
-        break;
-      case 'defanged':
-        content = exportToDefanged(analysisResults);
-        filename = 'ioc-defanged.txt';
-        mimeType = 'text/plain';
-        break;
+  const addToWatchlist = async (ioc: string, type: string, verdict?: string) => {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) {
+      setAnalysisError('You must be signed in to add items to your watchlist.');
+      return;
     }
 
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    const { error } = await supabase.from('watchlist_entries').insert({
+      ioc_value: ioc,
+      ioc_type: type,
+      notes: verdict ? `SmartIOC verdict: ${verdict}` : null,
+    });
+
+    if (error) setAnalysisError(error.message);
   };
 
-  const handleCopy = async (items: string[], type: string) => {
-    await navigator.clipboard.writeText(items.join('\n'));
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
+  const createCaseNote = async (ioc: string, type: string, verdict?: string) => {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) {
+      setAnalysisError('You must be signed in to save case notes.');
+      return;
+    }
+
+    const payload = {
+      title: `IOC Analysis: ${ioc}`,
+      description: verdict ? `Verdict: ${verdict}` : `IOC: ${ioc}`,
+      tags: ['smart-ioc', type],
+      iocs: { [type]: [ioc] },
+    };
+
+    const { error } = await supabase.from('case_notes').insert(payload);
+    if (error) setAnalysisError(error.message);
   };
 
-  const handleCopyAll = async () => {
+  const exportBundle = (format: 'json' | 'csv' | 'text' | 'defanged') => {
     if (!iocs) return;
-    const all = [
-      ...iocs.ips.map(i => `IP: ${i}`),
-      ...iocs.ipv6.map(i => `IPv6: ${i}`),
-      ...iocs.urls.map(u => `URL: ${u}`),
-      ...iocs.domains.map(d => `Domain: ${d}`),
-      ...iocs.emails.map(e => `Email: ${e}`),
-      ...iocs.md5.map(h => `MD5: ${h}`),
-      ...iocs.sha1.map(h => `SHA1: ${h}`),
-      ...iocs.sha256.map(h => `SHA256: ${h}`),
-      ...iocs.cves.map(c => `CVE: ${c}`),
-    ];
-    await navigator.clipboard.writeText(all.join('\n'));
-    setCopied('all');
-    setTimeout(() => setCopied(null), 2000);
+    const all = {
+      ips: [...iocs.ips, ...iocs.ipv6],
+      urls: iocs.urls,
+      domains: iocs.domains,
+      emails: iocs.emails,
+      hashes: [...iocs.sha256, ...iocs.sha1, ...iocs.md5],
+      cves: iocs.cves,
+    };
+
+    let output = '';
+    if (format === 'json') output = exportToJSON(all);
+    if (format === 'csv') output = exportToCSV(all);
+    if (format === 'text') output = exportToPlainText(all);
+    if (format === 'defanged') output = exportToDefanged(all);
+
+    void handleCopy(output, `export-${format}`);
   };
 
-  const totalCount = iocs ?
-    iocs.ips.length + iocs.ipv6.length + iocs.urls.length + iocs.domains.length +
-    iocs.emails.length + iocs.md5.length + iocs.sha1.length + iocs.sha256.length + iocs.cves.length : 0;
-
-  const IOCSection = ({ title, items, type, color }: { title: string; items: string[]; type: string; color: string }) => {
-    if (items.length === 0) return null;
-    return (
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${color}`}>
-              {items.length}
-            </span>
-            <h3 className="font-semibold text-white">{title}</h3>
-          </div>
-          <button
-            onClick={() => handleCopy(items, type)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-          >
-            {copied === type ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                Copy
-              </>
-            )}
-          </button>
-        </div>
-        <div className="p-4 max-h-64 overflow-auto">
-          <div className="space-y-1.5">
-            {items.map((item, i) => (
-              <div key={i} className="flex items-center justify-between group p-2 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors">
-                <code className="text-sm text-slate-300 font-mono break-all">{item}</code>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const renderCountPill = (label: string, count: number) => (
+    <span className="px-3 py-1.5 bg-slate-800 text-slate-200 rounded-lg text-sm border border-slate-700">
+      <span className="text-slate-400 mr-2">{label}</span>
+      <span className="font-semibold">{count}</span>
+    </span>
+  );
 
   return (
-    <div className="space-y-8">
-      <div className="text-center max-w-2xl mx-auto">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
-          <FileSearch className="w-8 h-8 text-white" />
-        </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Smart IOC Intake</h1>
-        <p className="text-slate-400">
-          Paste raw logs, emails, reports, or any text to automatically extract and analyze
-          IPs, URLs, domains, hashes, emails, and CVEs. Get instant verdicts with confidence scores.
-        </p>
-      </div>
-
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-slate-300">
-              Paste Text to Extract & Analyze IOCs
-            </label>
-            <button
-              onClick={() => {
-                setInput('');
-                setIocs(null);
-                setAnalysisResults([]);
-                setExpandedResult(null);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </button>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="flex items-start gap-4 mb-8">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg">
+            <FileSearch className="w-7 h-7 text-white" />
           </div>
+          <div>
+            <h1 className="text-3xl font-bold text-white">Smart IOC Intake</h1>
+            <p className="text-slate-400 mt-1">
+              Paste any text to extract IOCs. Single mode auto-detects and runs the correct lookup.
+              Bulk mode enriches IPs (others extract/export only).
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+            <label className="text-sm font-medium text-slate-300">
+              Paste Text to Extract & Analyze
+            </label>
+
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                <button
+                  onClick={() => setMode('single')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'single' ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  Single
+                </button>
+                <button
+                  onClick={() => setMode('bulk')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'bulk' ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  Bulk (IPs)
+                </button>
+              </div>
+
+              {mode === 'bulk' && (
+                <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                  <button
+                    onClick={() => setAnalysisMode('fast')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      analysisMode === 'fast' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Fast (10)
+                  </button>
+                  <button
+                    onClick={() => setAnalysisMode('full')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      analysisMode === 'full' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Full
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <textarea
             value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Paste logs, threat reports, emails, or any text containing IOCs...&#10;&#10;Supports:&#10;- IPv4 & IPv6 addresses&#10;- URLs (including hxxp defanged)&#10;- Domains (including [.] defanged)&#10;- Email addresses&#10;- MD5, SHA1, SHA256 hashes&#10;- CVE identifiers&#10;- Automatically unwraps SafeLinks and ProofPoint URLs"
-            className="w-full h-48 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Paste email content, logs, proxy data, SOC notes, etc..."
+            className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
           />
-          <div className="mt-4 flex justify-end">
+
+          <div className="flex flex-wrap gap-2 mt-4">
             <button
               onClick={handleExtract}
-              disabled={!input.trim()}
-              className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
             >
-              <FileSearch className="w-4 h-4" />
-              Extract IOCs
+              <Play className="w-4 h-4" />
+              Extract
             </button>
-          </div>
-        </div>
-      </div>
+            <button
+              onClick={handleClear}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </button>
 
-      {iocs && (
-        <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm font-semibold">
-                {totalCount} IOCs Found
-              </span>
-            </div>
-            <div className="flex gap-2">
-              {iocs.ips.length > 0 && (
-                <>
-                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg">
-                    <button
-                      onClick={() => setAnalysisMode('fast')}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                        analysisMode === 'fast'
-                          ? 'bg-emerald-500 text-white'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Fast (10)
-                    </button>
-                    <button
-                      onClick={() => setAnalysisMode('full')}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                        analysisMode === 'full'
-                          ? 'bg-emerald-500 text-white'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Full ({iocs.ips.length})
-                    </button>
-                  </div>
-                  <button
-                    onClick={handleAnalyze}
-                    disabled={analyzing}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 transition-all font-medium"
-                  >
-                    {analyzing ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4" />
-                        Analyze IPs
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
+            {iocs && (
               <button
-                onClick={handleCopyAll}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                onClick={handleAnalyze}
+                disabled={analyzing}
+                className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-semibold disabled:opacity-60"
               >
-                {copied === 'all' ? (
+                {analyzing ? (
                   <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    Copied
+                    <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                    Analyzing...
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4" />
-                    Copy All
+                    <Shield className="w-4 h-4" />
+                    {mode === 'bulk' ? 'Analyze IPs' : 'Analyze Detected'}
                   </>
                 )}
               </button>
-            </div>
+            )}
           </div>
 
-          {analysisError && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-semibold text-red-400 mb-1">Analysis Failed</h4>
-                <p className="text-sm text-slate-300">{analysisError}</p>
-              </div>
-            </div>
-          )}
-
-          {analysisResults.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-emerald-400" />
-                  Analysis Results
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleExport('csv')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    CSV
-                  </button>
-                  <button
-                    onClick={() => handleExport('json')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    JSON
-                  </button>
-                  <button
-                    onClick={() => handleExport('plain')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Text
-                  </button>
-                </div>
+          {iocs && (
+            <div className="mt-5">
+              <div className="flex flex-wrap gap-2">
+                {renderCountPill('Total', totalFound)}
+                {renderCountPill('IPv4', iocs.ips.length)}
+                {renderCountPill('IPv6', iocs.ipv6.length)}
+                {renderCountPill('URLs', iocs.urls.length)}
+                {renderCountPill('Domains', iocs.domains.length)}
+                {renderCountPill('Hashes', iocs.sha256.length + iocs.sha1.length + iocs.md5.length)}
+                {renderCountPill('Emails', iocs.emails.length)}
+                {renderCountPill('CVEs', iocs.cves.length)}
               </div>
 
-              {analysisResults.map((result) => (
-                <div
-                  key={result.ioc}
-                  className={`bg-slate-900 rounded-xl border-2 transition-all ${
-                    result.verdict.severity === 'critical' ? 'border-red-500/50' :
-                    result.verdict.severity === 'high' ? 'border-orange-500/50' :
-                    result.verdict.severity === 'medium' ? 'border-yellow-500/50' :
-                    result.verdict.severity === 'low' ? 'border-blue-500/50' :
-                    'border-slate-700'
-                  }`}
-                >
-                  <div className="p-5">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <code className="text-lg font-semibold text-white font-mono">{result.ioc}</code>
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase bg-${result.verdict.color}-500/20 text-${result.verdict.color}-400`}>
-                            {result.type}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-3 py-1 rounded-lg text-sm font-semibold bg-${result.verdict.color}-500/20 text-${result.verdict.color}-400`}>
-                            {result.verdict.verdict}
-                          </span>
-                          <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded text-xs">
-                            Confidence: {result.verdict.confidence}%
-                          </span>
-                          {result.verdict.badges.map((badge, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-xs">
-                              {badge}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 mb-4">
-                      <div>
-                        <h4 className="text-xs font-semibold text-slate-400 uppercase mb-1.5">Evidence</h4>
-                        <ul className="space-y-1">
-                          {result.verdict.evidence.map((ev, i) => (
-                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
-                              <span className="text-cyan-400 mt-1">•</span>
-                              <span>{ev}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div>
-                        <h4 className="text-xs font-semibold text-slate-400 uppercase mb-1.5">Recommendations</h4>
-                        <ul className="space-y-1">
-                          {result.verdict.recommendations.map((rec, i) => (
-                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
-                              <span className="text-amber-400 mt-1">→</span>
-                              <span>{rec}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {result.sources && Object.keys(result.sources).length > 0 && (
-                        <div>
-                          <button
-                            onClick={() => setExpandedResult(expandedResult === result.ioc ? null : result.ioc)}
-                            className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase hover:text-slate-300 transition-colors"
-                          >
-                            {expandedResult === result.ioc ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                            Raw Threat Intel Data
-                          </button>
-                          {expandedResult === result.ioc && (
-                            <div className="mt-2 bg-slate-800/50 rounded-lg p-3 max-h-96 overflow-auto">
-                              <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap break-words">
-                                {JSON.stringify(result.sources, null, 2)}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {(result.verdict.severity === 'critical' || result.verdict.severity === 'high' || result.verdict.severity === 'medium') && (
-                      <div className="bg-slate-800/50 rounded-lg p-4 border-l-4 border-amber-500">
-                        <h4 className="text-xs font-semibold text-amber-400 uppercase mb-2">Operations Decision</h4>
-                        <div className="space-y-2">
-                          {result.verdict.severity === 'critical' && (
-                            <>
-                              <div className="flex items-start gap-2 text-sm">
-                                <Ban className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-red-400">BLOCK:</span> Add to firewall/WAF blocklist immediately</span>
-                              </div>
-                              <div className="flex items-start gap-2 text-sm">
-                                <KeyRound className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-orange-400">PASSWORD RESET:</span> Force password reset if any successful authentication</span>
-                              </div>
-                              <div className="flex items-start gap-2 text-sm">
-                                <ArrowUpCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-yellow-400">ESCALATE:</span> Create incident ticket and notify security team</span>
-                              </div>
-                            </>
-                          )}
-                          {result.verdict.severity === 'high' && (
-                            <>
-                              <div className="flex items-start gap-2 text-sm">
-                                <Ban className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-orange-400">BLOCK:</span> Consider adding to blocklist after log review</span>
-                              </div>
-                              <div className="flex items-start gap-2 text-sm">
-                                <ArrowUpCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-amber-400">ESCALATE:</span> Create case note and monitor for 24 hours</span>
-                              </div>
-                            </>
-                          )}
-                          {result.verdict.severity === 'medium' && result.enrichment?.isTor && (
-                            <>
-                              <div className="flex items-start gap-2 text-sm">
-                                <Ban className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-amber-400">BLOCK:</span> Recommended unless Tor access is required</span>
-                              </div>
-                              <div className="flex items-start gap-2 text-sm">
-                                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-slate-300"><span className="font-semibold text-yellow-400">MONITOR:</span> Review authentication attempts and behavior patterns</span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 pt-3 border-t border-slate-800">
-                      <button
-                        onClick={() => handleAddToWatchlist(result.ioc, result.type)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 transition-colors"
-                      >
-                        <BookmarkPlus className="w-3.5 h-3.5" />
-                        Add to Watchlist
-                      </button>
-                      <button
-                        onClick={() => handleCreateCase(result.ioc, result.type, result.verdict.verdict)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        Create Case
-                      </button>
-                    </div>
+              {mode === 'single' && primary && totalFound > 1 && (
+                <div className="mt-3 flex items-start gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200">
+                  <AlertTriangle className="w-5 h-5 mt-0.5" />
+                  <div className="text-sm">
+                    Multiple IOCs detected. <span className="font-semibold">Single</span> mode will analyze only the first detected
+                    IOC: <span className="font-semibold">{primary.value}</span>. Switch to <span className="font-semibold">Bulk</span> for IP enrichment + extraction/export.
                   </div>
                 </div>
-              ))}
+              )}
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => exportBundle('text')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                >
+                  {copied === 'export-text' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  Copy Text
+                </button>
+                <button
+                  onClick={() => exportBundle('defanged')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                >
+                  {copied === 'export-defanged' ? <Check className="w-4 h-4 text-emerald-400" /> : <Download className="w-4 h-4" />}
+                  Copy Defanged
+                </button>
+                <button
+                  onClick={() => exportBundle('json')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                >
+                  {copied === 'export-json' ? <Check className="w-4 h-4 text-emerald-400" /> : <FileText className="w-4 h-4" />}
+                  Copy JSON
+                </button>
+                <button
+                  onClick={() => exportBundle('csv')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                >
+                  {copied === 'export-csv' ? <Check className="w-4 h-4 text-emerald-400" /> : <Download className="w-4 h-4" />}
+                  Copy CSV
+                </button>
+              </div>
             </div>
           )}
 
-          {totalCount === 0 ? (
-            <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 text-center">
-              <p className="text-slate-400">No IOCs found in the provided text.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <IOCSection title="IPv4 Addresses" items={iocs.ips} type="ips" color="bg-blue-500/20 text-blue-400" />
-              <IOCSection title="IPv6 Addresses" items={iocs.ipv6} type="ipv6" color="bg-blue-500/20 text-blue-400" />
-              <IOCSection title="URLs" items={iocs.urls} type="urls" color="bg-emerald-500/20 text-emerald-400" />
-              <IOCSection title="Domains" items={iocs.domains} type="domains" color="bg-teal-500/20 text-teal-400" />
-              <IOCSection title="Email Addresses" items={iocs.emails} type="emails" color="bg-amber-500/20 text-amber-400" />
-              <IOCSection title="MD5 Hashes" items={iocs.md5} type="md5" color="bg-rose-500/20 text-rose-400" />
-              <IOCSection title="SHA1 Hashes" items={iocs.sha1} type="sha1" color="bg-orange-500/20 text-orange-400" />
-              <IOCSection title="SHA256 Hashes" items={iocs.sha256} type="sha256" color="bg-red-500/20 text-red-400" />
-              <IOCSection title="CVE Identifiers" items={iocs.cves} type="cves" color="bg-fuchsia-500/20 text-fuchsia-400" />
+          {analysisError && (
+            <div className="mt-5 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 mt-0.5" />
+              <div className="text-sm">{analysisError}</div>
             </div>
           )}
         </div>
-      )}
+
+        {analysisResults.length > 0 && (
+          <div className="mt-8 space-y-4">
+            <h2 className="text-xl font-semibold text-white">Results</h2>
+
+            {analysisResults.map((r) => {
+              const score =
+                (r.sources as any)?.overallThreatScore ??
+                (r.sources as any)?.threatScore ??
+                (r.sources as any)?.score ??
+                0;
+
+              const isExpanded = expandedResult === r.ioc;
+
+              return (
+                <div key={r.ioc} className="bg-slate-900/60 rounded-2xl border border-slate-800 p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-wide text-slate-500">{r.type}</span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full border ${
+                            r.verdict.severity === 'critical'
+                              ? 'border-red-500/40 text-red-300 bg-red-500/10'
+                              : r.verdict.severity === 'high'
+                                ? 'border-orange-500/40 text-orange-300 bg-orange-500/10'
+                                : r.verdict.severity === 'medium'
+                                  ? 'border-amber-500/40 text-amber-300 bg-amber-500/10'
+                                  : r.verdict.severity === 'low'
+                                    ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
+                                    : 'border-slate-500/40 text-slate-300 bg-slate-500/10'
+                          }`}
+                        >
+                          {r.verdict.verdict} • {Math.round(r.verdict.confidence * 100)}%
+                        </span>
+                      </div>
+                      <div className="mt-1 font-mono text-sm text-slate-100 break-all">{r.ioc}</div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <ThreatScore score={Number(score) || 0} size="sm" />
+                      <button
+                        onClick={() => addToWatchlist(r.ioc, r.type, r.verdict.verdict)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                      >
+                        <BookmarkPlus className="w-4 h-4" />
+                        Watchlist
+                      </button>
+                      <button
+                        onClick={() => createCaseNote(r.ioc, r.type, r.verdict.verdict)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Case Note
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-200 mb-2">Evidence</div>
+                      <ul className="space-y-1 text-sm text-slate-300 list-disc ml-5">
+                        {(r.verdict.evidence || []).slice(0, 8).map((e, idx) => (
+                          <li key={idx}>{e}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-200 mb-2">Recommended Actions</div>
+                      <ul className="space-y-1 text-sm text-slate-300 list-disc ml-5">
+                        {(r.verdict.recommendations || []).slice(0, 8).map((e, idx) => (
+                          <li key={idx}>{e}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setExpandedResult(isExpanded ? null : r.ioc)}
+                      className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white"
+                    >
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {isExpanded ? 'Hide raw sources' : 'Show raw sources'}
+                    </button>
+                    {isExpanded && (
+                      <pre className="mt-3 bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 overflow-auto">
+                        {JSON.stringify(r.sources, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
