@@ -45,7 +45,43 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
     throw new Error(`Failed to scan URL: ${response.statusText}`);
   }
 
-  return response.json();
+  const data: any = await response.json();
+
+  // Normalize URL sources so UI components can render consistently.
+  // Edge currently returns:
+  //   { url, isMalicious, threatTypes, results: { [source]: { source, data, error?, threatScore?, isMalicious? } } }
+  // Most front-end components prefer:
+  //   results: { [source]: { found, malicious, details, error?, threatScore? } }
+  // We keep the original under `rawResults` for debugging.
+  const rawResults = data?.results ?? {};
+
+  const normalized: Record<string, any> = {};
+  for (const [source, v] of Object.entries(rawResults)) {
+    const r: any = v;
+    const details = r?.details ?? r?.data ?? {};
+    const found = !r?.error && details && typeof details === 'object' && Object.keys(details).length > 0;
+    normalized[source] = {
+      found,
+      malicious: Boolean(r?.malicious ?? r?.isMalicious),
+      details,
+      error: r?.error,
+      threatScore: typeof r?.threatScore === 'number' ? r.threatScore : undefined,
+    };
+  }
+
+  const scores = Object.values(rawResults)
+    .map((r: any) => (typeof r?.threatScore === 'number' ? r.threatScore : undefined))
+    .filter((n): n is number => typeof n === 'number');
+  const overallThreatScore = typeof data?.overallThreatScore === 'number'
+    ? data.overallThreatScore
+    : (scores.length ? Math.max(...scores) : 0);
+
+  return {
+    ...data,
+    overallThreatScore,
+    rawResults,
+    results: normalized,
+  } as URLLookupResult;
 }
 export type HashLookupResult = {
   hash: string;
