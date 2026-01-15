@@ -24,7 +24,7 @@ import {
   exportToDefanged,
   IOCAnalysisResult,
 } from '../lib/iocAnalysis';
-import { bulkLookupIPs } from '../lib/threatIntel';
+import { bulkLookupIPs, lookupHash } from '../lib/threatIntel';
 import { supabase } from '../lib/supabase';
 
 interface ExtractedIOCs {
@@ -348,13 +348,14 @@ const extractIOCs = (text: string): ExtractedIOCs => {
       }
 
       if (chosen.type === 'hash') {
-        const data = await callThreatIntel('/hash', { hash: chosen.value });
-        const mockData = buildHashMockData(data);
-        const verdict = classifyHashVerdict(mockData);
+  const data = await lookupHash(chosen.value);
+  const mockData = buildHashMockData(data);
+  const verdict = classifyHashVerdict(mockData);
 
-        setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
-        return;
-      }
+  setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
+  return;
+}
+
 
       if (chosen.type === 'url' || chosen.type === 'domain') {
         const url = chosen.type === 'domain' ? `https://${chosen.value}` : chosen.value;
