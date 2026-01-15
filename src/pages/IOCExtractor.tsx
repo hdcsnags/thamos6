@@ -663,8 +663,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
                   )}
                 </button>
               )}
-            )}
-          </div>
+            </div>
 
           {iocs && (
             <div className="mt-5">
