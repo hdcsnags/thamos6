@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   FileSearch,
   Copy,
@@ -206,6 +206,42 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     setExpandedResult(null);
   };
 
+  // Auto-run (Single mode): debounce input -> extract -> analyze
+  useEffect(() => {
+    if (mode !== 'single') return;
+
+    const text = input.trim();
+    if (!text) {
+      setIocs(null);
+      setPrimary(null);
+      setAnalysisResults([]);
+      setAnalysisError(null);
+      setExpandedResult(null);
+      return;
+    }
+
+    const t = window.setTimeout(() => {
+      const extracted = extractIOCs(text);
+      setIocs(extracted);
+      const picked = pickPrimaryIOC(extracted);
+      setPrimary(picked);
+
+      if (!picked) {
+        setAnalysisResults([]);
+        setAnalysisError('No IOC detected.');
+        return;
+      }
+
+      setAnalysisResults([]);
+      setAnalysisError(null);
+      setExpandedResult(null);
+      void handleAnalyze({ iocs: extracted, primary: picked });
+    }, 350);
+
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, mode]);
+
   const handleCopy = async (text: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -287,8 +323,11 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     };
   };
 
-  const handleAnalyze = async () => {
-    if (!iocs) return;
+  const handleAnalyze = async (override?: { iocs?: ExtractedIOCs; primary?: PrimaryIOC }) => {
+    const activeIocs = override?.iocs ?? iocs;
+    if (!activeIocs) return;
+
+    const activePrimary = override?.primary ?? primary;
 
     setAnalyzing(true);
     setAnalysisError(null);
@@ -298,12 +337,12 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     try {
       // BULK MODE: only IP enrichment
       if (mode === 'bulk') {
-        if (iocs.ips.length === 0 && iocs.ipv6.length === 0) {
+        if (activeIocs.ips.length === 0 && activeIocs.ipv6.length === 0) {
           setAnalysisError('Bulk mode currently supports IP enrichment only. Paste IPs or switch to Single mode.');
           return;
         }
 
-        const allIps = [...iocs.ips, ...iocs.ipv6];
+        const allIps = [...activeIocs.ips, ...activeIocs.ipv6];
         const ipsToAnalyze = analysisMode === 'fast' ? allIps.slice(0, 10) : allIps;
 
         const { results: bulkResults } = await bulkLookupIPs(ipsToAnalyze);
@@ -462,7 +501,10 @@ const extractIOCs = (text: string): ExtractedIOCs => {
   };
 
   const exportBundle = (format: 'json' | 'csv' | 'text' | 'defanged') => {
-    if (!iocs) return;
+    const activeIocs = override?.iocs ?? iocs;
+    if (!activeIocs) return;
+
+    const activePrimary = override?.primary ?? primary;
     const all = {
       ips: [...iocs.ips, ...iocs.ipv6],
       urls: iocs.urls,
@@ -553,21 +595,44 @@ const extractIOCs = (text: string): ExtractedIOCs => {
             </div>
           </div>
 
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Paste email content, logs, proxy data, SOC notes, etc..."
-            className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-          />
+          {mode === 'single' ? (
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const text = input.trim();
+                  if (!text) return;
+                  const extracted = extractIOCs(text);
+                  setIocs(extracted);
+                  const picked = pickPrimaryIOC(extracted);
+                  setPrimary(picked);
+                  if (picked) void handleAnalyze({ iocs: extracted, primary: picked });
+                }
+              }}
+              placeholder="Paste an IP / URL / domain / hash..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+            />
+          ) : (
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Paste email content, logs, proxy data, SOC notes, etc..."
+              className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+            />
+          )}
 
           <div className="flex flex-wrap gap-2 mt-4">
-            <button
-              onClick={handleExtract}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
-            >
-              <Play className="w-4 h-4" />
-              Extract
-            </button>
+            {mode === 'bulk' && (
+              <button
+                onClick={handleExtract}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
+              >
+                <Play className="w-4 h-4" />
+                Extract
+              </button>
+            )}
             <button
               onClick={handleClear}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
@@ -577,23 +642,25 @@ const extractIOCs = (text: string): ExtractedIOCs => {
             </button>
 
             {iocs && (
-              <button
-                onClick={handleAnalyze}
-                disabled={analyzing}
-                className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-semibold disabled:opacity-60"
-              >
-                {analyzing ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Shield className="w-4 h-4" />
-                    {mode === 'bulk' ? 'Analyze IPs' : 'Analyze Detected'}
-                  </>
-                )}
-              </button>
+              {mode === 'bulk' && (
+                <button
+                  onClick={() => void handleAnalyze()}
+                  disabled={analyzing}
+                  className="ml-auto inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-cyan-400 text-slate-950 font-semibold disabled:opacity-60"
+                >
+                  {analyzing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="w-4 h-4" />
+                      Analyze IPs
+                    </>
+                  )}
+                </button>
+              )}
             )}
           </div>
 
