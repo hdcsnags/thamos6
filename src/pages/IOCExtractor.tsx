@@ -644,9 +644,8 @@ const extractIOCs = (text: string): ExtractedIOCs => {
               Clear
             </button>
 
-            {iocs && (
-              {mode === 'bulk' && (
-                <button
+           {iocs && mode === 'bulk' && (
+                  <button
                   onClick={() => void handleAnalyze()}
                   disabled={analyzing}
                   className="ml-auto inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-cyan-400 text-slate-950 font-semibold disabled:opacity-60"
