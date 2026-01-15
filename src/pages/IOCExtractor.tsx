@@ -24,7 +24,7 @@ import {
   exportToDefanged,
   IOCAnalysisResult,
 } from '../lib/iocAnalysis';
-import { bulkLookupIPs, lookupHash } from '../lib/threatIntel';
+import { bulkLookupIPs, lookupHash, scanURL } from '../lib/threatIntel';
 import { supabase } from '../lib/supabase';
 
 interface ExtractedIOCs {
@@ -254,10 +254,26 @@ const extractIOCs = (text: string): ExtractedIOCs => {
   };
 
   const buildUrlMockData = (urlResponse: any) => {
+    // The URL edge endpoint historically returned `results` (ThreatResult-style) rather than `sources`.
+    // Our front-end normalizes `scanURL()` to:
+    //   results: { [source]: { found, malicious, details, error?, threatScore? } }
+    // For the verdict engine, we mirror that into `sources`.
+    const sources = urlResponse?.sources ?? urlResponse?.results ?? {};
+
+    const overallThreatScore =
+      urlResponse?.threatScore ??
+      urlResponse?.overallThreatScore ??
+      (() => {
+        const scores = Object.values(sources)
+          .map((r: any) => (typeof r?.threatScore === 'number' ? r.threatScore : undefined))
+          .filter((n): n is number => typeof n === 'number');
+        return scores.length ? Math.max(...scores) : 0;
+      })();
+
     return {
-      overallThreatScore: urlResponse?.threatScore ?? urlResponse?.overallThreatScore ?? 0,
+      overallThreatScore,
       isMalicious: urlResponse?.isMalicious ?? false,
-      sources: urlResponse?.sources ?? {},
+      sources,
       ...urlResponse,
     };
   };
@@ -359,7 +375,8 @@ const extractIOCs = (text: string): ExtractedIOCs => {
 
       if (chosen.type === 'url' || chosen.type === 'domain') {
         const url = chosen.type === 'domain' ? `https://${chosen.value}` : chosen.value;
-        const data = await callThreatIntel('/url', { url });
+        // Use the same helper as URLScanner so auth headers + normalization match.
+        const data = await scanURL(url);
         const mockData = buildUrlMockData(data);
         const verdict = classifyURLVerdict(mockData);
 
@@ -414,9 +431,11 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     }
 
     const { error } = await supabase.from('watchlist_entries').insert({
-      ioc_value: ioc,
-      ioc_type: type,
-      notes: verdict ? `SmartIOC verdict: ${verdict}` : null,
+      entry_type: type,
+      value: ioc,
+      description: verdict ? `SmartIOC verdict: ${verdict}` : null,
+      severity: verdict && verdict.toLowerCase().includes('malicious') ? 'high' : 'medium',
+      is_active: true,
     });
 
     if (error) setAnalysisError(error.message);
@@ -432,8 +451,10 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     const payload = {
       title: `IOC Analysis: ${ioc}`,
       description: verdict ? `Verdict: ${verdict}` : `IOC: ${ioc}`,
+      status: 'open',
+      priority: verdict && verdict.toLowerCase().includes('malicious') ? 'high' : 'medium',
       tags: ['smart-ioc', type],
-      iocs: { [type]: [ioc] },
+      iocs: [{ type, value: ioc, notes: verdict ? `Verdict: ${verdict}` : undefined }],
     };
 
     const { error } = await supabase.from('case_notes').insert(payload);
