@@ -559,6 +559,243 @@ export function classifyHashVerdict(data: any): IOCVerdict {
   return { verdict, confidence, severity, color, badges, evidence, recommendations };
 }
 
+export interface IpSummary {
+  tor: boolean;
+  vpn: { isVpn: boolean; provider?: string; confidence?: string };
+  proxy: boolean;
+  hosting: boolean;
+  abuse?: { score?: number; reports?: number };
+  spamhaus?: { listed: boolean; lists: string[] };
+  asn?: { asn?: string; org?: string };
+  geo?: { country?: string; region?: string; city?: string; conflicts?: string[] };
+}
+
+export interface UrlSummary {
+  virustotal?: {
+    found: boolean;
+    detections?: { malicious: number; total: number };
+    error?: string;
+    errorCode?: number;
+  };
+  urlscan?: {
+    found: boolean;
+    verdict?: string;
+    resultUrl?: string;
+    error?: string;
+    errorCode?: number;
+  };
+  domain?: string;
+  finalUrl?: string;
+}
+
+export interface HashSummary {
+  virustotal?: {
+    found: boolean;
+    detections?: { malicious: number; total: number };
+    fileType?: string;
+    tags?: string[];
+    firstSeen?: string;
+    lastSeen?: string;
+    signed?: boolean;
+    topVendors?: string[];
+    error?: string;
+    errorCode?: number;
+  };
+}
+
+export function summarizeIp(raw: any): IpSummary {
+  const summary: IpSummary = {
+    tor: raw.isTor || false,
+    vpn: {
+      isVpn: raw.isVPN || false,
+      provider: raw.vpnService || raw.operator?.name || undefined,
+      confidence: raw.detectionConfidence || undefined,
+    },
+    proxy: raw.isProxy || false,
+    hosting: raw.isHosting || (raw.sources?.ipapi?.hosting) || (raw.sources?.proxycheck?.network?.type === 'Hosting') || false,
+  };
+
+  if (raw.sources?.abuseipdb) {
+    summary.abuse = {
+      score: raw.sources.abuseipdb.abuseConfidenceScore,
+      reports: raw.sources.abuseipdb.totalReports,
+    };
+  }
+
+  if (raw.spamhausListed) {
+    summary.spamhaus = {
+      listed: true,
+      lists: raw.spamhausLists || [],
+    };
+  }
+
+  if (raw.asn || raw.organization || raw.sources?.ipinfo) {
+    summary.asn = {
+      asn: raw.asn || raw.sources?.ipinfo?.asn || raw.sources?.proxycheck?.network?.asn || undefined,
+      org: raw.organization || raw.org || raw.sources?.ipinfo?.org || raw.sources?.proxycheck?.network?.org || undefined,
+    };
+  }
+
+  const geoSources = [];
+  const countries: string[] = [];
+
+  if (raw.country) {
+    summary.geo = {
+      country: raw.country,
+      region: raw.region || undefined,
+      city: raw.city || undefined,
+    };
+    geoSources.push({ source: 'primary', country: raw.country });
+    countries.push(raw.country);
+  }
+
+  if (raw.sources?.ipinfo?.country && raw.sources.ipinfo.country !== raw.country) {
+    geoSources.push({ source: 'ipinfo', country: raw.sources.ipinfo.country });
+    if (!countries.includes(raw.sources.ipinfo.country)) {
+      countries.push(raw.sources.ipinfo.country);
+    }
+  }
+
+  if (raw.sources?.ipapi?.countryCode && raw.sources.ipapi.countryCode !== raw.country) {
+    geoSources.push({ source: 'ipapi', country: raw.sources.ipapi.countryCode });
+    if (!countries.includes(raw.sources.ipapi.countryCode)) {
+      countries.push(raw.sources.ipapi.countryCode);
+    }
+  }
+
+  if (raw.sources?.otx?.country && raw.sources.otx.country !== raw.country) {
+    geoSources.push({ source: 'otx', country: raw.sources.otx.country });
+    if (!countries.includes(raw.sources.otx.country)) {
+      countries.push(raw.sources.otx.country);
+    }
+  }
+
+  if (countries.length > 1 && summary.geo) {
+    summary.geo.conflicts = countries.filter(c => c !== summary.geo!.country);
+  }
+
+  return summary;
+}
+
+export function summarizeUrl(raw: any): UrlSummary {
+  const summary: UrlSummary = {};
+
+  if (raw.sources?.virustotal || raw.sources?.vt) {
+    const vt = raw.sources.virustotal || raw.sources.vt;
+
+    if (vt.errorCode === 401) {
+      summary.virustotal = {
+        found: false,
+        error: 'Key missing / not authorized',
+        errorCode: 401,
+      };
+    } else if (vt.error && !vt.found) {
+      summary.virustotal = {
+        found: false,
+        error: vt.error,
+      };
+    } else if (vt.found) {
+      summary.virustotal = {
+        found: true,
+        detections: vt.detections || vt.stats || undefined,
+      };
+    } else {
+      summary.virustotal = {
+        found: false,
+      };
+    }
+  }
+
+  if (raw.sources?.urlscan) {
+    const us = raw.sources.urlscan;
+
+    if (us.errorCode === 401) {
+      summary.urlscan = {
+        found: false,
+        error: 'Key missing / not authorized',
+        errorCode: 401,
+      };
+    } else if (us.error && !us.found) {
+      summary.urlscan = {
+        found: false,
+        error: us.error,
+      };
+    } else if (us.found) {
+      summary.urlscan = {
+        found: true,
+        verdict: us.verdict || undefined,
+        resultUrl: us.resultUrl || us.result || undefined,
+      };
+    } else {
+      summary.urlscan = {
+        found: false,
+      };
+    }
+  }
+
+  try {
+    if (raw.url) {
+      const urlObj = new URL(raw.url);
+      summary.domain = urlObj.hostname;
+    }
+  } catch {
+    // Invalid URL
+  }
+
+  if (raw.sources?.urlscan?.page?.domain) {
+    summary.finalUrl = raw.sources.urlscan.page.domain;
+  }
+
+  return summary;
+}
+
+export function summarizeHash(raw: any): HashSummary {
+  const summary: HashSummary = {};
+
+  if (raw.sources?.virustotal || raw.sources?.vt) {
+    const vt = raw.sources.virustotal || raw.sources.vt;
+
+    if (vt.errorCode === 401) {
+      summary.virustotal = {
+        found: false,
+        error: 'Key missing / not authorized',
+        errorCode: 401,
+      };
+    } else if (vt.error && !vt.found) {
+      summary.virustotal = {
+        found: false,
+        error: vt.error,
+      };
+    } else if (vt.found) {
+      const detections = vt.detections || vt.stats || vt.last_analysis_stats;
+      const malicious = detections?.malicious || 0;
+      const total = Object.values(detections || {}).reduce((sum: number, val: any) => sum + (typeof val === 'number' ? val : 0), 0) || 0;
+
+      summary.virustotal = {
+        found: true,
+        detections: { malicious, total },
+        fileType: vt.type_description || vt.file_type || undefined,
+        tags: vt.tags || vt.popular_threat_classification?.popular_threat_name || undefined,
+        firstSeen: vt.first_submission_date || vt.creation_date || undefined,
+        lastSeen: vt.last_submission_date || vt.last_analysis_date || undefined,
+        signed: vt.signature_info !== undefined || vt.signed !== undefined ? (vt.signed || false) : undefined,
+        topVendors: vt.last_analysis_results
+          ? Object.entries(vt.last_analysis_results)
+              .filter(([_, result]: [string, any]) => result?.category === 'malicious')
+              .slice(0, 3)
+              .map(([vendor]: [string, any]) => vendor)
+          : undefined,
+      };
+    } else {
+      summary.virustotal = {
+        found: false,
+      };
+    }
+  }
+
+  return summary;
+}
+
 export function defangIOC(ioc: string, type: string): string {
   switch (type) {
     case 'url':

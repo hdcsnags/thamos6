@@ -23,6 +23,9 @@ import {
   exportToPlainText,
   exportToDefanged,
   IOCAnalysisResult,
+  summarizeIp,
+  summarizeUrl,
+  summarizeHash,
 } from '../lib/iocAnalysis';
 import { bulkLookupIPs, lookupHash, scanURL } from '../lib/threatIntel';
 import { supabase } from '../lib/supabase';
@@ -37,10 +40,11 @@ interface ExtractedIOCs {
   sha1: string[];
   sha256: string[];
   cves: string[];
+  extensions: string[];
 }
 
 type InputMode = 'single' | 'bulk';
-type PrimaryType = 'ip' | 'url' | 'domain' | 'hash' | 'email' | 'cve';
+type PrimaryType = 'ip' | 'url' | 'domain' | 'hash' | 'email' | 'cve' | 'extension';
 type PrimaryIOC = { type: PrimaryType; value: string } | null;
 
 function countIOCs(iocs: ExtractedIOCs): number {
@@ -53,11 +57,13 @@ function countIOCs(iocs: ExtractedIOCs): number {
     iocs.md5.length +
     iocs.sha1.length +
     iocs.sha256.length +
-    iocs.cves.length
+    iocs.cves.length +
+    iocs.extensions.length
   );
 }
 
 function pickPrimaryIOC(iocs: ExtractedIOCs): PrimaryIOC {
+  if (iocs.extensions[0]) return { type: 'extension', value: iocs.extensions[0] };
   if (iocs.urls[0]) return { type: 'url', value: iocs.urls[0] };
   if (iocs.domains[0]) return { type: 'domain', value: iocs.domains[0] };
   if (iocs.ips[0]) return { type: 'ip', value: iocs.ips[0] };
@@ -81,7 +87,8 @@ export default function IOCExtractor() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [expandedResult, setExpandedResult] = useState<string | null>(null);
+  const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(new Set());
+  const [expandedRaw, setExpandedRaw] = useState<Set<string>>(new Set());
 
 const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
@@ -96,6 +103,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     const sha1Regex = /\b[a-fA-F0-9]{40}\b/g;
     const sha256Regex = /\b[a-fA-F0-9]{64}\b/g;
     const cveRegex = /CVE-\d{4}-\d{4,}/gi;
+    const extensionRegex = /https?:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\/[^\/]+\/([a-z]{32})/gi;
 
     const unwrapSafeLinks = (url: string): string => {
       try {
@@ -181,7 +189,14 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     const sha256 = dedup(text.match(sha256Regex) || []).map(h => h.toLowerCase());
     const cves = dedup(text.match(cveRegex) || []).map(c => c.toUpperCase());
 
-    return { ips, ipv6, urls, domains, emails, md5, sha1, sha256, cves };
+    const extensions: string[] = [];
+    let extMatch;
+    while ((extMatch = extensionRegex.exec(text)) !== null) {
+      extensions.push(extMatch[1]);
+    }
+    const uniqueExtensions = dedup(extensions);
+
+    return { ips, ipv6, urls, domains, emails, md5, sha1, sha256, cves, extensions: uniqueExtensions };
   }
 
   const totalFound = useMemo(() => (iocs ? countIOCs(iocs) : 0), [iocs]);
@@ -203,7 +218,28 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     setCopied(null);
     setAnalysisResults([]);
     setAnalysisError(null);
-    setExpandedResult(null);
+    setExpandedEvidence(new Set());
+    setExpandedRaw(new Set());
+  };
+
+  const toggleEvidence = (ioc: string) => {
+    const newSet = new Set(expandedEvidence);
+    if (newSet.has(ioc)) {
+      newSet.delete(ioc);
+    } else {
+      newSet.add(ioc);
+    }
+    setExpandedEvidence(newSet);
+  };
+
+  const toggleRaw = (ioc: string) => {
+    const newSet = new Set(expandedRaw);
+    if (newSet.has(ioc)) {
+      newSet.delete(ioc);
+    } else {
+      newSet.add(ioc);
+    }
+    setExpandedRaw(newSet);
   };
 
   // Auto-run (Single mode): debounce input -> extract -> analyze
@@ -403,14 +439,73 @@ const extractIOCs = (text: string): ExtractedIOCs => {
       }
 
       if (chosen.type === 'hash') {
-  const data = await lookupHash(chosen.value);
-  const mockData = buildHashMockData(data);
-  const verdict = classifyHashVerdict(mockData);
+        const data = await lookupHash(chosen.value);
+        const mockData = buildHashMockData(data);
+        const verdict = classifyHashVerdict(mockData);
 
-  setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
-  return;
-}
+        setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
+        return;
+      }
 
+      if (chosen.type === 'extension') {
+        const extensionUrl = `https://chromewebstore.google.com/detail/extension/${chosen.value}`;
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-extension`;
+
+        const { data: session } = await supabase.auth.getSession();
+        const token = session.session?.access_token;
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (anonKey) headers['apikey'] = anonKey;
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ extensionUrl }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Extension analysis failed');
+        }
+
+        const { data: analysis } = await supabase
+          .from('extension_analyses')
+          .select('*')
+          .eq('id', result.analysis_id)
+          .single();
+
+        if (analysis) {
+          const verdict = {
+            verdict: `${analysis.risk_level} Risk - Score: ${analysis.risk_score}/100`,
+            confidence: 0.95,
+            severity: analysis.risk_level as any,
+            color: analysis.risk_level === 'critical' ? 'red' : analysis.risk_level === 'high' ? 'orange' : analysis.risk_level === 'medium' ? 'yellow' : 'green',
+            badges: [`${analysis.extension_name}`, `v${analysis.extension_version}`, `Score: ${analysis.risk_score}`],
+            evidence: [analysis.analysis_summary],
+            recommendations: [
+              'Review the extension security findings',
+              'Check for suspicious permissions or code patterns',
+              'Consider the risk level before installation',
+            ],
+          };
+
+          setAnalysisResults([
+            {
+              ioc: chosen.value,
+              type: 'hash' as any,
+              verdict,
+              sources: analysis,
+              checkedAt: new Date().toISOString(),
+            },
+          ]);
+        }
+        return;
+      }
 
       if (chosen.type === 'url' || chosen.type === 'domain') {
         const url = chosen.type === 'domain' ? `https://${chosen.value}` : chosen.value;
@@ -501,16 +596,15 @@ const extractIOCs = (text: string): ExtractedIOCs => {
   };
 
   const exportBundle = (format: 'json' | 'csv' | 'text' | 'defanged') => {
-    const activeIocs = override?.iocs ?? iocs;
-    if (!activeIocs) return;
+    if (!iocs) return;
 
-    const activePrimary = override?.primary ?? primary;
     const all = {
       ips: [...iocs.ips, ...iocs.ipv6],
       urls: iocs.urls,
       domains: iocs.domains,
       emails: iocs.emails,
       hashes: [...iocs.sha256, ...iocs.sha1, ...iocs.md5],
+      extensions: iocs.extensions,
       cves: iocs.cves,
     };
 
@@ -614,7 +708,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
                   if (picked) void handleAnalyze({ iocs: extracted, primary: picked });
                 }
               }}
-              placeholder="Paste an IP / URL / domain / hash..."
+              placeholder="Paste an IP / URL / domain / hash / Chrome extension URL..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
             />
           ) : (
@@ -674,6 +768,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
                 {renderCountPill('URLs', iocs.urls.length)}
                 {renderCountPill('Domains', iocs.domains.length)}
                 {renderCountPill('Hashes', iocs.sha256.length + iocs.sha1.length + iocs.md5.length)}
+                {renderCountPill('Extensions', iocs.extensions.length)}
                 {renderCountPill('Emails', iocs.emails.length)}
                 {renderCountPill('CVEs', iocs.cves.length)}
               </div>
