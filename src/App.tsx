@@ -15,12 +15,15 @@ import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import ExtensionScanner from './pages/ExtensionScanner';
+import IntelHub from './pages/IntelHub';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('ip');
+  const [currentPage, setCurrentPage] = useState<Page>('intel');
 
   const renderPage = () => {
     switch (currentPage) {
+      case 'intel':
+        return <IntelHub />;
       case 'ip':
         return <IPLookup />;
       case 'url':
@@ -52,7 +55,7 @@ function App() {
       case 'admin':
         return <Admin />;
       default:
-        return <IPLookup />;
+        return <IntelHub />;
     }
   };
 

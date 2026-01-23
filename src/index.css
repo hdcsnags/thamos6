@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
   body {
-    @apply bg-slate-950 text-white antialiased;
+    @apply bg-white dark:bg-slate-950 text-slate-900 dark:text-white antialiased;
   }
 }
 
@@ -31,17 +35,17 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(30 41 59);
+  @apply bg-slate-200 dark:bg-slate-800;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(71 85 105);
+  @apply bg-slate-400 dark:bg-slate-600;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(100 116 139);
+  @apply bg-slate-500 dark:bg-slate-500;
 }
 
 ::selection {

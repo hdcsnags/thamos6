@@ -8,8 +8,9 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
 import { supabase } from '../lib/supabase';
+import ThemeToggle from './ThemeToggle';
 
-export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin' | 'extension';
+export type Page = 'intel' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin' | 'extension';
 
 interface LayoutProps {
   currentPage: Page;
@@ -26,6 +27,7 @@ const navCategories: NavCategory[] = [
   {
     label: 'Threat Intel',
     items: [
+      { id: 'intel', label: 'Intelligence Hub', icon: Newspaper },
       { id: 'news', label: 'Intel Stream', icon: Newspaper },
       { id: 'ip', label: 'IP Lookup', icon: Search },
       { id: 'hash', label: 'Hash Lookup', icon: Hash },
@@ -167,13 +169,13 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="text-center mb-8">
           <div className="inline-flex p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl mb-4">
             <Shield className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Sign in to Thamos6</h2>
-          <p className="text-slate-400">Access your personal API keys and usage stats</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Sign in to Thamos6</h2>
+          <p className="text-slate-600 dark:text-slate-400">Access your personal API keys and usage stats</p>
         </div>
 
         {!showEmailForm ? (
@@ -208,16 +210,16 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-700"></div>
+                <div className="w-full border-t border-slate-300 dark:border-slate-700"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-slate-900 text-slate-400">Or continue with email</span>
+                <span className="px-2 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400">Or continue with email</span>
               </div>
             </div>
 
             <button
               onClick={() => setShowEmailForm(true)}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-700 hover:bg-slate-800 text-white font-medium rounded-xl transition-all"
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white font-medium rounded-xl transition-all"
             >
               <Mail className="w-5 h-5" />
               Continue with Email
@@ -226,24 +228,24 @@ function LoginModal({ onClose }: { onClose: () => void }) {
         ) : (
           <form onSubmit={handleEmailAuth} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
               />
             </div>
             {!showResetPassword && (
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
                   placeholder="••••••••"
                   required
                   minLength={6}
@@ -595,10 +597,10 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
   const { user, loading, authError, clearAuthError } = useAuth();
 
   return (
-    <div className="min-h-screen bg-slate-950">
-      <nav className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
+    <div className="min-h-screen bg-white dark:bg-slate-950 transition-colors">
+      <nav className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
         {/* Top Bar - Branding and Sign In */}
-        <div className="border-b border-slate-800">
+        <div className="border-b border-slate-200 dark:border-slate-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-3">
@@ -606,12 +608,13 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   <Shield className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-white">Thamos6</h1>
-                  <p className="text-xs text-slate-400">What Would Will Do?</p>
+                  <h1 className="text-xl font-bold text-slate-900 dark:text-white">Thamos6</h1>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">What Would Will Do?</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
+                <ThemeToggle />
                 {!loading && (
                   user ? (
                     <>
@@ -629,7 +632,7 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   )
                 )}
                 <button
-                  className="lg:hidden p-2 text-slate-400 hover:text-white"
+                  className="lg:hidden p-2 text-slate-400 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 >
                   {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
