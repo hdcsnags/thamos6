@@ -1,0 +1,148 @@
+The core idea
+
+Every result card in SmartIOC should have the same three layers:
+
+FAST SUMMARY (always visible)
+The “Tor/VPN/Hosting/Abuse/Geo” style stuff you described.
+
+EVIDENCE (expandable, still human)
+Short bullets with source names, and flags for conflicts.
+
+RAW DATA (collapsible)
+Full JSON dump for deep dive.
+
+This keeps SmartIOC fast, but still trustworthy.
+
+IP: what to surface first (your “3-second answer”)
+IP Quick Summary card
+
+Top row: Access risk flags
+
+VPN: Yes/No + Provider name
+
+from proxycheck.detections.vpn + proxycheck.operator.name
+
+Tor: Yes/No
+
+from tor_exit_list.is_tor_exit
+
+Proxy: Yes/No
+
+from proxycheck.detections.proxy
+
+Hosting/DC: Yes/No
+
+from ipapi.hosting OR proxycheck.network.type === "Hosting"
+
+Confidence (if available)
+
+proxycheck.detections.confidence
+
+Second row: Reputation
+
+AbuseIPDB: score + reports
+
+abuseipdb.abuseConfidenceScore, abuseipdb.totalReports
+
+Spamhaus listed: Yes/No (+ which lists)
+
+parse spamhaus results, show ZEN/SBL/XBL/PBL if present
+
+Third row: Ownership + Location
+
+ASN + Org
+
+ipinfo.asn / ipinfo.org (or equivalent), fall back to proxycheck.network.asn/org
+
+Geo (primary)
+
+choose a single “primary geo” (more on conflicts below)
+
+Geo conflicts: show them explicitly
+
+Your IP raw dump showed disagreement between sources (ipapi vs OTX vs Team Cymru). That’s normal, but you don’t want it hidden.
+
+So show:
+
+Primary Geo: from ipinfo (since you have a key)
+
+Geo Conflicts: list any other country codes that disagree (small badge: “Geo conflict: RO vs US”)
+
+That makes you faster and prevents wrong assumptions.
+
+URL: what to surface first
+
+Given your keys: VirusTotal + urlscan.io are your core URL sources.
+
+URL Quick Summary card
+
+Top row: Verdict
+
+VT: Found/Submitted + detection ratio (if present)
+
+URLScan: Found/Submitted + verdict (if present)
+
+Domain extracted (hostname) + “final redirect hostname” if URLScan provides it
+
+Second row: Actions
+
+Button links (right side):
+
+Open in VirusTotal
+
+Open urlscan resultUrl
+
+If a source has errorCode === 401, label it as:
+
+“Key missing / not authorized” (not “clean”)
+
+This is huge for trust: 401 = misconfigured, not safe.
+
+Hash: what to surface first
+
+Right now Hash is mostly VT-driven (which is fine).
+
+Hash Quick Summary card
+
+Top row: Detection
+
+VT detections: (malicious / total) + confidence label
+
+File type (if available)
+
+Popular family/tag (if available)
+
+Second row: Context
+
+First seen / last seen (if present)
+
+Signed? (if present)
+
+Top 3 vendor names that flag it (if present)
+
+Also: fix [object Object] by pretty-printing any nested objects.
+
+How we implement this cleanly (without rewriting everything)
+
+We add a single normalization layer in src/lib/iocAnalysis.ts:
+
+New functions
+
+summarizeIp(raw: any): IpSummary
+
+summarizeUrl(raw: any): UrlSummary
+
+summarizeHash(raw: any): HashSummary
+
+Each returns a small normalized object like:
+
+type IpSummary = {
+  tor: boolean
+  vpn: { isVpn: boolean; provider?: string; confidence?: number }
+  proxy: boolean
+  hosting: boolean
+  abuse?: { score?: number; reports?: number }
+  spamhaus?: { listed: boolean; lists: string[] }
+  asn?: { asn?: string; org?: string }
+  geo?: { country?: string; region?: string; city?: string; conflicts?: string[] }
+}
