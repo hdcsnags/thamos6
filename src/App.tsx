@@ -14,6 +14,7 @@ import CaseNotes from './pages/CaseNotes';
 import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
+import ExtensionScanner from './pages/ExtensionScanner';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('ip');
@@ -36,6 +37,8 @@ function App() {
         return <HashLookup />;
       case 'domain':
         return <DomainIntel />;
+      case 'extension':
+        return <ExtensionScanner />;
       case 'defang':
         return <DefangTool />;
       case 'decoder':

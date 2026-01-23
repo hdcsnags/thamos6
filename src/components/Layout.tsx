@@ -3,13 +3,13 @@ import {
   Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
   Mail, FileSearch, Hash, Globe, ShieldOff, Code, FileText,
   LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
-  ExternalLink, Check, Trash2, MoreHorizontal
+  ExternalLink, Check, Trash2, MoreHorizontal, Puzzle
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
 import { supabase } from '../lib/supabase';
 
-export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin';
+export type Page = 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin' | 'extension';
 
 interface LayoutProps {
   currentPage: Page;
@@ -36,6 +36,7 @@ const navCategories: NavCategory[] = [
     label: 'Analysis Tools',
     items: [
       { id: 'ioc', label: 'Smart IOC Intake', icon: FileSearch },
+      { id: 'extension', label: 'Extension Scanner', icon: Puzzle },
       { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
       { id: 'decoder', label: 'Decoder', icon: Code },
     ],
