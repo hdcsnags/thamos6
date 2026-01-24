@@ -94,7 +94,7 @@ function App() {
   };
 
   return (
-    <Layout currentPage={currentPage} onNavigate={handleNavigate}>
+    <Layout currentPage={currentPage} onNavigate={handleNavigate} onScan={handleScan}>
       {renderPage()}
     </Layout>
   );

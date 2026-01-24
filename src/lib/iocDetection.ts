@@ -45,6 +45,29 @@ function isChromeExtensionId(value: string): boolean {
   return chromeExtensionIdRegex.test(value);
 }
 
+function extractChromeExtensionId(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    if (
+      (urlObj.hostname === 'chromewebstore.google.com' ||
+       urlObj.hostname === 'chrome.google.com') &&
+      urlObj.pathname.includes('/detail/')
+    ) {
+      const parts = urlObj.pathname.split('/');
+      const detailIndex = parts.indexOf('detail');
+      if (detailIndex !== -1 && parts.length > detailIndex + 1) {
+        const possibleId = parts[detailIndex + 2] || parts[detailIndex + 1];
+        if (possibleId && chromeExtensionIdRegex.test(possibleId)) {
+          return possibleId;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function detectIOCType(input: string): IOCDetectionResult {
   const trimmed = input.trim();
   const normalized = normalizeInput(input);
@@ -54,6 +77,15 @@ export function detectIOCType(input: string): IOCDetectionResult {
       type: 'unknown',
       value: trimmed,
       normalizedValue: normalized,
+    };
+  }
+
+  const extensionId = extractChromeExtensionId(trimmed);
+  if (extensionId) {
+    return {
+      type: 'extension',
+      value: extensionId,
+      normalizedValue: extensionId.toLowerCase(),
     };
   }
 
