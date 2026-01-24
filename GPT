@@ -1,0 +1,71 @@
+You are redesigning Thamos6 (T6), a premium SOC utility web app.
+
+GOAL
+Stop the “tri-pane drift”. The product is a smart IOC scanner like VirusTotal’s UX:
+- One universal input (paste anything: IP, URL, domain, hash, extension ID)
+- Auto-detect type and route automatically to the correct results page
+- Clean, structured results pages with only the most useful fields surfaced first
+- Raw JSON always available but collapsed by default
+
+NAV / IA
+- Top nav should have only two primary modes:
+  1) Scanner (default)  — the universal input + results pages
+  2) Intel Stream       — the curated RSS / threat intel feed (work later)
+- Keep a subtle “Tools/Extras” overflow if needed, but Scanner is the hero.
+
+SCANNER HOME (like VirusTotal home)
+- A large universal input bar (centered, premium)
+- Short “What we check” section with icons + sources:
+  - VirusTotal (hash/url/domain)
+  - urlscan.io (url screenshots + redirects)
+  - AbuseIPDB (IP abuse confidence + categories + recent reports)
+  - ipinfo (ASN/org/location)
+  - ProxyCheck (TOR/VPN/proxy detection + provider name)
+- No “Smart IOC Intake” headline needed; branding is “Thamos6”.
+
+ROUTING / FLOW
+- When user submits, auto-detect type and navigate:
+  - /ip/:value
+  - /url/:value
+  - /domain/:value
+  - /hash/:value
+  - /extension/:id
+- Show a slim progress line showing which sources were queried (only for the sources we have keys for).
+- Raw sources section: collapsed by default.
+
+RESULTS PAGE DESIGN (structured cards, no clutter)
+For each type, build a clean page with:
+1) Verdict header:
+   - risk badge + score + “why” bullets (3–6 bullets max)
+2) Key facts row:
+   - IP: ASN, org, country, hosting/DC yes/no, TOR/VPN/proxy yes/no, provider name
+   - URL: final URL, redirects count, screenshot/thumb, domain, VT detections, urlscan verdict
+   - Hash: VT detections ratio, popular threat label, file type, size, first seen/last seen
+   - Domain: registrar/created/age, hosting, VT domain reputation if available
+3) Evidence cards:
+   - AbuseIPDB: confidence %, total reports, top categories, most recent report summary
+   - ProxyCheck: TOR/VPN/proxy flags + provider + risk-type notes
+   - urlscan: screenshot, requests summary, chains (redirects), if available
+   - VirusTotal: detection ratio + tags + community score, top engines (collapsed list)
+
+CONTRADICTION / VARIANCE SURFACING
+If different sources disagree (e.g., ipinfo says one country but another source says unknown), show a “Source variance” mini-card:
+- Field name + values by source (small table)
+- Confidence hint (“Prefer ipinfo for ASN/org; prefer ProxyCheck for VPN provider name; prefer AbuseIPDB for abuse categories”)
+
+ACTIONS
+Top-right actions on results pages:
+- Copy clean summary
+- Copy IOCs JSON
+- Add to Watchlist
+- Add Case Note
+
+STYLE
+- Crisp enterprise dark theme (like current app), readable typography, consistent spacing
+- Cards with clear section headers; raw JSON is always accessible but not noisy
+- Keep performance in mind: only call sources with existing keys
+
+IMPLEMENTATION NOTES
+- This is a React + TS + Tailwind app.
+- Keep components modular (ResultHeader, KeyFacts, SourceStatus, EvidenceCard, VarianceCard, RawJsonCollapse, ActionsBar).
+- Do not reintroduce a tri-pane.
