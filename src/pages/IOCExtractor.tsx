@@ -89,6 +89,7 @@ export default function IOCExtractor() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(new Set());
   const [expandedRaw, setExpandedRaw] = useState<Set<string>>(new Set());
+  const [expandedResult, setExpandedResult] = useState<string | null>(null);
 
 const extractIOCs = (text: string): ExtractedIOCs => {
     const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
