@@ -33,10 +33,13 @@ export default function IPResult({ ip }: IPResultProps) {
         const data = await lookupIP(ip);
         setResult(data);
 
+        const resultsData = data.results || data.sources || {};
+
         setSources(prev => prev.map(source => {
           const sourceKey = source.name.toLowerCase().replace(/\s/g, '');
-          const hasData = data.results[sourceKey];
-          const hasError = data.results[sourceKey]?.error;
+          const sourceData = resultsData[sourceKey];
+          const hasError = sourceData?.error;
+          const hasData = sourceData && !hasError;
 
           return {
             ...source,
@@ -82,9 +85,10 @@ export default function IPResult({ ip }: IPResultProps) {
   if (!result) return null;
 
   const enrichment = result.enrichment || {};
-  const abuseData = result.results.abuseipdb?.data as any;
-  const proxyData = result.results.proxycheck?.data as any;
-  const ipinfoData = result.results.ipinfo?.data as any;
+  const resultsData = result.results || result.sources || {};
+  const abuseData = resultsData.abuseipdb?.data as any;
+  const proxyData = resultsData.proxycheck?.data as any;
+  const ipinfoData = resultsData.ipinfo?.data as any;
 
   const keyFacts = [
     {

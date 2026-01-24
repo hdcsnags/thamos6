@@ -31,10 +31,13 @@ export default function URLResult({ url }: URLResultProps) {
         const data = await scanURL(url);
         setResult(data);
 
+        const resultsData = data.results || {};
+
         setSources(prev => prev.map(source => {
           const sourceKey = source.name.toLowerCase().replace(/\s/g, '');
-          const hasData = data.results[sourceKey];
-          const hasError = data.results[sourceKey]?.error;
+          const sourceData = resultsData[sourceKey];
+          const hasError = sourceData?.error;
+          const hasData = sourceData && !hasError;
 
           return {
             ...source,
@@ -79,8 +82,9 @@ export default function URLResult({ url }: URLResultProps) {
 
   if (!result) return null;
 
-  const vtData = result.results.virustotal?.details as any;
-  const urlscanData = result.results.urlscan?.details as any;
+  const resultsData = result.results || {};
+  const vtData = resultsData.virustotal?.details as any;
+  const urlscanData = resultsData.urlscan?.details as any;
 
   const keyFacts = [
     {
