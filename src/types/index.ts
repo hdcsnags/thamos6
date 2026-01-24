@@ -48,6 +48,58 @@ export interface URLLookupResult {
   checkedAt: string;
 }
 
+export interface HashDetections {
+  virustotal?: {
+    malicious: number;
+    suspicious: number;
+    undetected: number;
+    harmless: number;
+    timeout: number;
+    failure: number;
+    total: number;
+    malicious_names?: string[];
+    file_type?: string;
+    file_size?: number;
+    first_seen?: string;
+    last_seen?: string;
+  };
+  malwarebazaar?: {
+    signature?: string;
+    file_type?: string;
+    file_size?: number;
+    first_seen?: string;
+    tags?: string[];
+    threat_name?: string;
+  };
+  hybrid_analysis?: {
+    verdict?: string;
+    threat_score?: number;
+    malware_family?: string;
+    vx_family?: string;
+    classification_tags?: string[];
+  };
+  alienvault?: {
+    pulse_count?: number;
+    pulses?: Array<{
+      name: string;
+      created: string;
+      description?: string;
+    }>;
+  };
+}
+
+export interface HashLookupResult {
+  hash: string;
+  isMalicious: boolean;
+  overallThreatScore: number;
+  maxThreatScore: number;
+  sources: Record<string, { checked: boolean; error?: string; threatScore?: number }>;
+  detections: HashDetections;
+  checkedAt: string;
+  tier?: string;
+  sourcesAvailable?: number;
+}
+
 export interface BulkIPResult {
   ip: string;
   threatScore: number;

@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
 import { supabase } from '../lib/supabase';
+import { detectIOCType } from '../lib/iocDetection';
 import ThemeToggle from './ThemeToggle';
 
 export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
@@ -644,10 +645,22 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
 export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const { user, loading, authError, clearAuthError } = useAuth();
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchInput.trim()) return;
+
+    const detection = detectIOCType(searchInput.trim());
+    if (detection.type === 'unknown') return;
+
+    onNavigate(detection.type as Page);
+    setSearchInput('');
+  };
+
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950 transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
       <nav className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
         {/* Top Bar - Branding and Sign In */}
         <div className="border-b border-slate-200 dark:border-slate-800">
@@ -662,6 +675,19 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   <p className="text-xs text-slate-600 dark:text-slate-400">What Would Will Do?</p>
                 </div>
               </div>
+
+              <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-md mx-6">
+                <div className="relative w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Search IP, URL, hash..."
+                    className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                  />
+                </div>
+              </form>
 
               <div className="flex items-center gap-2">
                 <ThemeToggle />

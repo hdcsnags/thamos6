@@ -70,19 +70,7 @@ export default function Scanner({ onScan }: ScannerProps) {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="text-center mb-12">
-        <div className="inline-flex p-4 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl mb-6 shadow-lg shadow-cyan-500/20">
-          <Shield className="w-12 h-12 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-3">
-          Universal IOC Scanner
-        </h1>
-        <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-          Paste any indicator of compromise and get instant intelligence from multiple threat sources
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="mb-16">
+      <form onSubmit={handleSubmit} className="mb-8">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
             <Search className="w-6 h-6 text-slate-400" />
@@ -95,7 +83,7 @@ export default function Scanner({ onScan }: ScannerProps) {
               setError('');
             }}
             placeholder="Enter IP address, URL, domain, file hash, or extension ID..."
-            className="w-full pl-16 pr-6 py-5 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all shadow-lg"
+            className="w-full pl-16 pr-6 py-5 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl text-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all shadow-lg"
           />
         </div>
         {error && (
@@ -106,13 +94,13 @@ export default function Scanner({ onScan }: ScannerProps) {
         )}
         <button
           type="submit"
-          className="mt-4 w-full py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30"
+          className="mt-4 w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl transition-all shadow-lg hover:shadow-xl"
         >
           Scan Now
         </button>
       </form>
 
-      <div className="bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-800 p-8">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 text-center">
           What We Check
         </h2>
@@ -122,7 +110,7 @@ export default function Scanner({ onScan }: ScannerProps) {
             return (
               <div
                 key={source.name}
-                className="flex items-start gap-3 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-cyan-500/50 dark:hover:border-cyan-500/50 transition-all"
+                className="flex items-start gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:border-cyan-500 dark:hover:border-cyan-500/50 transition-all"
               >
                 <div className={`p-2 bg-gradient-to-br ${source.color} rounded-lg flex-shrink-0`}>
                   <Icon className="w-5 h-5 text-white" />
