@@ -1,71 +1,159 @@
-You are redesigning Thamos6 (T6), a premium SOC utility web app.
+PRIMARY GOAL
 
-GOAL
-Stop the “tri-pane drift”. The product is a smart IOC scanner like VirusTotal’s UX:
-- One universal input (paste anything: IP, URL, domain, hash, extension ID)
-- Auto-detect type and route automatically to the correct results page
-- Clean, structured results pages with only the most useful fields surfaced first
-- Raw JSON always available but collapsed by default
+Stop using placeholder “card-only” logic. Reuse the existing working API wrappers in src/lib/threatIntel.ts (scanURL, lookupHash, etc.) and render real results in the new V2 result pages.
 
-NAV / IA
-- Top nav should have only two primary modes:
-  1) Scanner (default)  — the universal input + results pages
-  2) Intel Stream       — the curated RSS / threat intel feed (work later)
-- Keep a subtle “Tools/Extras” overflow if needed, but Scanner is the hero.
+1) FIX HASH: HashResult.tsx must call the real API (no placeholder)
 
-SCANNER HOME (like VirusTotal home)
-- A large universal input bar (centered, premium)
-- Short “What we check” section with icons + sources:
-  - VirusTotal (hash/url/domain)
-  - urlscan.io (url screenshots + redirects)
-  - AbuseIPDB (IP abuse confidence + categories + recent reports)
-  - ipinfo (ASN/org/location)
-  - ProxyCheck (TOR/VPN/proxy detection + provider name)
-- No “Smart IOC Intake” headline needed; branding is “Thamos6”.
+File: src/pages/results/HashResult.tsx
 
-ROUTING / FLOW
-- When user submits, auto-detect type and navigate:
-  - /ip/:value
-  - /url/:value
-  - /domain/:value
-  - /hash/:value
-  - /extension/:id
-- Show a slim progress line showing which sources were queried (only for the sources we have keys for).
-- Raw sources section: collapsed by default.
+Current problem: It renders “Hash lookup coming soon” and never calls lookupHash(). It uses a fake timer and hard-coded sources.
 
-RESULTS PAGE DESIGN (structured cards, no clutter)
-For each type, build a clean page with:
-1) Verdict header:
-   - risk badge + score + “why” bullets (3–6 bullets max)
-2) Key facts row:
-   - IP: ASN, org, country, hosting/DC yes/no, TOR/VPN/proxy yes/no, provider name
-   - URL: final URL, redirects count, screenshot/thumb, domain, VT detections, urlscan verdict
-   - Hash: VT detections ratio, popular threat label, file type, size, first seen/last seen
-   - Domain: registrar/created/age, hosting, VT domain reputation if available
-3) Evidence cards:
-   - AbuseIPDB: confidence %, total reports, top categories, most recent report summary
-   - ProxyCheck: TOR/VPN/proxy flags + provider + risk-type notes
-   - urlscan: screenshot, requests summary, chains (redirects), if available
-   - VirusTotal: detection ratio + tags + community score, top engines (collapsed list)
+Required fix:
 
-CONTRADICTION / VARIANCE SURFACING
-If different sources disagree (e.g., ipinfo says one country but another source says unknown), show a “Source variance” mini-card:
-- Field name + values by source (small table)
-- Confidence hint (“Prefer ipinfo for ASN/org; prefer ProxyCheck for VPN provider name; prefer AbuseIPDB for abuse categories”)
+Import and call: lookupHash(hash) from src/lib/threatIntel.ts
 
-ACTIONS
-Top-right actions on results pages:
-- Copy clean summary
-- Copy IOCs JSON
-- Add to Watchlist
-- Add Case Note
+Replace the fake timeout with real request logic like URLResult.tsx does.
 
-STYLE
-- Crisp enterprise dark theme (like current app), readable typography, consistent spacing
-- Cards with clear section headers; raw JSON is always accessible but not noisy
-- Keep performance in mind: only call sources with existing keys
+When request returns:
 
-IMPLEMENTATION NOTES
-- This is a React + TS + Tailwind app.
-- Keep components modular (ResultHeader, KeyFacts, SourceStatus, EvidenceCard, VarianceCard, RawJsonCollapse, ActionsBar).
-- Do not reintroduce a tri-pane.
+Populate RawJsonCollapse with the full API response (not {hash, hashType}).
+
+Render Evidence/SourceCards from the returned sources/results.
+
+Normalize hash results like URL normalization
+Your hash response uses inconsistent source keys (virustotal_hash, hybrid_analysis, etc.) while the UI expects nicer keys and display names.
+
+Implement a simple normalization in either:
+
+lookupHash() (preferred), OR
+
+HashResult.tsx before rendering
+
+Normalization rules:
+
+Canonical container: normalizedResults (frontend-friendly)
+
+Accept both data.sources and data.results
+
+Map keys:
+
+virustotal_hash → virustotal
+
+hybrid_analysis → hybridanalysis
+
+alienvault → otx
+
+Each normalized source must be:
+
+{
+  found: boolean,
+  malicious: boolean,
+  details: object,
+  error?: string,
+  threatScore?: number
+}
+
+Keep original under rawSources/rawResults for debugging.
+
+Update display names
+Extend getSourceDisplayName() in src/lib/threatIntel.ts to also recognize:
+
+virustotal_hash, hybrid_analysis, alienvault
+so the UI never shows raw backend key names.
+
+Acceptance test
+Scanning the same SHA256 from the screenshot must render:
+
+VT detection ratio, file metadata if available
+
+MalwareBazaar/Hybrid/OTX if enabled
+
+Raw JSON shows the real returned payload
+
+2) FIX URL + UNIVERSAL SCANNER: ensure it calls scanURL() and routes to URLResult
+The real bug you’re seeing:
+
+Bolt built the “Universal IOC Scanner” landing but didn’t wire it to the real scan functions. It likely routes to result pages without calling your wrappers or it builds empty cards.
+
+Required fix:
+
+Universal scanner submit handler must:
+
+Detect IOC type (IP / URL / domain / hash / extension)
+
+Navigate to result route
+
+Result route page must perform the request using the existing wrapper:
+
+URL → scanURL(url)
+
+hash → lookupHash(hash)
+
+IP → lookupIP(ip)
+
+etc.
+
+Strict rule: No new fetch() logic in pages. Always use src/lib/threatIntel.ts
+
+3) UX CHANGE: Remove “Universal IOC Scanner” hero section (trim the landing page)
+
+On the Scanner landing page (your screenshot 2):
+
+Remove:
+
+the large icon
+
+“Universal IOC Scanner” big heading
+
+the descriptive paragraph block
+
+Keep only:
+
+the input
+
+“Scan Now” button
+
+(optional) small “What we check” grid below, but tighter (no huge padding)
+
+Goal: compact, premium, not “landing page marketing.”
+
+4) ADD PERSISTENT TOP SEARCH BAR (VirusTotal-style)
+Requirement
+
+Like VirusTotal, the user must be able to scan something new from anywhere (results pages included) without “going back.”
+
+Implementation
+
+Add a small persistent search bar in the top header near the logo (all pages).
+
+It should accept any IOC and on Enter/Scan:
+
+run the same detection
+
+route to the appropriate results page
+
+Nice-to-have
+
+When you’re already on a results page, the top bar stays visible and doesn’t push content down (compact height).
+
+5) LIGHT MODE COLOR TWEAKS (make it feel less generic)
+
+Your light mode screenshot feels “default Tailwind + soft blue button.” Make it look more “security console.”
+
+Adjustments
+
+Light background: slightly cooler neutral (not pure white), with stronger card separation.
+
+Primary accent: keep cyan/blue but reduce gradient “toy” feel:
+
+make the primary button more “solid enterprise” (one gradient at most)
+
+Improve contrast:
+
+headings darker
+
+secondary text slightly darker than current
+
+borders slightly more defined in light mode
+
+Rule: Don’t change the design system wildly — just tighten contrast + accent consistency.
