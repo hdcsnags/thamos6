@@ -218,12 +218,36 @@ export default function IntelHub() {
   };
 
   const renderRightPanel = () => {
-    if (viewMode === 'ip-lookup') return <IPLookup />;
-    if (viewMode === 'url-scanner') return <URLScanner />;
-    if (viewMode === 'hash-lookup') return <HashLookup />;
-    if (viewMode === 'domain-intel') return <DomainIntel />;
-    if (viewMode === 'ioc-extractor') return <IOCExtractor />;
-    if (viewMode === 'extension-scanner') return <ExtensionScanner />;
+    if (viewMode === 'ip-lookup') return (
+      <div className="h-full overflow-y-auto p-6">
+        <IPLookup />
+      </div>
+    );
+    if (viewMode === 'url-scanner') return (
+      <div className="h-full overflow-y-auto p-6">
+        <URLScanner />
+      </div>
+    );
+    if (viewMode === 'hash-lookup') return (
+      <div className="h-full overflow-y-auto p-6">
+        <HashLookup />
+      </div>
+    );
+    if (viewMode === 'domain-intel') return (
+      <div className="h-full overflow-y-auto p-6">
+        <DomainIntel />
+      </div>
+    );
+    if (viewMode === 'ioc-extractor') return (
+      <div className="h-full overflow-y-auto p-6">
+        <IOCExtractor />
+      </div>
+    );
+    if (viewMode === 'extension-scanner') return (
+      <div className="h-full overflow-y-auto p-6">
+        <ExtensionScanner />
+      </div>
+    );
 
     if (selectedItem) {
       return (

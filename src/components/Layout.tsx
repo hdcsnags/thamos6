@@ -366,7 +366,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative p-2 rounded-lg hover:bg-slate-800 transition-all"
+        className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
       >
         <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-amber-400' : 'text-slate-400'}`} />
         {unreadCount > 0 && (
@@ -377,11 +377,11 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-96 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
-          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+        <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-white">Alerts</h3>
-              <p className="text-xs text-slate-400">
+              <h3 className="font-semibold text-slate-900 dark:text-white">Alerts</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 {unreadCount > 0 ? `${unreadCount} unread` : 'No new alerts'}
               </p>
             </div>
@@ -389,13 +389,13 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
               <div className="flex gap-2">
                 <button
                   onClick={markAllAsRead}
-                  className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all"
+                  className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-all"
                 >
                   Mark all read
                 </button>
                 <button
                   onClick={dismissAllAlerts}
-                  className="px-2 py-1 text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                  className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
                 >
                   Clear all
                 </button>
@@ -406,9 +406,9 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
           <div className="max-h-96 overflow-y-auto">
             {alerts.length === 0 ? (
               <div className="p-8 text-center">
-                <Bell className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-400 text-sm">No alerts yet</p>
-                <p className="text-slate-500 text-xs mt-1">
+                <Bell className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-600 dark:text-slate-400 text-sm">No alerts yet</p>
+                <p className="text-slate-500 dark:text-slate-500 text-xs mt-1">
                   Add items to your watchlist to receive alerts when they appear in the news feed
                 </p>
                 <button
@@ -419,11 +419,11 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {alerts.map(alert => (
                   <div
                     key={alert.id}
-                    className={`p-4 hover:bg-slate-800/50 transition-all ${!alert.is_read ? 'bg-slate-800/30' : ''}`}
+                    className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all ${!alert.is_read ? 'bg-slate-50 dark:bg-slate-800/30' : ''}`}
                   >
                     <div className="flex items-start gap-3">
                       <div className={`p-1.5 rounded-lg bg-${getSeverityColor(alert.severity)}-500/20`}>
@@ -438,10 +438,10 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                             <span className="w-2 h-2 rounded-full bg-cyan-400" />
                           )}
                         </div>
-                        <p className="text-sm text-white font-medium line-clamp-2">{alert.title}</p>
-                        <p className="text-xs text-slate-400 mt-1">{alert.description}</p>
+                        <p className="text-sm text-slate-900 dark:text-white font-medium line-clamp-2">{alert.title}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{alert.description}</p>
                         {alert.watchlist_entry && (
-                          <p className="text-xs text-amber-400 mt-1">
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                             Matched: {alert.watchlist_entry.value}
                           </p>
                         )}
@@ -452,7 +452,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={() => markAsRead(alert.id)}
-                              className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-all"
+                              className="inline-flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all"
                             >
                               <ExternalLink className="w-3 h-3" />
                               Read article
@@ -461,7 +461,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                           {!alert.is_read && (
                             <button
                               onClick={() => markAsRead(alert.id)}
-                              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-all"
+                              className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
                             >
                               <Check className="w-3 h-3" />
                               Mark read
@@ -469,7 +469,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                           )}
                           <button
                             onClick={() => dismissAlert(alert.id)}
-                            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-400 transition-all"
+                            className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
                           >
                             <Trash2 className="w-3 h-3" />
                             Dismiss
@@ -542,7 +542,7 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-all"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
       >
         {avatarUrl ? (
           <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full" />
@@ -555,16 +555,16 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
-          <div className="p-4 border-b border-slate-700">
-            <p className="font-medium text-white truncate">{name}</p>
-            <p className="text-sm text-slate-400 truncate">{email}</p>
+        <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+            <p className="font-medium text-slate-900 dark:text-white truncate">{name}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{email}</p>
           </div>
           <div className="p-2">
             {isAdmin && (
               <button
                 onClick={() => { onNavigate('admin'); setOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-cyan-400 transition-all"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-cyan-600 dark:hover:text-cyan-400 transition-all"
               >
                 <Shield className="w-4 h-4" />
                 <span>Admin Panel</span>
@@ -572,14 +572,14 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
             )}
             <button
               onClick={() => { onNavigate('settings'); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all"
             >
               <Settings className="w-4 h-4" />
               <span>Settings & API Keys</span>
             </button>
             <button
               onClick={() => { signOut(); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-red-400 transition-all"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-600 dark:hover:text-red-400 transition-all"
             >
               <LogOut className="w-4 h-4" />
               <span>Sign out</span>
