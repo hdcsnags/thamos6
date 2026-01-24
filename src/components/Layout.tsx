@@ -10,7 +10,7 @@ import { useAlerts } from '../contexts/AlertContext';
 import { supabase } from '../lib/supabase';
 import ThemeToggle from './ThemeToggle';
 
-export type Page = 'intel' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'news' | 'settings' | 'admin' | 'extension';
+export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
 
 interface LayoutProps {
   currentPage: Page;
@@ -18,40 +18,90 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-interface NavCategory {
-  label: string;
-  items: { id: Page; label: string; icon: React.ElementType }[];
-}
+const primaryNavItems: { id: Page; label: string; icon: React.ElementType }[] = [
+  { id: 'scanner', label: 'Scanner', icon: Search },
+  { id: 'news', label: 'Intel Stream', icon: Newspaper },
+];
 
-const navCategories: NavCategory[] = [
-  {
-    label: 'Threat Intel',
-    items: [
-      { id: 'intel', label: 'Intelligence Hub', icon: Newspaper },
-      { id: 'news', label: 'Intel Stream', icon: Newspaper },
-      { id: 'ip', label: 'IP Lookup', icon: Search },
-      { id: 'hash', label: 'Hash Lookup', icon: Hash },
-      { id: 'domain', label: 'Domain Intel', icon: Globe },
-    ],
-  },
-  {
-    label: 'Analysis Tools',
-    items: [
-      { id: 'ioc', label: 'Smart IOC Intake', icon: FileSearch },
-      { id: 'extension', label: 'Extension Scanner', icon: Puzzle },
-      { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
-      { id: 'decoder', label: 'Decoder', icon: Code },
-    ],
-  },
+const advancedToolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
+  { id: 'ip', label: 'IP Lookup', icon: Search },
+  { id: 'url', label: 'URL Scanner', icon: Link },
+  { id: 'hash', label: 'Hash Lookup', icon: Hash },
+  { id: 'domain', label: 'Domain Intel', icon: Globe },
+  { id: 'extension', label: 'Extension Scanner', icon: Puzzle },
+  { id: 'email', label: 'Email Analyzer', icon: Mail },
+  { id: 'ioc', label: 'IOC Extractor', icon: FileSearch },
+  { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
+  { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
+  { id: 'decoder', label: 'Decoder', icon: Code },
 ];
 
 const extrasItems: { id: Page; label: string; icon: React.ElementType }[] = [
-  { id: 'email', label: 'Email Analyzer', icon: Mail },
-  { id: 'url', label: 'URL Scanner', icon: Link },
-  { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
   { id: 'cases', label: 'Case Notes', icon: FileText },
   { id: 'history', label: 'History', icon: History },
 ];
+
+function AdvancedToolsDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const isActiveAdvancedTools = advancedToolsItems.some(item => item.id === currentPage);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+          isActiveAdvancedTools
+            ? 'bg-cyan-500/20 text-cyan-400'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+        }`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+        <span className="font-medium">Advanced Tools</span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50 max-h-96 overflow-y-auto">
+          <div className="p-2">
+            {advancedToolsItems.map(item => {
+              const Icon = item.icon;
+              const isActive = currentPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                    isActive
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ExtrasDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
   const [open, setOpen] = useState(false);
@@ -646,29 +696,26 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
         <div className="hidden lg:block">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-1 py-2 overflow-x-auto">
-              {navCategories.map((category, idx) => (
-                <div key={category.label} className="flex items-center">
-                  {idx > 0 && <div className="h-4 w-px bg-slate-700 mx-2" />}
-                  {category.items.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onNavigate(item.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+              {primaryNavItems.map(item => {
+                const Icon = item.icon;
+                const isActive = currentPage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+                      isActive
+                        ? 'bg-cyan-500/20 text-cyan-400'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                );
+              })}
+              <div className="h-4 w-px bg-slate-700 mx-2" />
+              <AdvancedToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
               <div className="h-4 w-px bg-slate-700 mx-2" />
               <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
             </div>
@@ -678,36 +725,62 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-slate-800 bg-slate-900 max-h-[calc(100vh-4rem)] overflow-auto">
             <div className="px-4 py-3 space-y-4">
-              {navCategories.map(category => (
-                <div key={category.label}>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-                    {category.label}
-                  </p>
-                  <div className="space-y-1">
-                    {category.items.map(item => {
-                      const Icon = item.icon;
-                      const isActive = currentPage === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            onNavigate(item.id);
-                            setMobileMenuOpen(false);
-                          }}
-                          className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
-                            isActive
-                              ? 'bg-cyan-500/20 text-cyan-400'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                          }`}
-                        >
-                          <Icon className="w-5 h-5" />
-                          <span className="font-medium">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
+                  Primary
+                </p>
+                <div className="space-y-1">
+                  {primaryNavItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
+                          isActive
+                            ? 'bg-cyan-500/20 text-cyan-400'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="font-medium">{item.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
+                  Advanced Tools
+                </p>
+                <div className="space-y-1">
+                  {advancedToolsItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
+                          isActive
+                            ? 'bg-cyan-500/20 text-cyan-400'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="font-medium">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
                   Extras
