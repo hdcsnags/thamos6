@@ -120,6 +120,16 @@ async function verifyAndGetTier(req: Request): Promise<TierContext> {
     return { tier: "dsbn", userId, email, cacheContext: "org:dsbn" };
   }
 
+  const { data: profile } = await serviceClient
+    .from("profiles")
+    .select("tier")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profile?.tier === "org") {
+    return { tier: "dsbn", userId, email, cacheContext: "org:shared" };
+  }
+
   return { tier: "external", userId, email, cacheContext: `user:${userId}` };
 }
 
