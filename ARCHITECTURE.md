@@ -20,10 +20,12 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 
 **Core Value Propositions:**
 - Unified interface for multiple threat intelligence APIs
+- Comprehensive IOC lookup support (IPs, domains, URLs, file hashes, Chrome extensions)
 - Smart caching to reduce API costs and rate limiting
 - Tiered access system (Anonymous, DSBN internal, External authenticated)
 - Team-shared history and case notes
 - Real-time threat feed monitoring with watchlist alerts
+- Automated verdict classification with confidence scoring
 
 **User Tiers:**
 1. **Anonymous** - Free sources only (7 sources)
@@ -54,11 +56,11 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 - **Free Threat Intel Sources** (7):
   - IP-API (geolocation)
   - ThreatFox (malware IOCs)
-  - URLhaus (malicious URLs)
-  - RDAP (domain registration)
+  - URLhaus (malicious URLs and domains)
+  - RDAP/WHOIS (domain registration data - always available)
   - TEOH.IO (Tor exit nodes)
   - Spamhaus (blocklists)
-  - AlienVault OTX (community threat intel)
+  - AlienVault OTX (community threat intel - requires free API key)
 
 - **Paid/API Key Sources** (6+):
   - VirusTotal
@@ -96,8 +98,8 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 ┌────────────────────▼────────────────────────────────────┐
 │           Supabase PostgreSQL Database                   │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │ Tables: ip_lookups, url_lookups, case_notes,     │   │
-│  │ feed_items, watchlist_entries, user_alerts, etc. │   │
+│  │ Tables: ip_lookups, url_lookups, domain_lookups, │   │
+│  │ case_notes, feed_items, watchlist_entries, etc.  │   │
 │  └──────────────────────────────────────────────────┘   │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -120,6 +122,36 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
    - Aggregates results and calculates threat score
    - Stores in `ip_lookups` table and cache
 5. Results returned to frontend and displayed
+
+### Data Flow Example (Domain Lookup)
+
+1. User enters domain in Scanner or DomainIntel page
+2. Frontend calls `lookupDomain()` from `lib/threatIntel.ts`
+3. Request sent to Edge Function `/threat-intel/domain` with auth headers
+4. Edge Function:
+   - Verifies user tier (anon/dsbn/external)
+   - Checks cache for recent results (6-hour TTL per domain per tier)
+   - Determines available sources based on tier and API keys
+   - Queries threat intel sources in parallel:
+     - RDAP/WHOIS (always available, free)
+     - VirusTotal domain lookup (if API key configured)
+     - URLhaus (free, checks domain URLs)
+     - AlienVault OTX (if API key configured)
+   - Parses WHOIS data (registrar, creation date, expiration, nameservers, domain age)
+   - Aggregates results and calculates threat score
+   - Stores in `domain_lookups` table and cache
+   - Logs audit event
+5. Results returned to frontend:
+   - `domain` - The queried domain
+   - `isMalicious` - Boolean flag if any source flagged as malicious
+   - `overallThreatScore` - Calculated 0-100 score
+   - `sources` - Object with results from each source
+   - `whois` - Parsed WHOIS/RDAP data
+   - `reputation` - VirusTotal reputation score (if available)
+   - `categories` - Threat categories (if available)
+   - `tier` - User's access tier
+   - `sourcesAvailable` - List of sources queried
+6. Frontend displays results with source cards, key facts, and threat score
 
 ### Data Flow Example (Smart IOC Intake Auto-Analysis)
 
@@ -144,6 +176,8 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 
 ## Page Capabilities Matrix
 
+**Note**: The unified Scanner page (`src/pages/Scanner.tsx`) serves as the main entry point for all IOC lookups. It automatically detects the input type (IP, domain, URL, hash, or Chrome extension ID) and routes to the appropriate result page. Users can also access specialized lookup pages directly from the navigation menu.
+
 ### Main Navigation
 
 | Category | Page | Auth Required | Database | Edge Function | External APIs | Purpose |
@@ -163,7 +197,7 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 | | URL Scanner | No | `url_lookups` | `threat-intel/url` | URLhaus, VT, URLScan | Check URL reputation and safety |
 | | Bulk Lookup | No | `ip_lookups` | `threat-intel/bulk` | Same as IP Lookup | Batch check multiple IPs |
 | | Case Notes | Yes* | `case_notes` | No | No | Document investigations and findings |
-| | History | No | `ip_lookups`, `url_lookups` | No | No | View past lookups (shared across team) |
+| | History | No | `ip_lookups`, `url_lookups`, `domain_lookups` | No | No | View past lookups (shared across team) |
 | **Settings** |
 | | Settings | Yes | `user_api_keys`, `user_custom_sources` | `api-keys` | No | Manage API keys and custom sources |
 | **Admin** |
@@ -204,12 +238,19 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 **Domain Intel** (`src/pages/DomainIntel.tsx`)
 - **Input**: Domain name or FQDN
 - **Output**:
-  - WHOIS/RDAP registration data
-  - Reputation scores
-  - Associated IPs
-  - Historical data
-- **Sources**: RDAP (free), VirusTotal, others
-- **Database**: No persistence currently
+  - WHOIS/RDAP registration data (registrar, creation date, expiration, nameservers, domain age)
+  - Reputation scores from VirusTotal
+  - Malicious detection status
+  - Categories and threat classifications
+  - Per-source results (WHOIS, VirusTotal, URLhaus, AlienVault OTX)
+- **Sources**:
+  - RDAP/WHOIS (free, always available)
+  - VirusTotal (requires API key)
+  - URLhaus (free)
+  - AlienVault OTX (requires API key)
+- **Database**: Stores all lookups in `domain_lookups` table
+- **Caching**: 6-hour cache per domain per tier
+- **Edge Function**: `threat-intel/domain`
 
 #### Analysis Tools
 
@@ -343,13 +384,14 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 - **RLS**: Open to all users (team tool)
 
 **History** (`src/pages/History.tsx`)
-- **Shows**: Past IP and URL lookups from last 30 days
+- **Shows**: Past IP, URL, and domain lookups from last 30 days
 - **Features**:
-  - Filter by type (IP/URL)
+  - Filter by type (IP/URL/Domain)
   - Sort by date, threat score
-  - Re-run lookup
-  - Delete entries
-- **Database**: Queries `ip_lookups` and `url_lookups`
+  - Re-run lookup with one click
+  - Delete individual entries
+  - View detailed results for each lookup
+- **Database**: Queries `ip_lookups`, `url_lookups`, and `domain_lookups`
 - **RLS**: All users see all history (team-shared)
 
 #### Extras (Secondary Tools)
@@ -466,6 +508,22 @@ Stores URL scan history (team-shared, 30-day retention)
 - created_at (timestamptz, indexed)
 ```
 **RLS**: Read/write for all (anon + authenticated)
+
+#### `domain_lookups`
+Stores domain reputation lookup history (team-shared, 30-day retention)
+```sql
+- id (uuid, PK)
+- domain (text, indexed)
+- results (jsonb) - Aggregated results from all sources (WHOIS, VirusTotal, URLhaus, AlienVault)
+- is_malicious (boolean, indexed)
+- threat_score (integer, 0-100, indexed)
+- sources_checked (text[]) - Which APIs were queried
+- user_id (uuid, nullable) - User who performed lookup (if authenticated)
+- context (text) - Cache context (anon, org:dsbn, user:{id})
+- created_at (timestamptz, indexed)
+```
+**RLS**: Read/write for all (anon + authenticated)
+**Cleanup**: Automatic 30-day retention policy
 
 #### `api_cache`
 Caches external API responses to reduce costs
@@ -763,11 +821,31 @@ CREATE POLICY "Admins can update user status"
 
 **Routes**:
 - `POST /ip` - IP reputation lookup
+  - Input: `{ "ip": "8.8.8.8" }`
+  - Output: Aggregated threat data with geolocation, VPN/Tor detection, blocklist status
+  - Sources: IP-API, AbuseIPDB, VirusTotal, Shodan, ProxyCheck, etc.
+
 - `POST /url` - URL scanning
-- `POST /bulk` - Bulk IP lookup
-- `POST /hash` - Hash lookup (future)
+  - Input: `{ "url": "https://example.com" }`
+  - Output: Malicious status, categories, screenshot (if URLScan available)
+  - Sources: URLhaus, VirusTotal, URLScan
+
 - `POST /domain` - Domain intelligence
+  - Input: `{ "domain": "example.com" }`
+  - Output: WHOIS/RDAP data, reputation, categories, threat score
+  - Sources: RDAP (free), VirusTotal, URLhaus, AlienVault OTX
+  - Returns: `{ domain, isMalicious, overallThreatScore, sources, whois, reputation, categories, tier, sourcesAvailable }`
+
+- `POST /bulk` - Bulk IP lookup (batch processing)
+  - Input: `{ "ips": ["8.8.8.8", "1.1.1.1", ...] }`
+  - Limits: Anon (5 IPs), DSBN (100 IPs), External (50 IPs)
+
+- `POST /hash` - Hash lookup
+  - Input: `{ "hash": "abc123..." }`
+  - Sources: ThreatFox, VirusTotal
+
 - `GET /config` - Get configured sources for current user
+  - Returns: Available sources based on tier and API keys
 
 **Key Features**:
 - Tier verification and enforcement
