@@ -687,15 +687,18 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-14">
               <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3">
+                <button
+                  onClick={() => onNavigate('scanner')}
+                  className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+                >
                   <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
                     <Shield className="w-5 h-5 text-white" />
                   </div>
-                  <div>
+                  <div className="text-left">
                     <h1 className="text-lg font-bold text-slate-900 dark:text-white">Thamos6</h1>
                     <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-none">What Would Will Do?</p>
                   </div>
-                </div>
+                </button>
 
                 {/* Navigation Items - Desktop */}
                 <div className="hidden lg:flex items-center gap-1">
