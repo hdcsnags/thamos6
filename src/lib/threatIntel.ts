@@ -1,5 +1,5 @@
 import { supabase, EDGE_FUNCTION_URL } from './supabase';
-import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources } from '../types';
+import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult, DomainLookupResult } from '../types';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -55,12 +55,23 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
   // We keep the original under `rawResults` for debugging.
   const rawResults = data?.results ?? {};
 
+  // Map edge function keys to canonical frontend keys
+  const keyMapping: Record<string, string> = {
+    'virustotal_url': 'virustotal',
+    'urlhaus_url': 'urlhaus',
+    'urlscan': 'urlscan',
+  };
+
   const normalized: Record<string, any> = {};
   for (const [source, v] of Object.entries(rawResults)) {
     const r: any = v;
     const details = r?.details ?? r?.data ?? {};
     const found = !r?.error && details && typeof details === 'object' && Object.keys(details).length > 0;
-    normalized[source] = {
+
+    // Use canonical key if mapping exists, otherwise use original
+    const canonicalKey = keyMapping[source] || source;
+
+    normalized[canonicalKey] = {
       found,
       malicious: Boolean(r?.malicious ?? r?.isMalicious),
       details,
@@ -83,21 +94,6 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
     results: normalized,
   } as URLLookupResult;
 }
-export type HashLookupResult = {
-  hash: string;
-  sources: Record<
-    string,
-    {
-      found: boolean;
-      malicious: boolean;
-      details?: Record<string, unknown>;
-      error?: string;
-    }
-  >;
-  isMalicious?: boolean;
-  checkedAt?: string;
-  tier?: string;
-};
 
 export function isValidHash(hash: string): boolean {
   const h = hash.trim().toLowerCase();
@@ -107,13 +103,20 @@ export function isValidHash(hash: string): boolean {
 export function getSourceDisplayName(source: string): string {
   const map: Record<string, string> = {
     virustotal: "VirusTotal",
+    virustotal_hash: "VirusTotal",
+    virustotal_domain: "VirusTotal",
+    virustotal_url: "VirusTotal",
     malwarebazaar: "MalwareBazaar",
     hybridanalysis: "Hybrid Analysis",
+    hybrid_analysis: "Hybrid Analysis",
     otx: "AlienVault OTX",
+    alienvault: "AlienVault OTX",
     urlhaus: "URLhaus",
+    urlhaus_url: "URLhaus",
     abuseipdb: "AbuseIPDB",
     proxycheck: "ProxyCheck",
     ipqualityscore: "IPQualityScore",
+    whois: "WHOIS/RDAP",
   };
   return map[source] ?? source;
 }
@@ -129,6 +132,22 @@ export async function lookupHash(hash: string): Promise<HashLookupResult> {
 
   if (!response.ok) {
     throw new Error(`Failed to lookup hash: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function lookupDomain(domain: string): Promise<DomainLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/domain`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ domain }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to lookup domain: ${response.statusText}`);
   }
 
   return response.json();
@@ -172,7 +191,7 @@ export async function getConfiguredSources(): Promise<{
 
 export function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+  const ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
 
   if (ipv4Regex.test(ip)) {
     const parts = ip.split('.').map(Number);

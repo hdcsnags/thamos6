@@ -1,0 +1,43 @@
+Yep — this is exactly “domain is calling the edge function differently than everything else”, so it’s sending a request that doesn’t satisfy Supabase auth → 401 Unauthorized.
+
+What’s happening
+
+Your frontend is calling POST .../functions/v1/threat-intel/domain and getting 401.
+
+In your minified snippet, lookupDomain() is doing headers: e where e = await Xr() (your auth header helper). That helper is the only thing standing between you and a 401.
+
+The project’s intended design is: every threat-intel call uses the same getAuthHeaders(), and lookupDomain() should match lookupIP/hash/url exactly.
+
+The fix (tell Bolt to do this)
+
+1) Make getAuthHeaders() always include BOTH of these:
+
+apikey: VITE_SUPABASE_ANON_KEY
+
+Authorization: Bearer <session_access_token OR anon_key_fallback>
+
+Right now your edited helper only sets Authorization if there’s a session token (so if the session isn’t present/ready at call-time, domain will 401). Make it “always Authorization”, with fallback to anon key (your architecture guide even shows this intent).
+
+2) Force ALL threat-intel functions to use the same helper
+In src/lib/threatIntel.ts:
+
+lookupIP, lookupHash, scanURL, lookupDomain must all do:
+
+const headers = await getAuthHeaders();
+
+fetch(${EDGE_FUNCTION_URL}/<route>, { method:"POST", headers, body: JSON.stringify(...) })
+
+Remove any special-case header builders for domain.
+
+That aligns with how it’s supposed to work project-wide.
+
+Bonus (while Bolt is spending tokens): IPv6 :: compressed support
+
+If your IPv6 regex rejects compressed addresses like 2001:db8::1, update iocDetection.ts to accept:
+
+:: alone
+
+leading/trailing compression (::1, 2001:db8::)
+
+mid compression (2001:db8::1:2:3)
+This is a regex-only change (no UI impact), and it will stop “invalid IPv6” false negatives.

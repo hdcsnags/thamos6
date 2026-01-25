@@ -1128,6 +1128,81 @@ async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatRes
   }
 }
 
+async function checkVirusTotalDomain(ctx: TierContext, domain: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "virustotal", data: {}, error: "API key not configured" };
+
+  const cacheKey = `domain:${domain}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
+
+  if (cached) {
+    const stats = cached?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (stats.malicious > 0 || stats.suspicious > 0) : false;
+    const threatScore = stats ? Math.round((stats.malicious + stats.suspicious * 0.5) / (stats.malicious + stats.suspicious + stats.harmless + stats.undetected) * 100) : 0;
+    return { source: "virustotal", data: cached, isMalicious, threatScore };
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `https://www.virustotal.com/api/v3/domains/${encodeURIComponent(domain)}`,
+      { headers: { "x-apikey": apiKey } }
+    );
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return { source: "virustotal", data, error: `HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
+
+    const stats = data?.data?.attributes?.last_analysis_stats;
+    const isMalicious = stats ? (stats.malicious > 0 || stats.suspicious > 0) : false;
+    const threatScore = stats ? Math.round((stats.malicious + stats.suspicious * 0.5) / (stats.malicious + stats.suspicious + stats.harmless + stats.undetected) * 100) : 0;
+
+    return { source: "virustotal", data, isMalicious, threatScore };
+  } catch (e) {
+    return { source: "virustotal", data: {}, error: String(e) };
+  }
+}
+
+async function checkDomainWHOIS(ctx: TierContext, domain: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "whois", domain);
+  if (cached) return { source: "whois", data: cached };
+
+  try {
+    const response = await fetchWithTimeout(`https://rdap-bootstrap.arin.net/bootstrap/domain/${domain}`);
+    if (!response.ok) {
+      return { source: "whois", data: {}, error: `HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    await setCachedResponse(ctx, "whois", domain, data);
+
+    const events = data.events || [];
+    const registration = events.find((e: any) => e.eventAction === "registration");
+    const expiration = events.find((e: any) => e.eventAction === "expiration");
+    const lastChanged = events.find((e: any) => e.eventAction === "last changed");
+
+    const enrichedData = {
+      ...data,
+      parsed: {
+        domain: data.ldhName || domain,
+        status: data.status,
+        registrar: data.entities?.find((e: any) => e.roles?.includes("registrar"))?.vcardArray?.[1]?.find((v: any) => v[0] === "fn")?.[3] || "Unknown",
+        registrationDate: registration?.eventDate,
+        expirationDate: expiration?.eventDate,
+        lastChanged: lastChanged?.eventDate,
+        nameservers: data.nameservers?.map((ns: any) => ns.ldhName) || [],
+        domainAge: registration?.eventDate ? Math.floor((Date.now() - new Date(registration.eventDate).getTime()) / (1000 * 60 * 60 * 24)) : null
+      }
+    };
+
+    return { source: "whois", data: enrichedData };
+  } catch (e) {
+    return { source: "whois", data: {}, error: String(e) };
+  }
+}
+
 async function checkVirusTotalHash(ctx: TierContext, hash: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "virustotal_hash", data: {}, error: "API key not configured" };
 
@@ -1864,7 +1939,76 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/hash", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (path === "/domain" || path === "/domain/") {
+      const body = await req.json();
+      const domain = body.domain?.trim().toLowerCase();
+      if (!domain) {
+        return new Response(JSON.stringify({ error: "Domain required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const sourcePromises: Promise<ThreatResult>[] = [];
+
+      sourcePromises.push(checkDomainWHOIS(ctx, domain));
+      if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotalDomain(ctx, domain, apiKeys.virustotal ?? ""));
+      if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhausURL(ctx, `http://${domain}`));
+      if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, domain, apiKeys.alienvault ?? ""));
+
+      const settledResults = await Promise.allSettled(sourcePromises);
+      const results: ThreatResult[] = settledResults
+        .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
+        .map(r => r.value);
+
+      const isMalicious = results.some(r => r.isMalicious);
+      const scores = results.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
+      const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
+
+      const whoisData = results.find(r => r.source === "whois")?.data as any;
+      const vtData = results.find(r => r.source === "virustotal")?.data as any;
+
+      const normalizedSources: Record<string, any> = {};
+      for (const r of results) {
+        normalizedSources[r.source] = {
+          found: !r.error && r.data && Object.keys(r.data).length > 0,
+          malicious: r.isMalicious ?? false,
+          details: r.data,
+          error: r.error,
+          threatScore: r.threatScore
+        };
+      }
+
+      const aggregated = {
+        domain,
+        isMalicious,
+        overallThreatScore: Math.max(avgScore, maxScore),
+        maxThreatScore: maxScore,
+        sources: normalizedSources,
+        whois: whoisData?.parsed || null,
+        reputation: vtData?.data?.attributes?.reputation || null,
+        categories: vtData?.data?.attributes?.categories || null,
+        checkedAt: new Date().toISOString(),
+        tier: ctx.tier,
+        sourcesAvailable: allowedSources,
+      };
+
+      if (canPersist) {
+        await serviceClient.from("domain_lookups").insert({
+          domain,
+          results: aggregated,
+          is_malicious: isMalicious,
+          threat_score: aggregated.overallThreatScore,
+          sources_checked: results.map(r => r.source),
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
+
+        await logAuditEvent(req, ctx, "domain_lookup", "domain", domain, { sources: results.map(r => r.source), is_malicious: isMalicious, threat_score: aggregated.overallThreatScore });
+      }
+
+      return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/hash", "/domain", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
