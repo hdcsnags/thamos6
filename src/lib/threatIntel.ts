@@ -1,5 +1,5 @@
 import { supabase, EDGE_FUNCTION_URL } from './supabase';
-import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult } from '../types';
+import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources } from '../types';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -83,6 +83,21 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
     results: normalized,
   } as URLLookupResult;
 }
+export type HashLookupResult = {
+  hash: string;
+  sources: Record<
+    string,
+    {
+      found: boolean;
+      malicious: boolean;
+      details?: Record<string, unknown>;
+      error?: string;
+    }
+  >;
+  isMalicious?: boolean;
+  checkedAt?: string;
+  tier?: string;
+};
 
 export function isValidHash(hash: string): boolean {
   const h = hash.trim().toLowerCase();
@@ -92,12 +107,9 @@ export function isValidHash(hash: string): boolean {
 export function getSourceDisplayName(source: string): string {
   const map: Record<string, string> = {
     virustotal: "VirusTotal",
-    virustotal_hash: "VirusTotal",
     malwarebazaar: "MalwareBazaar",
     hybridanalysis: "Hybrid Analysis",
-    hybrid_analysis: "Hybrid Analysis",
     otx: "AlienVault OTX",
-    alienvault: "AlienVault OTX",
     urlhaus: "URLhaus",
     abuseipdb: "AbuseIPDB",
     proxycheck: "ProxyCheck",

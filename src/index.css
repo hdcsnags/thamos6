@@ -8,7 +8,7 @@
   }
 
   body {
-    @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white antialiased;
+    @apply bg-white dark:bg-slate-950 text-slate-900 dark:text-white antialiased;
   }
 }
 
