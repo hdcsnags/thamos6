@@ -55,12 +55,23 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
   // We keep the original under `rawResults` for debugging.
   const rawResults = data?.results ?? {};
 
+  // Map edge function keys to canonical frontend keys
+  const keyMapping: Record<string, string> = {
+    'virustotal_url': 'virustotal',
+    'urlhaus_url': 'urlhaus',
+    'urlscan': 'urlscan',
+  };
+
   const normalized: Record<string, any> = {};
   for (const [source, v] of Object.entries(rawResults)) {
     const r: any = v;
     const details = r?.details ?? r?.data ?? {};
     const found = !r?.error && details && typeof details === 'object' && Object.keys(details).length > 0;
-    normalized[source] = {
+
+    // Use canonical key if mapping exists, otherwise use original
+    const canonicalKey = keyMapping[source] || source;
+
+    normalized[canonicalKey] = {
       found,
       malicious: Boolean(r?.malicious ?? r?.isMalicious),
       details,
@@ -180,7 +191,7 @@ export async function getConfiguredSources(): Promise<{
 
 export function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+  const ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
 
   if (ipv4Regex.test(ip)) {
     const parts = ip.split('.').map(Number);
