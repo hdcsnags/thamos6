@@ -96,7 +96,7 @@ export default function Scanner({ onScan }: ScannerProps) {
           type="submit"
           className="mt-4 w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl transition-all shadow-lg hover:shadow-xl"
         >
-          Analyze IOC
+          Investigate
         </button>
       </form>
 
