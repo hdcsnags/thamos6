@@ -36,8 +36,11 @@ export default function DomainResult({ domain }: DomainResultProps) {
         setData(result);
 
         setSources(prev => prev.map(s => {
+          if (!result.sources) {
+            return { ...s, state: 'error' as const };
+          }
           const sourceKey = s.name.toLowerCase().replace(/\s+/g, '').replace('/', '');
-          const found = result.sources?.[sourceKey] || result.sources?.['whois'];
+          const found = result.sources[sourceKey] || result.sources['whois'];
 
           if (found && !found.error) {
             return { ...s, state: 'success' as const };
@@ -154,22 +157,24 @@ export default function DomainResult({ domain }: DomainResultProps) {
         />
       )}
 
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Source Results</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          {Object.entries(data.sources).map(([sourceKey, source]) => (
-            <SourceCard
-              key={sourceKey}
-              name={getSourceDisplayName(sourceKey)}
-              found={source.found}
-              malicious={source.malicious}
-              details={source.details}
-              error={source.error}
-              threatScore={source.threatScore}
-            />
-          ))}
+      {data.sources && Object.keys(data.sources).length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Source Results</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {Object.entries(data.sources).map(([sourceKey, source]) => (
+              <SourceCard
+                key={sourceKey}
+                name={getSourceDisplayName(sourceKey)}
+                found={source.found}
+                malicious={source.malicious}
+                details={source.details}
+                error={source.error}
+                threatScore={source.threatScore}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <RawJsonCollapse data={data} title="Raw Results Data" />
     </div>
