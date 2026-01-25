@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Globe, Shield, AlertTriangle, Calendar } from 'lucide-react';
+import { Globe, Shield, AlertTriangle, Calendar, User } from 'lucide-react';
 import KeyFacts from '../../components/scanner/KeyFacts';
 import SourceStatus, { type Source } from '../../components/scanner/SourceStatus';
 import EvidenceCard from '../../components/scanner/EvidenceCard';
 import RawJsonCollapse from '../../components/scanner/RawJsonCollapse';
 import ActionsBar from '../../components/scanner/ActionsBar';
+import ThreatScore from '../../components/ThreatScore';
+import SourceCard from '../../components/SourceCard';
+import { lookupDomain, getSourceDisplayName } from '../../lib/threatIntel';
+import type { DomainLookupResult } from '../../types';
 
 interface DomainResultProps {
   domain: string;
@@ -12,14 +16,52 @@ interface DomainResultProps {
 
 export default function DomainResult({ domain }: DomainResultProps) {
   const [loading, setLoading] = useState(true);
-  const [sources] = useState<Source[]>([
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<DomainLookupResult | null>(null);
+  const [sources, setSources] = useState<Source[]>([
+    { name: 'WHOIS/RDAP', state: 'pending', icon: Globe },
     { name: 'VirusTotal', state: 'pending', icon: Shield },
-    { name: 'WHOIS', state: 'pending', icon: Globe },
+    { name: 'URLhaus', state: 'pending', icon: AlertTriangle },
+    { name: 'AlienVault OTX', state: 'pending', icon: Shield },
   ]);
 
   useEffect(() => {
-    setTimeout(() => setLoading(false), 1000);
+    const performLookup = async () => {
+      setLoading(true);
+      setError(null);
+      setSources(prev => prev.map(s => ({ ...s, state: 'loading' as const })));
+
+      try {
+        const result = await lookupDomain(domain);
+        setData(result);
+
+        setSources(prev => prev.map(s => {
+          const sourceKey = s.name.toLowerCase().replace(/\s+/g, '').replace('/', '');
+          const found = result.sources?.[sourceKey] || result.sources?.['whois'];
+
+          if (found && !found.error) {
+            return { ...s, state: 'success' as const };
+          } else if (found?.error) {
+            return { ...s, state: 'error' as const };
+          }
+          return { ...s, state: 'disabled' as const };
+        }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to lookup domain');
+        setSources(prev => prev.map(s => ({ ...s, state: 'error' as const })));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    performLookup();
   }, [domain]);
+
+  const whoisData = data?.whois;
+  const domainAge = whoisData?.domainAge ? `${whoisData.domainAge} days` : 'Unknown';
+  const registrar = whoisData?.registrar || 'Unknown';
+  const created = whoisData?.registrationDate ? new Date(whoisData.registrationDate).toLocaleDateString() : 'Unknown';
+  const expires = whoisData?.expirationDate ? new Date(whoisData.expirationDate).toLocaleDateString() : 'Unknown';
 
   const keyFacts = [
     {
@@ -28,18 +70,30 @@ export default function DomainResult({ domain }: DomainResultProps) {
       icon: <Globe className="w-4 h-4 text-cyan-400" />
     },
     {
-      label: 'Status',
-      value: 'Active',
-      icon: <AlertTriangle className="w-4 h-4 text-cyan-400" />
+      label: 'Domain Age',
+      value: domainAge,
+      icon: <Calendar className="w-4 h-4 text-cyan-400" />
+    },
+    {
+      label: 'Registrar',
+      value: registrar,
+      icon: <User className="w-4 h-4 text-cyan-400" />
     },
     {
       label: 'Created',
-      value: 'Unknown',
+      value: created,
+      icon: <Calendar className="w-4 h-4 text-cyan-400" />
+    },
+    {
+      label: 'Expires',
+      value: expires,
       icon: <Calendar className="w-4 h-4 text-cyan-400" />
     }
   ];
 
-  const summary = `Domain: ${domain}`;
+  const summary = data?.isMalicious
+    ? `⚠️ Domain ${domain} is flagged as malicious (Score: ${data.overallThreatScore}/100)`
+    : `✓ Domain ${domain} appears clean (Score: ${data?.overallThreatScore || 0}/100)`;
 
   if (loading) {
     return (
@@ -55,11 +109,23 @@ export default function DomainResult({ domain }: DomainResultProps) {
     );
   }
 
+  if (error || !data) {
+    return (
+      <div className="space-y-6">
+        <SourceStatus sources={sources} />
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+          <p className="text-red-400 font-medium">{error || 'Failed to load domain data'}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <ActionsBar
         summary={summary}
-        jsonData={{ domain }}
+        jsonData={data}
         iocValue={domain}
       />
 
@@ -69,22 +135,43 @@ export default function DomainResult({ domain }: DomainResultProps) {
         </h1>
       </div>
 
-      <SourceStatus sources={sources.map(s => ({ ...s, state: 'disabled' }))} />
+      <SourceStatus sources={sources} />
+
+      <ThreatScore score={data.overallThreatScore} />
 
       <div>
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Key Facts</h2>
         <KeyFacts facts={keyFacts} />
       </div>
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-6 text-center">
-        <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
-        <p className="text-amber-400 font-medium">Domain intelligence coming soon</p>
-        <p className="text-sm text-amber-200/80 mt-2">
-          Full domain reputation and WHOIS data will be available in a future update
-        </p>
+      {whoisData?.nameservers && whoisData.nameservers.length > 0 && (
+        <EvidenceCard
+          title="Nameservers"
+          items={whoisData.nameservers.map(ns => ({
+            label: 'NS',
+            value: ns
+          }))}
+        />
+      )}
+
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Source Results</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          {Object.entries(data.sources).map(([sourceKey, source]) => (
+            <SourceCard
+              key={sourceKey}
+              name={getSourceDisplayName(sourceKey)}
+              found={source.found}
+              malicious={source.malicious}
+              details={source.details}
+              error={source.error}
+              threatScore={source.threatScore}
+            />
+          ))}
+        </div>
       </div>
 
-      <RawJsonCollapse data={{ domain, status: 'pending' }} title="Raw Results Data" />
+      <RawJsonCollapse data={data} title="Raw Results Data" />
     </div>
   );
 }
