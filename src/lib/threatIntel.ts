@@ -55,12 +55,23 @@ export async function scanURL(url: string): Promise<URLLookupResult> {
   // We keep the original under `rawResults` for debugging.
   const rawResults = data?.results ?? {};
 
+  // Map edge function keys to canonical frontend keys
+  const keyMapping: Record<string, string> = {
+    'virustotal_url': 'virustotal',
+    'urlhaus_url': 'urlhaus',
+    'urlscan': 'urlscan',
+  };
+
   const normalized: Record<string, any> = {};
   for (const [source, v] of Object.entries(rawResults)) {
     const r: any = v;
     const details = r?.details ?? r?.data ?? {};
     const found = !r?.error && details && typeof details === 'object' && Object.keys(details).length > 0;
-    normalized[source] = {
+
+    // Use canonical key if mapping exists, otherwise use original
+    const canonicalKey = keyMapping[source] || source;
+
+    normalized[canonicalKey] = {
       found,
       malicious: Boolean(r?.malicious ?? r?.isMalicious),
       details,
