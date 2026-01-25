@@ -1,5 +1,5 @@
 import { supabase, EDGE_FUNCTION_URL } from './supabase';
-import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult, DomainLookupResult } from '../types';
+import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult } from '../types';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -93,19 +93,15 @@ export function getSourceDisplayName(source: string): string {
   const map: Record<string, string> = {
     virustotal: "VirusTotal",
     virustotal_hash: "VirusTotal",
-    virustotal_domain: "VirusTotal",
-    virustotal_url: "VirusTotal",
     malwarebazaar: "MalwareBazaar",
     hybridanalysis: "Hybrid Analysis",
     hybrid_analysis: "Hybrid Analysis",
     otx: "AlienVault OTX",
     alienvault: "AlienVault OTX",
     urlhaus: "URLhaus",
-    urlhaus_url: "URLhaus",
     abuseipdb: "AbuseIPDB",
     proxycheck: "ProxyCheck",
     ipqualityscore: "IPQualityScore",
-    whois: "WHOIS/RDAP",
   };
   return map[source] ?? source;
 }
@@ -121,22 +117,6 @@ export async function lookupHash(hash: string): Promise<HashLookupResult> {
 
   if (!response.ok) {
     throw new Error(`Failed to lookup hash: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-export async function lookupDomain(domain: string): Promise<DomainLookupResult> {
-  const headers = await getAuthHeaders();
-
-  const response = await fetch(`${EDGE_FUNCTION_URL}/domain`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ domain }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to lookup domain: ${response.statusText}`);
   }
 
   return response.json();

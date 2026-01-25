@@ -16,7 +16,6 @@ export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'histo
 interface LayoutProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
-  onScan: (type: string, value: string) => void;
   children: React.ReactNode;
 }
 
@@ -643,7 +642,7 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
-export default function Layout({ currentPage, onNavigate, onScan, children }: LayoutProps) {
+export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -656,73 +655,39 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
     const detection = detectIOCType(searchInput.trim());
     if (detection.type === 'unknown') return;
 
-    onNavigate('scanner');
-    onScan(detection.type, detection.normalizedValue);
+    onNavigate(detection.type as Page);
     setSearchInput('');
   };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
       <nav className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
-        {/* Top Search Bar - Full Width */}
-        <div className="bg-slate-900 dark:bg-slate-950 border-b border-slate-700 dark:border-slate-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <form onSubmit={handleSearch} className="py-2">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search IP, URL, domain, hash, or Chrome extension..."
-                  className="w-full pl-12 pr-4 py-2.5 bg-slate-800 dark:bg-slate-900 border border-slate-700 dark:border-slate-800 rounded-lg text-sm text-slate-200 dark:text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-
-        {/* Main Bar - Branding, Navigation, and User */}
+        {/* Top Bar - Branding and Sign In */}
         <div className="border-b border-slate-200 dark:border-slate-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-14">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
-                    <Shield className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-bold text-slate-900 dark:text-white">Thamos6</h1>
-                    <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-none">What Would Will Do?</p>
-                  </div>
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
+                  <Shield className="w-6 h-6 text-white" />
                 </div>
-
-                {/* Navigation Items - Desktop */}
-                <div className="hidden lg:flex items-center gap-1">
-                  {primaryNavItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onNavigate(item.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
-                  <AdvancedToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
-                  <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900 dark:text-white">Thamos6</h1>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">What Would Will Do?</p>
                 </div>
               </div>
+
+              <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-md mx-6">
+                <div className="relative w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Search IP, URL, hash..."
+                    className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                  />
+                </div>
+              </form>
 
               <div className="flex items-center gap-2">
                 <ThemeToggle />
@@ -749,6 +714,36 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
                   {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation Bar - Tools */}
+        <div className="hidden lg:block">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-1 py-2 overflow-x-auto">
+              {primaryNavItems.map(item => {
+                const Icon = item.icon;
+                const isActive = currentPage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+                      isActive
+                        ? 'bg-cyan-500/20 text-cyan-400'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                );
+              })}
+              <div className="h-4 w-px bg-slate-700 mx-2" />
+              <AdvancedToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
+              <div className="h-4 w-px bg-slate-700 mx-2" />
+              <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
             </div>
           </div>
         </div>
@@ -858,7 +853,7 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
 

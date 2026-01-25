@@ -100,31 +100,6 @@ export interface HashLookupResult {
   sourcesAvailable?: number;
 }
 
-export interface DomainWHOIS {
-  domain: string;
-  status?: string[];
-  registrar?: string;
-  registrationDate?: string;
-  expirationDate?: string;
-  lastChanged?: string;
-  nameservers?: string[];
-  domainAge?: number;
-}
-
-export interface DomainLookupResult {
-  domain: string;
-  isMalicious: boolean;
-  overallThreatScore: number;
-  maxThreatScore: number;
-  sources: Record<string, { found: boolean; malicious: boolean; details: any; error?: string; threatScore?: number }>;
-  whois?: DomainWHOIS | null;
-  reputation?: number | null;
-  categories?: Record<string, string> | null;
-  checkedAt: string;
-  tier?: string;
-  sourcesAvailable?: string[];
-}
-
 export interface BulkIPResult {
   ip: string;
   threatScore: number;
