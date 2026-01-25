@@ -1129,7 +1129,7 @@ async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatRes
 }
 
 async function checkVirusTotalDomain(ctx: TierContext, domain: string, apiKey: string): Promise<ThreatResult> {
-  if (!apiKey) return { source: "virustotal", data: {}, error: "API key not configured" };
+  if (!apiKey) return { source: "virustotal_domain", data: {}, error: "API key not configured" };
 
   const cacheKey = `domain:${domain}`;
   const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
@@ -1138,7 +1138,7 @@ async function checkVirusTotalDomain(ctx: TierContext, domain: string, apiKey: s
     const stats = cached?.data?.attributes?.last_analysis_stats;
     const isMalicious = stats ? (stats.malicious > 0 || stats.suspicious > 0) : false;
     const threatScore = stats ? Math.round((stats.malicious + stats.suspicious * 0.5) / (stats.malicious + stats.suspicious + stats.harmless + stats.undetected) * 100) : 0;
-    return { source: "virustotal", data: cached, isMalicious, threatScore };
+    return { source: "virustotal_domain", data: cached, isMalicious, threatScore };
   }
 
   try {
@@ -1149,7 +1149,7 @@ async function checkVirusTotalDomain(ctx: TierContext, domain: string, apiKey: s
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      return { source: "virustotal", data, error: `HTTP ${response.status}` };
+      return { source: "virustotal_domain", data, error: `HTTP ${response.status}` };
     }
 
     const data = await response.json();
@@ -1159,9 +1159,9 @@ async function checkVirusTotalDomain(ctx: TierContext, domain: string, apiKey: s
     const isMalicious = stats ? (stats.malicious > 0 || stats.suspicious > 0) : false;
     const threatScore = stats ? Math.round((stats.malicious + stats.suspicious * 0.5) / (stats.malicious + stats.suspicious + stats.harmless + stats.undetected) * 100) : 0;
 
-    return { source: "virustotal", data, isMalicious, threatScore };
+    return { source: "virustotal_domain", data, isMalicious, threatScore };
   } catch (e) {
-    return { source: "virustotal", data: {}, error: String(e) };
+    return { source: "virustotal_domain", data: {}, error: String(e) };
   }
 }
 
@@ -1964,7 +1964,7 @@ Deno.serve(async (req: Request) => {
       const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
 
       const whoisData = results.find(r => r.source === "whois")?.data as any;
-      const vtData = results.find(r => r.source === "virustotal")?.data as any;
+      const vtData = results.find(r => r.source === "virustotal_domain")?.data as any;
 
       const normalizedSources: Record<string, any> = {};
       for (const r of results) {
