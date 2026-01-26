@@ -30,8 +30,9 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 **User Tiers:**
 1. **Anonymous** - Free sources only (7 sources)
 2. **DSBN** - Users with @dsbn.org email get all 13+ sources with org API keys
-3. **External** - Authenticated non-DSBN users can add their own API keys
-4. **Admin** - Special users with platform management capabilities (user management, tier assignment, ban control)
+3. **Org** - Users toggled to org tier by admin get all 13+ sources with org API keys (uses same org keys as DSBN tier)
+4. **External** - Authenticated non-DSBN/non-org users can add their own API keys
+5. **Admin** - Special users with platform management capabilities (user management, tier assignment, ban control)
 
 ---
 
@@ -716,30 +717,50 @@ Tracks user activity for statistics
 
 ### User Tiers (Implemented in Edge Functions)
 
-**Tier Detection Logic** (`supabase/functions/threat-intel/index.ts:73-105`):
+**Tier Detection Logic** (`supabase/functions/threat-intel/index.ts:93-134`):
 ```typescript
 1. No auth header → ANON
 2. Auth header present:
-   - Email === ADMIN_EMAIL → DSBN tier
-   - Email ends with @dsbn.org → DSBN tier
-   - Otherwise → EXTERNAL tier
+   - Email === ADMIN_EMAIL → DSBN tier (org keys)
+   - Email ends with @dsbn.org → DSBN tier (org keys)
+   - profiles.tier === 'org' → DSBN tier (org keys)
+   - Otherwise → EXTERNAL tier (user's own keys)
 ```
+
+**Org Tier Configuration**:
+- Admins can toggle any user to "org" tier via Admin Panel
+- Org tier users automatically use organization API keys
+- Organization keys are configured as **Edge Function Secrets** in Supabase Dashboard
+- Navigate to: **Project Settings > Edge Functions > Secrets**
+- Set these environment variables for org-wide access:
+  - `VIRUSTOTAL_API_KEY`
+  - `ABUSEIPDB_API_KEY`
+  - `SHODAN_API_KEY`
+  - `URLSCAN_API_KEY`
+  - `IPQUALITYSCORE_API_KEY`
+  - `ALIENVAULT_API_KEY`
+  - `GREYNOISE_API_KEY`
+  - `PROXYCHECK_API_KEY`
+  - `IP2PROXY_API_KEY`
+  - `IPHUB_API_KEY`
+  - `VPNAPI_API_KEY`
+  - `HYBRID_ANALYSIS_API_KEY`
 
 **Tier Capabilities**:
 
-| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) | Admin |
-|---------|-----------|------------------|--------------------------|-------|
-| Free sources (7) | ✅ | ✅ | ✅ | ✅ |
-| Paid sources (6+) | ❌ | ✅ (org keys + own keys) | ✅ (own keys) | ✅ |
-| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs | 100 IPs |
-| Add API keys | ❌ | ✅ (fallback for missing org keys) | ✅ | ✅ |
-| Add custom feeds | ❌ | ✅ | ✅ | ✅ |
-| Watchlist & alerts | ❌ | ✅ | ✅ | ✅ |
-| Admin panel access | ❌ | ❌ | ❌ | ✅ |
-| Manage user tiers | ❌ | ❌ | ❌ | ✅ |
-| Ban/unban users | ❌ | ❌ | ❌ | ✅ |
-| View all user stats | ❌ | ❌ | ❌ | ✅ |
-| Cache context | "anon" | "org:dsbn" | "user:{id}" | "user:{id}" |
+| Feature | Anonymous | DSBN (@dsbn.org) | External (authenticated) | Admin | Org Tier (toggled) |
+|---------|-----------|------------------|--------------------------|-------|--------------------|
+| Free sources (7) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Paid sources (6+) | ❌ | ✅ (org keys + own keys) | ✅ (own keys) | ✅ | ✅ (org keys + own keys) |
+| Bulk lookup limit | 5 IPs | 100 IPs | 50 IPs | 100 IPs | 100 IPs |
+| Add API keys | ❌ | ✅ (fallback for missing org keys) | ✅ | ✅ | ✅ (fallback) |
+| Add custom feeds | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Watchlist & alerts | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Admin panel access | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Manage user tiers | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Ban/unban users | ❌ | ❌ | ❌ | ✅ | ❌ |
+| View all user stats | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Cache context | "anon" | "org:dsbn" | "user:{id}" | "user:{id}" | "org:shared" |
 
 **Cache Isolation**:
 - Anonymous users share cache ("anon" context)
@@ -857,18 +878,28 @@ CREATE POLICY "Admins can update user status"
 
 **API Key Management**:
 ```typescript
-1. Determine user tier
-2. If DSBN tier:
-   - Load org API keys from environment variables first
-   - Then load user's personal API keys as fallback
+1. Determine user tier (checks auth token, email domain, and profiles.tier)
+2. If DSBN tier (including org tier users toggled by admin):
+   - Load org API keys from Edge Function environment variables first
+   - Then load user's personal API keys from database as fallback
    - Merge: org keys take priority, user keys fill gaps
-   - This allows DSBN users to add their own keys for services
+   - This allows org tier users to add their own keys for services
      where org keys aren't configured
 3. If EXTERNAL tier:
-   - Decrypt user's own API keys only
+   - Decrypt user's own API keys from database only
 4. If ANON tier:
    - No paid sources, only free sources
 ```
+
+**Setting Org Keys** (Admin Task):
+1. Log into Supabase Dashboard
+2. Navigate to Project Settings > Edge Functions
+3. Click on "Manage secrets"
+4. Add each API key as an environment variable:
+   - Variable name: `VIRUSTOTAL_API_KEY` (exact name, uppercase)
+   - Value: Your actual API key
+   - Repeat for all services
+5. Redeploy edge functions if needed (automatic in most cases)
 
 **Threat Score Algorithm** (IP Lookup):
 ```typescript
@@ -1245,6 +1276,16 @@ Before deploying to production:
 
 - [ ] Set `API_KEY_ENCRYPTION_KEY` in Supabase Edge Function environment
 - [ ] Set `ADMIN_EMAIL` for DSBN org admin
+- [ ] **Configure org-level API keys** in Edge Function Secrets (see "Setting Org Keys" section above)
+  - [ ] `VIRUSTOTAL_API_KEY`
+  - [ ] `ABUSEIPDB_API_KEY`
+  - [ ] `SHODAN_API_KEY`
+  - [ ] `URLSCAN_API_KEY`
+  - [ ] `IPQUALITYSCORE_API_KEY`
+  - [ ] `ALIENVAULT_API_KEY`
+  - [ ] `GREYNOISE_API_KEY`
+  - [ ] `PROXYCHECK_API_KEY`
+  - [ ] Other optional keys (IP2PROXY, IPHUB, VPNAPI, etc.)
 - [ ] Configure OAuth providers (Google, Microsoft) in Supabase Auth
 - [ ] Review and adjust RLS policies based on team needs
 - [ ] Add CAPTCHA or rate limiting for anonymous users
