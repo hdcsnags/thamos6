@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
+  Shield, Search, Link as LinkIcon, Layers, History, Menu, X, AlertTriangle,
   Mail, FileSearch, Hash, Globe, ShieldOff, Code, FileText,
   LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
   ExternalLink, Check, Trash2, MoreHorizontal, Puzzle
@@ -27,7 +27,7 @@ const primaryNavItems: { id: Page; label: string; icon: React.ElementType }[] = 
 
 const advancedToolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: 'ip', label: 'IP Lookup', icon: Search },
-  { id: 'url', label: 'URL Scanner', icon: Link },
+  { id: 'url', label: 'URL Scanner', icon: LinkIcon },
   { id: 'hash', label: 'Hash Lookup', icon: Hash },
   { id: 'domain', label: 'Domain Intel', icon: Globe },
   { id: 'extension', label: 'Extension Scanner', icon: Puzzle },
@@ -63,10 +63,10 @@ function AdvancedToolsDropdown({ currentPage, onNavigate }: { currentPage: Page;
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap font-medium ${
           isActiveAdvancedTools
-            ? 'bg-cyan-500/20 text-cyan-400'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+            : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
         }`}
       >
         <MoreHorizontal className="w-4 h-4" />
@@ -125,10 +125,10 @@ function ExtrasDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavi
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap font-medium ${
           isActiveExtras
-            ? 'bg-cyan-500/20 text-cyan-400'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+            : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
         }`}
       >
         <MoreHorizontal className="w-4 h-4" />
@@ -643,11 +643,18 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
+// ----------------------------------------------------------------------
+// THE MAIN LAYOUT COMPONENT
+// ----------------------------------------------------------------------
+
 export default function Layout({ currentPage, onNavigate, onScan, children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const { user, loading, authError, clearAuthError } = useAuth();
+
+  // CHECK: Is this a page that needs the "Immersive" look?
+  const isImmersivePage = currentPage === 'scanner';
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -662,45 +669,39 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
-      <nav className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
-        {/* Top Search Bar - Full Width */}
-        <div className="bg-slate-900 dark:bg-slate-950 border-b border-slate-700 dark:border-slate-800">
+    // Update 1: Force dark theme background for consistency in immersive mode
+    <div className={`min-h-screen transition-colors ${isImmersivePage ? 'bg-[#0B1120]' : 'bg-slate-50 dark:bg-slate-950'}`}>
+      
+      {/* Update 2: Glassmorphic Nav Bar that floats over content */}
+      <nav className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${
+        isImmersivePage 
+          ? 'bg-[#0B1120]/80 backdrop-blur-md border-white/5' 
+          : 'bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-slate-200 dark:border-slate-800'
+      }`}>
+        
+        {/* Main Bar */}
+        <div>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <form onSubmit={handleSearch} className="py-2">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search IP, URL, domain, hash, or Chrome extension..."
-                  className="w-full pl-12 pr-4 py-2.5 bg-slate-800 dark:bg-slate-900 border border-slate-700 dark:border-slate-800 rounded-lg text-sm text-slate-200 dark:text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-
-        {/* Main Bar - Branding, Navigation, and User */}
-        <div className="border-b border-slate-200 dark:border-slate-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-14">
+            <div className="flex items-center justify-between h-16">
+              
+              {/* Branding */}
               <div className="flex items-center gap-6">
                 <button
                   onClick={() => onNavigate('scanner')}
                   className="flex items-center gap-3 hover:opacity-80 transition-opacity"
                 >
-                  <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
+                  <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg shadow-lg shadow-cyan-500/20">
                     <Shield className="w-5 h-5 text-white" />
                   </div>
-                  <div className="text-left">
-                    <h1 className="text-lg font-bold text-slate-900 dark:text-white">Thamos6</h1>
-                    <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-none">What Would Will Do?</p>
+                  <div className="text-left hidden sm:block">
+                    <h1 className={`text-lg font-bold ${isImmersivePage ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                      Thamos6
+                    </h1>
+                    <p className="text-[10px] text-slate-500 leading-none font-mono">INTEL PLATFORM</p>
                   </div>
                 </button>
 
-                {/* Navigation Items - Desktop */}
+                {/* Desktop Nav */}
                 <div className="hidden lg:flex items-center gap-1">
                   {primaryNavItems.map(item => {
                     const Icon = item.icon;
@@ -709,44 +710,63 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
                       <button
                         key={item.id}
                         onClick={() => onNavigate(item.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-medium ${
                           isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                            ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                            : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
                         }`}
                       >
                         <Icon className="w-4 h-4" />
-                        <span className="font-medium">{item.label}</span>
+                        <span>{item.label}</span>
                       </button>
                     );
                   })}
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
+                  <div className="h-4 w-px bg-white/10 mx-2" />
+                  
                   <AdvancedToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
+                  <div className="h-4 w-px bg-white/10 mx-2" />
                   <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Right Side Actions */}
+              <div className="flex items-center gap-3">
+                {/* Global Search (Condensed) */}
+                <form onSubmit={handleSearch} className="hidden md:block relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Quick Search..."
+                    className="w-64 pl-10 pr-4 py-1.5 bg-slate-900/50 border border-white/10 rounded-full text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:bg-slate-900 transition-all"
+                  />
+                </form>
+
+                <div className="h-6 w-px bg-white/10 mx-2 hidden md:block" />
+                
                 <ThemeToggle />
+                
                 {!loading && (
                   user ? (
                     <>
-                      <AlertDropdown onNavigate={onNavigate} />
-                      <UserMenu onNavigate={onNavigate} />
+                       <AlertDropdown onNavigate={onNavigate} />
+                       <UserMenu onNavigate={onNavigate} />
                     </>
                   ) : (
                     <button
                       onClick={() => setShowLogin(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white font-medium rounded-lg transition-all"
+                      className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg transition-all shadow-lg shadow-cyan-500/20"
                     >
                       <LogIn className="w-4 h-4" />
-                      <span>Sign In</span>
+                      <span className="hidden sm:inline">Sign In</span>
                     </button>
                   )
                 )}
+                
+                {/* Mobile Menu Toggle */}
                 <button
-                  className="lg:hidden p-2 text-slate-400 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  className="lg:hidden p-2 text-slate-400 hover:text-white"
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 >
                   {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -848,28 +868,40 @@ export default function Layout({ currentPage, onNavigate, onScan, children }: La
         )}
       </nav>
 
-      {!user && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+      {/* Sign In Banner - Only show if not immersive, or style it to be less intrusive */}
+      {!user && !isImmersivePage && (
+        <div className="mt-16 bg-amber-500/10 border-b border-amber-500/20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
             <div className="flex items-center gap-3 text-amber-400">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               <p className="text-xs sm:text-sm">
-                <span className="font-semibold">Sign in</span> to add your own API keys and unlock full threat intel capabilities.
+                <span className="font-semibold">Sign in</span> to unlock API keys and full threat intel.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Update 3: THE CRITICAL FIX 
+        Conditional Main Container 
+      */}
+      <main className={`
+        ${isImmersivePage 
+          ? 'w-full min-h-screen pt-0' // Scanner gets full control
+          : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pt-24' // Others get standard box + padding for fixed nav
+        }
+      `}>
         {children}
       </main>
 
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      {/* Modals and Error Toasts (Keep existing) */}
+      {showLogin && (
+         <LoginModal onClose={() => setShowLogin(false)} />
+      )}
 
       {authError && (
-        <div className="fixed bottom-4 right-4 max-w-md bg-red-500/10 border border-red-500/30 rounded-xl p-4 shadow-2xl z-50">
-          <div className="flex items-start gap-3">
+        <div className="fixed bottom-4 right-4 max-w-md bg-red-950/90 border border-red-500/30 text-white rounded-xl p-4 shadow-2xl z-50 backdrop-blur-md">
+           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="font-medium text-red-400">Sign in failed</p>
