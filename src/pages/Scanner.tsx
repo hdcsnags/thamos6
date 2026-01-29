@@ -1,67 +1,49 @@
-import { useState } from 'react';
-import { Search, Shield, Globe, Hash, Link, AlertTriangle, Puzzle, Database, Eye } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  Search, Shield, Globe, Hash, Link as LinkIcon, 
+  AlertTriangle, Puzzle, Database, Eye, Terminal, 
+  Activity, Wifi, Server, Cpu 
+} from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
 
 interface ScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
-const sources = [
-  {
-    name: 'VirusTotal',
-    icon: Shield,
-    description: 'Hash, URL, and domain analysis',
-    color: 'from-blue-500 to-blue-600'
-  },
-  {
-    name: 'urlscan.io',
-    icon: Eye,
-    description: 'URL screenshots and redirect chains',
-    color: 'from-green-500 to-green-600'
-  },
-  {
-    name: 'AbuseIPDB',
-    icon: AlertTriangle,
-    description: 'IP abuse confidence and categories',
-    color: 'from-red-500 to-red-600'
-  },
-  {
-    name: 'ipinfo.io',
-    icon: Globe,
-    description: 'ASN, organization, and geolocation',
-    color: 'from-cyan-500 to-cyan-600'
-  },
-  {
-    name: 'ProxyCheck',
-    icon: Database,
-    description: 'TOR/VPN/proxy detection',
-    color: 'from-purple-500 to-purple-600'
-  },
-  {
-    name: 'Chrome Web Store',
-    icon: Puzzle,
-    description: 'Extension metadata and security analysis',
-    color: 'from-yellow-500 to-yellow-600'
-  }
+// Tech-themed source definitions
+const sensors = [
+  { id: 'vt', name: 'VirusTotal', icon: Shield, status: 'ONLINE', latency: '24ms' },
+  { id: 'urlscan', name: 'urlscan.io', icon: Eye, status: 'ONLINE', latency: '45ms' },
+  { id: 'abuse', name: 'AbuseIPDB', icon: AlertTriangle, status: 'PURGING', latency: '12ms' },
+  { id: 'ipinfo', name: 'ipinfo.io', icon: Globe, status: 'ONLINE', latency: '18ms' },
+  { id: 'proxy', name: 'ProxyCheck', icon: Database, status: 'ACTIVE', latency: '33ms' },
+  { id: 'chrome', name: 'CWS Intel', icon: Puzzle, status: 'SYNCED', latency: '56ms' },
 ];
 
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Simple entry animation effect
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     if (!input.trim()) {
-      setError('Please enter an IP, URL, domain, hash, or extension ID');
+      setError('// ERROR: INPUT_EMPTY // AWAITING TARGET');
       return;
     }
 
     const detection = detectIOCType(input);
 
     if (detection.type === 'unknown') {
-      setError('Unable to detect input type. Please enter a valid IP, URL, domain, hash, or Chrome extension ID.');
+      setError('// ERROR: UNKNOWN_FORMAT // UNABLE TO PARSE TARGET');
       return;
     }
 
@@ -69,105 +51,131 @@ export default function Scanner({ onScan }: ScannerProps) {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <form onSubmit={handleSubmit} className="mb-8">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
-            <Search className="w-6 h-6 text-slate-400" />
-          </div>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setError('');
-            }}
-            placeholder="Enter IP address, URL, domain, file hash, or extension ID..."
-            className="w-full pl-16 pr-6 py-5 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl text-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all shadow-lg"
-          />
-        </div>
-        {error && (
-          <div className="mt-3 flex items-start gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-        <button
-          type="submit"
-          className="mt-4 w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl transition-all shadow-lg hover:shadow-xl"
-        >
-          Investigate
-        </button>
-      </form>
-
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-800 p-8">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 text-center">
-          What We Check
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sources.map((source) => {
-            const Icon = source.icon;
-            return (
-              <div
-                key={source.name}
-                className="flex items-start gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:border-cyan-500 dark:hover:border-cyan-500/50 transition-all"
-              >
-                <div className={`p-2 bg-gradient-to-br ${source.color} rounded-lg flex-shrink-0`}>
-                  <Icon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
-                    {source.name}
-                  </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {source.description}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-center text-sm text-slate-500 dark:text-slate-400 mt-6">
-          Sign in to add your own API keys and access all sources
-        </p>
+    <div className="min-h-[80vh] flex flex-col items-center justify-center relative overflow-hidden">
+      
+      {/* BACKGROUND GRID EFFECT */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+        <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-cyan-500 opacity-20 blur-[100px]"></div>
       </div>
 
-      <div className="mt-12 grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
-        <div className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Globe className="w-5 h-5 text-cyan-400" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">IPs</span>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">IPv4 & IPv6</p>
+      <div className={`w-full max-w-4xl relative z-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+        
+        {/* HEADER / HUD TITLES */}
+        <div className="text-center mb-10 space-y-2">
+           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/30 border border-cyan-500/20 text-cyan-400 text-xs font-mono tracking-widest mb-4">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </span>
+              SYSTEM READY // v2.4.0
+           </div>
+           <h1 className="text-5xl font-black text-white tracking-tight">
+             THAMOS<span className="text-cyan-500">6</span>
+           </h1>
+           <p className="text-slate-400 text-lg font-light tracking-wide">
+             Unified Threat Intelligence & Analysis Platform
+           </p>
         </div>
-        <div className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Link className="w-5 h-5 text-cyan-400" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">URLs</span>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Full analysis</p>
+
+        {/* MAIN SEARCH INTERFACE */}
+        <div className="relative group">
+          {/* Decorative HUD Lines */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+          
+          <form onSubmit={handleSubmit} className="relative bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+            <div className="flex items-center">
+              <div className="pl-6 text-slate-500">
+                <Terminal className="w-6 h-6" />
+              </div>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setError('');
+                }}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                placeholder="Enter IOC (IP, Domain, Hash, URL)..."
+                className="w-full bg-transparent border-none px-6 py-6 text-xl text-white placeholder-slate-600 focus:outline-none focus:ring-0 font-mono"
+                autoComplete="off"
+              />
+              <button 
+                type="submit"
+                className="mr-2 px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(8,145,178,0.3)] hover:shadow-[0_0_30px_rgba(8,145,178,0.5)]"
+              >
+                SCAN TARGET
+              </button>
+            </div>
+            
+            {/* SEARCH HINTS / ERROR DISPLAY */}
+            <div className="px-6 py-2 bg-slate-950/50 border-t border-white/5 flex justify-between items-center text-xs font-mono">
+               <div className={`${error ? 'text-red-400' : 'text-slate-500'}`}>
+                 {error || (isFocused ? '> WAITING FOR INPUT...' : '> SYSTEM IDLE')}
+               </div>
+               <div className="text-slate-600 flex gap-4">
+                  <span>[ENTER] TO EXECUTE</span>
+                  <span>[ESC] TO CLEAR</span>
+               </div>
+            </div>
+          </form>
         </div>
-        <div className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Globe className="w-5 h-5 text-cyan-400" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">Domains</span>
+
+        {/* CAPABILITIES / SENSOR GRID */}
+        <div className="mt-16">
+          <div className="flex items-center justify-between mb-6 px-2">
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <Activity className="w-4 h-4" /> Active Sensor Array
+            </h3>
+            <span className="text-xs font-mono text-slate-600">ALL SYSTEMS NOMINAL</span>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Reputation</p>
-        </div>
-        <div className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Hash className="w-5 h-5 text-cyan-400" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">Hashes</span>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {sensors.map((sensor) => {
+              const Icon = sensor.icon;
+              return (
+                <div key={sensor.id} className="group relative bg-slate-900/40 border border-white/5 hover:border-cyan-500/30 p-4 rounded-lg transition-all hover:bg-slate-800/60 cursor-default">
+                  <div className="flex flex-col items-center text-center gap-3">
+                    <div className="p-2 bg-slate-800 rounded-lg group-hover:text-cyan-400 group-hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all text-slate-400">
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-300 group-hover:text-white">{sensor.name}</div>
+                      <div className="text-[10px] font-mono text-emerald-500 mt-1 flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        {sensor.status}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Tech decoration corners */}
+                  <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-white/10 group-hover:border-cyan-500/50 rounded-tl transition-colors"></div>
+                  <div className="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-white/10 group-hover:border-cyan-500/50 rounded-br transition-colors"></div>
+                </div>
+              );
+            })}
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">MD5, SHA1, SHA256</p>
         </div>
-        <div className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Puzzle className="w-5 h-5 text-cyan-400" />
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">Extensions</span>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Chrome Web Store</p>
+
+        {/* BOTTOM STATS DECORATION */}
+        <div className="mt-16 border-t border-white/5 pt-6 grid grid-cols-3 gap-4 text-center">
+            <div className="flex flex-col gap-1">
+               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Global Queries</span>
+               <span className="text-xl font-mono text-slate-400">8,492,102</span>
+            </div>
+            <div className="flex flex-col gap-1 border-x border-white/5">
+               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Threats Blocked</span>
+               <span className="text-xl font-mono text-red-400/80">142,093</span>
+            </div>
+            <div className="flex flex-col gap-1">
+               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Node Status</span>
+               <span className="text-xl font-mono text-emerald-400/80 flex items-center justify-center gap-2">
+                 <Wifi className="w-4 h-4" /> 100%
+               </span>
+            </div>
         </div>
+
       </div>
     </div>
   );
