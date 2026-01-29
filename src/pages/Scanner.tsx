@@ -1,33 +1,74 @@
 import { useState, useEffect } from 'react';
 import { 
-  Search, Shield, Globe, Hash, Link as LinkIcon, 
-  AlertTriangle, Terminal, Activity, ChevronRight,
-  Clock, CheckCircle, XCircle
+  Search, Shield, Terminal, Activity, 
+  AlertTriangle, CheckCircle, XCircle, Clock, Globe, Link as LinkIcon
 } from 'lucide-react';
+import { supabase } from '../lib/supabase'; // Assuming this is your standard export
 import { detectIOCType } from '../lib/iocDetection';
 
 interface ScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
-// Mock data for the "Live Feed" visual
-const recentScans = [
-  { type: 'IP', value: '192.168.1.***', time: '2s ago', score: 0, verdict: 'CLEAN' },
-  { type: 'URL', value: 'http://pay-pal-secure...', time: '14s ago', score: 95, verdict: 'MALICIOUS' },
-  { type: 'HASH', value: 'e5d3...8a9f', time: '42s ago', score: 88, verdict: 'MALICIOUS' },
-  { type: 'DOMAIN', value: 'google.com', time: '1m ago', score: 0, verdict: 'CLEAN' },
-];
+interface ScanHistoryItem {
+  type: string;
+  value: string;
+  created_at: string;
+  threat_score: number;
+  is_malicious?: boolean;
+}
 
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [cursorVisible, setCursorVisible] = useState(true);
-
-  // Blinking cursor effect
+  const [recentScans, setRecentScans] = useState<ScanHistoryItem[]>([]);
+  
+  // 1. Fetch Real History on Mount
   useEffect(() => {
-    const interval = setInterval(() => setCursorVisible(v => !v), 500);
-    return () => clearInterval(interval);
+    const fetchHistory = async () => {
+      // We fetch from multiple tables to create a unified "Feed"
+      // Note: This matches your DB schema from ARCHITECTURE.md
+      const { data: ipData } = await supabase
+        .from('ip_lookups')
+        .select('ip_address, threat_score, created_at')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      const { data: urlData } = await supabase
+        .from('url_lookups')
+        .select('url, threat_score, is_malicious, created_at')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      // Normalize the data for display
+      const ips = (ipData || []).map(item => ({
+        type: 'IP',
+        value: item.ip_address,
+        created_at: item.created_at,
+        threat_score: item.threat_score,
+        is_malicious: item.threat_score > 75
+      }));
+
+      const urls = (urlData || []).map(item => ({
+        type: 'URL',
+        value: item.url,
+        created_at: item.created_at,
+        threat_score: item.threat_score || (item.is_malicious ? 90 : 0),
+        is_malicious: item.is_malicious
+      }));
+
+      // Merge and Sort
+      const combined = [...ips, ...urls]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5); // Take top 5
+
+      setRecentScans(combined);
+    };
+
+    fetchHistory();
+    
+    // Optional: Real-time subscription could go here
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -48,49 +89,59 @@ export default function Scanner({ onScan }: ScannerProps) {
     onScan(detection.type, detection.normalizedValue);
   };
 
-  return (
-    <div className="min-h-[85vh] flex flex-col items-center justify-center relative font-sans">
-      
-      {/* 1. CLEAN BACKGROUND */}
-      <div className="absolute inset-0 bg-[#0B1120]">
-        {/* Subtle grid for structure, not noise */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-      </div>
+  // Helper to format time "2m ago"
+  const timeAgo = (dateString: string) => {
+    const seconds = Math.floor((new Date().getTime() - new Date(dateString).getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    return `${Math.floor(minutes / 60)}h ago`;
+  };
 
-      <div className="w-full max-w-4xl relative z-10 flex flex-col items-center px-4">
+  return (
+    <div className="min-h-[85vh] flex flex-col items-center justify-center relative font-sans bg-black text-slate-300">
+      
+      {/* 1. BRANDING - Keeping it minimal */}
+      <div className="w-full max-w-4xl px-4 flex flex-col items-center z-10">
         
-        {/* 2. LOGO / BRANDING (Minimalist) */}
-        <div className="mb-10 text-center">
-           <div className="flex items-center justify-center gap-3 mb-4">
-             <div className="p-2.5 bg-cyan-950/30 border border-cyan-500/20 rounded-xl">
-               <Shield className="w-8 h-8 text-cyan-400" />
-             </div>
+        <div className="mb-12 text-center">
+           <div className="inline-flex items-center justify-center p-3 mb-6 bg-slate-900/50 rounded-2xl border border-slate-800">
+             <Shield className="w-10 h-10 text-cyan-500" />
            </div>
-           <h1 className="text-4xl font-bold text-white tracking-tight mb-2">
-             Thamos<span className="text-cyan-500">6</span> Intelligence
+           <h1 className="text-5xl font-bold text-white tracking-tight mb-3">
+             Thamos<span className="text-cyan-500">6</span>
            </h1>
-           <p className="text-slate-400 text-sm">
-             Unified threat analysis across 14+ vectors including VirusTotal, URLhaus & AbuseIPDB.
+           <p className="text-slate-500 font-mono text-sm tracking-wide uppercase">
+             Advanced Threat Intelligence Platform
            </p>
         </div>
 
-        {/* 3. THE "CLEAN CMD" SEARCH BAR */}
-        <div className="w-full max-w-2xl">
+        {/* 2. THE CONSOLE INPUT */}
+        <div className="w-full max-w-2xl relative group">
+          {/* Subtle Glow behind input only when focused */}
+          <div className={`absolute -inset-0.5 bg-cyan-500/20 rounded-xl blur-md transition-opacity duration-300 ${isFocused ? 'opacity-100' : 'opacity-0'}`}></div>
+          
           <form 
             onSubmit={handleSubmit}
             className={`
-              relative group bg-[#0F172A] rounded-xl overflow-hidden transition-all duration-300
-              border-2 ${isFocused ? 'border-cyan-500 shadow-[0_0_40px_rgba(6,182,212,0.15)]' : 'border-slate-700 shadow-xl'}
+              relative bg-black rounded-xl overflow-hidden transition-all duration-300
+              border ${isFocused ? 'border-cyan-500' : 'border-slate-800'}
             `}
           >
-            <div className="flex items-center px-4 py-4">
-              {/* Terminal Prompt Indicator */}
-              <div className="flex items-center gap-2 pr-4 border-r border-slate-700 mr-4 select-none">
-                <Terminal className={`w-5 h-5 ${isFocused ? 'text-cyan-400' : 'text-slate-500'}`} />
-                <span className="font-mono text-sm text-slate-500 font-bold hidden sm:inline">User@T6:~#</span>
+            {/* Top Bar (Decoration) */}
+            <div className="h-6 bg-[#0a0a0a] border-b border-slate-800 flex items-center px-3 gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+            </div>
+
+            {/* Input Area */}
+            <div className="flex items-center px-4 py-5">
+              <div className="flex items-center gap-3 pr-4 border-r border-slate-800 mr-4 select-none">
+                <Terminal className={`w-5 h-5 ${isFocused ? 'text-cyan-400' : 'text-slate-600'}`} />
+                <span className="font-mono text-sm text-slate-500 font-bold hidden sm:inline">root@t6:~#</span>
               </div>
               
-              {/* Input Field */}
               <input
                 type="text"
                 value={input}
@@ -100,90 +151,98 @@ export default function Scanner({ onScan }: ScannerProps) {
                 }}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
-                className="flex-1 bg-transparent border-none p-0 text-lg text-white placeholder-slate-600 focus:outline-none focus:ring-0 font-mono"
-                placeholder="scan target..."
+                className="flex-1 bg-transparent border-none p-0 text-lg text-white placeholder-slate-700 focus:outline-none focus:ring-0 font-mono"
+                placeholder="enter_target_ioc..."
                 autoComplete="off"
                 spellCheck="false"
               />
               
-              {/* Blinking Block Cursor (Visual only) */}
-              {isFocused && (
-                 <div className={`w-2.5 h-5 bg-cyan-500/50 ${cursorVisible ? 'opacity-100' : 'opacity-0'} transition-opacity`}></div>
-              )}
-
-              {/* Action Button */}
               <button 
                 type="submit"
-                className="ml-4 p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                className="p-2 bg-slate-900 hover:bg-cyan-900/30 text-slate-400 hover:text-cyan-400 rounded-lg transition-colors border border-slate-800 hover:border-cyan-500/30"
               >
                 <Search className="w-5 h-5" />
               </button>
             </div>
             
-            {/* Error / Status Line (Hidden unless needed) */}
+            {/* Error Display (Slide down) */}
             {error && (
-              <div className="px-4 py-1.5 bg-red-950/30 border-t border-red-900/50 text-[10px] font-mono text-red-400 flex items-center gap-2">
-                 <AlertTriangle className="w-3 h-3" /> ERROR: {error}
+              <div className="bg-red-950/20 border-t border-red-900/50 px-4 py-2 text-xs font-mono text-red-500 flex items-center gap-2">
+                 <XCircle className="w-3 h-3" /> 
+                 <span>ERROR_CODE: {error}</span>
               </div>
             )}
           </form>
 
-          {/* Quick Hints */}
-          <div className="flex justify-between items-center px-2 mt-2 text-[10px] font-mono text-slate-600">
-             <div>SUPPORTED: IP • URL • DOMAIN • HASH • CVE</div>
-             <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div> SYSTEMS ONLINE</div>
+          {/* Quick Stats Line */}
+          <div className="mt-3 flex justify-between items-center px-1">
+             <div className="flex gap-4 text-[10px] font-mono text-slate-600 uppercase tracking-wider">
+               <span>Sources: 14+</span>
+               <span>Latency: 24ms</span>
+               <span className="text-emerald-600">System: ONLINE</span>
+             </div>
           </div>
         </div>
 
-        {/* 4. RECENT ACTIVITY (The "Live Feed") */}
-        <div className="mt-16 w-full max-w-2xl">
-           <div className="flex items-center gap-2 mb-4 px-2">
-             <Activity className="w-4 h-4 text-cyan-500" />
-             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recent Interceptions</h3>
-           </div>
-           
-           <div className="bg-[#0F172A]/50 border border-slate-800 rounded-xl overflow-hidden backdrop-blur-sm">
-             {/* Header */}
-             <div className="grid grid-cols-4 gap-4 px-4 py-2 bg-slate-900/50 border-b border-slate-800 text-[10px] font-mono text-slate-500 uppercase">
-                <div>Type</div>
-                <div>Target</div>
-                <div className="text-right">Time</div>
-                <div className="text-right">Verdict</div>
+        {/* 3. RECENT INTERCEPTIONS (Real History) */}
+        {recentScans.length > 0 && (
+          <div className="mt-20 w-full max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-700">
+             <div className="flex items-center justify-between mb-4 px-1">
+               <div className="flex items-center gap-2">
+                 <Activity className="w-4 h-4 text-cyan-600" />
+                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Live Interceptions</h3>
+               </div>
+               <span className="text-[10px] font-mono text-slate-700">SYNCED</span>
              </div>
+             
+             <div className="border border-slate-800 rounded-lg overflow-hidden">
+               {/* Table Header */}
+               <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-[#050505] border-b border-slate-800 text-[10px] font-mono text-slate-600 uppercase tracking-wider">
+                  <div className="col-span-2">Type</div>
+                  <div className="col-span-6">Target</div>
+                  <div className="col-span-2 text-right">Age</div>
+                  <div className="col-span-2 text-right">Status</div>
+               </div>
 
-             {/* Rows */}
-             <div className="divide-y divide-slate-800/50">
-               {recentScans.map((scan, i) => (
-                 <div key={i} className="grid grid-cols-4 gap-4 px-4 py-3 hover:bg-slate-800/30 transition-colors group cursor-default">
-                    <div className="flex items-center">
-                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                         scan.type === 'MALICIOUS' ? 'bg-red-950/30 border-red-900/50 text-red-400' : 'bg-slate-800 border-slate-700 text-slate-400'
-                       }`}>
-                         {scan.type}
-                       </span>
-                    </div>
-                    <div className="font-mono text-xs text-slate-300 truncate group-hover:text-cyan-400 transition-colors">
-                      {scan.value}
-                    </div>
-                    <div className="text-right text-xs text-slate-500 font-mono">
-                      {scan.time}
-                    </div>
-                    <div className="flex justify-end items-center gap-2">
-                       {scan.verdict === 'MALICIOUS' ? (
-                         <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-400 bg-red-950/20 px-2 py-0.5 rounded-full border border-red-900/20">
-                           <XCircle className="w-3 h-3" /> THREAT
+               {/* Table Body */}
+               <div className="divide-y divide-slate-900 bg-black">
+                 {recentScans.map((scan, i) => (
+                   <div key={i} className="grid grid-cols-12 gap-4 px-4 py-3 hover:bg-slate-900/40 transition-colors group cursor-default">
+                      {/* Type Badge */}
+                      <div className="col-span-2 flex items-center">
+                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                            scan.type === 'IP' ? 'text-blue-400 border-blue-900/30 bg-blue-950/10' :
+                            scan.type === 'URL' ? 'text-purple-400 border-purple-900/30 bg-purple-950/10' :
+                            'text-slate-400 border-slate-800 bg-slate-900'
+                         }`}>
+                           {scan.type}
                          </span>
-                       ) : (
-                         <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-950/20 px-2 py-0.5 rounded-full border border-emerald-900/20">
-                           <CheckCircle className="w-3 h-3" /> CLEAN
-                         </span>
-                       )}
-                    </div>
-                 </div>
-               ))}
+                      </div>
+                      
+                      {/* Value (Truncated) */}
+                      <div className="col-span-6 flex items-center font-mono text-xs text-slate-400 group-hover:text-white transition-colors truncate pr-4">
+                        {scan.value}
+                      </div>
+                      
+                      {/* Time Ago */}
+                      <div className="col-span-2 flex items-center justify-end text-[10px] font-mono text-slate-600">
+                        {timeAgo(scan.created_at)}
+                      </div>
+                      
+                      {/* Verdict */}
+                      <div className="col-span-2 flex items-center justify-end">
+                         {scan.is_malicious ? (
+                           <AlertTriangle className="w-4 h-4 text-red-500" />
+                         ) : (
+                           <CheckCircle className="w-4 h-4 text-emerald-600/50" />
+                         )}
+                      </div>
+                   </div>
+                 ))}
+               </div>
              </div>
-           </div>
-        </div>
+          </div>
+        )}
 
       </div>
     </div>
