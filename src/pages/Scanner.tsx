@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   Search, Shield, Globe, Hash, Link as LinkIcon, 
   AlertTriangle, Puzzle, Database, Eye, Terminal, 
-  Activity, Wifi, Server, Cpu 
+  Activity, Zap, Server, Cpu, Radio, Command
 } from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
 
@@ -10,40 +10,50 @@ interface ScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
-// Tech-themed source definitions
+// Sophisticated source definitions with "tech" details
 const sensors = [
-  { id: 'vt', name: 'VirusTotal', icon: Shield, status: 'ONLINE', latency: '24ms' },
-  { id: 'urlscan', name: 'urlscan.io', icon: Eye, status: 'ONLINE', latency: '45ms' },
-  { id: 'abuse', name: 'AbuseIPDB', icon: AlertTriangle, status: 'PURGING', latency: '12ms' },
-  { id: 'ipinfo', name: 'ipinfo.io', icon: Globe, status: 'ONLINE', latency: '18ms' },
-  { id: 'proxy', name: 'ProxyCheck', icon: Database, status: 'ACTIVE', latency: '33ms' },
-  { id: 'chrome', name: 'CWS Intel', icon: Puzzle, status: 'SYNCED', latency: '56ms' },
+  { id: 'vt', name: 'VirusTotal', icon: Shield, status: 'OPERATIONAL', load: '12%', color: 'text-blue-400' },
+  { id: 'urlscan', name: 'urlscan.io', icon: Eye, status: 'IMAGING', load: '45%', color: 'text-emerald-400' },
+  { id: 'abuse', name: 'AbuseIPDB', icon: AlertTriangle, status: 'READY', load: '8%', color: 'text-amber-400' },
+  { id: 'ipinfo', name: 'ipinfo.io', icon: Globe, status: 'GEOLOCATING', load: '22%', color: 'text-cyan-400' },
+  { id: 'proxy', name: 'ProxyCheck', icon: Database, status: 'ACTIVE', load: '33%', color: 'text-violet-400' },
+  { id: 'chrome', name: 'CWS Intel', icon: Puzzle, status: 'SYNCED', load: '0%', color: 'text-pink-400' },
 ];
 
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [detectedType, setDetectedType] = useState<string>('UNKNOWN');
   const [isFocused, setIsFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Simple entry animation effect
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Live detection feedback
+  useEffect(() => {
+    if (!input) {
+      setDetectedType('WAITING');
+      return;
+    }
+    const detection = detectIOCType(input);
+    setDetectedType(detection.type.toUpperCase());
+  }, [input]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     if (!input.trim()) {
-      setError('// ERROR: INPUT_EMPTY // AWAITING TARGET');
+      setError('TARGET_MISSING');
       return;
     }
 
     const detection = detectIOCType(input);
 
     if (detection.type === 'unknown') {
-      setError('// ERROR: UNKNOWN_FORMAT // UNABLE TO PARSE TARGET');
+      setError('INVALID_FORMAT');
       return;
     }
 
@@ -51,43 +61,48 @@ export default function Scanner({ onScan }: ScannerProps) {
   };
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center relative overflow-hidden">
+    <div className="min-h-[85vh] flex flex-col items-center justify-center relative overflow-hidden font-sans">
       
-      {/* BACKGROUND GRID EFFECT */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-        <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-cyan-500 opacity-20 blur-[100px]"></div>
+      {/* 1. ATMOSPHERIC BACKGROUND (The "Space" Feel) */}
+      <div className="absolute inset-0 z-0 pointer-events-none bg-[#020617]">
+        {/* Deep blue void glow */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[120px] animate-pulse-slow"></div>
+        {/* Cyan accent glow */}
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-900/10 rounded-full blur-[100px]"></div>
+        {/* Subtle noise texture overlay */}
+        <div className="absolute inset-0 opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
       </div>
 
-      <div className={`w-full max-w-4xl relative z-10 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+      <div className={`w-full max-w-5xl relative z-10 flex flex-col items-center transition-all duration-1000 ${mounted ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
         
-        {/* HEADER / HUD TITLES */}
-        <div className="text-center mb-10 space-y-2">
-           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/30 border border-cyan-500/20 text-cyan-400 text-xs font-mono tracking-widest mb-4">
+        {/* 2. THE HERO HEADER */}
+        <div className="text-center mb-12 space-y-4">
+           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/50 border border-slate-700/50 backdrop-blur-md shadow-xl">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              SYSTEM READY // v2.4.0
+              <span className="text-[10px] font-mono text-slate-400 tracking-widest">THAMOS6 // INTEL CORE</span>
            </div>
-           <h1 className="text-5xl font-black text-white tracking-tight">
-             THAMOS<span className="text-cyan-500">6</span>
+           
+           <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 tracking-tight drop-shadow-sm">
+             THREAT<span className="text-cyan-500">OS</span>
            </h1>
-           <p className="text-slate-400 text-lg font-light tracking-wide">
-             Unified Threat Intelligence & Analysis Platform
-           </p>
         </div>
 
-        {/* MAIN SEARCH INTERFACE */}
-        <div className="relative group">
-          {/* Decorative HUD Lines */}
-          <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+        {/* 3. THE "COMMAND BAR" INPUT */}
+        <div className="w-full max-w-3xl relative group">
+          {/* Glowing Ring Effect on Focus */}
+          <div className={`absolute -inset-0.5 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 rounded-2xl opacity-0 transition duration-500 blur ${isFocused ? 'opacity-70' : 'group-hover:opacity-30'}`}></div>
           
-          <form onSubmit={handleSubmit} className="relative bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl">
-            <div className="flex items-center">
-              <div className="pl-6 text-slate-500">
-                <Terminal className="w-6 h-6" />
+          <form onSubmit={handleSubmit} className="relative bg-[#0B1120] rounded-2xl border border-slate-800 shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* Top Bar: Input Area */}
+            <div className="flex items-center px-6 py-5">
+              <div className="pr-6 border-r border-slate-800 text-slate-500">
+                <Command className={`w-6 h-6 transition-colors ${isFocused ? 'text-cyan-400' : ''}`} />
               </div>
+              
               <input
                 type="text"
                 value={input}
@@ -97,83 +112,92 @@ export default function Scanner({ onScan }: ScannerProps) {
                 }}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
-                placeholder="Enter IOC (IP, Domain, Hash, URL)..."
-                className="w-full bg-transparent border-none px-6 py-6 text-xl text-white placeholder-slate-600 focus:outline-none focus:ring-0 font-mono"
+                placeholder="Analyze IP, Domain, Hash..."
+                className="flex-1 bg-transparent border-none px-6 text-xl text-white placeholder-slate-600 focus:outline-none focus:ring-0 font-mono tracking-wide"
                 autoComplete="off"
+                spellCheck="false"
               />
-              <button 
-                type="submit"
-                className="mr-2 px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(8,145,178,0.3)] hover:shadow-[0_0_30px_rgba(8,145,178,0.5)]"
-              >
-                SCAN TARGET
-              </button>
+
+              {/* Live Detector Badge */}
+              <div className="pl-4 hidden sm:block">
+                 <div className={`px-3 py-1 rounded text-[10px] font-mono font-bold border transition-all duration-300 ${
+                   detectedType === 'WAITING' ? 'bg-slate-900 border-slate-800 text-slate-600' :
+                   detectedType === 'UNKNOWN' ? 'bg-red-950/30 border-red-900/50 text-red-500' :
+                   'bg-cyan-950/30 border-cyan-900/50 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.2)]'
+                 }`}>
+                   {detectedType}
+                 </div>
+              </div>
             </div>
-            
-            {/* SEARCH HINTS / ERROR DISPLAY */}
-            <div className="px-6 py-2 bg-slate-950/50 border-t border-white/5 flex justify-between items-center text-xs font-mono">
-               <div className={`${error ? 'text-red-400' : 'text-slate-500'}`}>
-                 {error || (isFocused ? '> WAITING FOR INPUT...' : '> SYSTEM IDLE')}
+
+            {/* Bottom Bar: Action & Status */}
+            <div className="bg-[#0F1629] px-6 py-2.5 flex justify-between items-center border-t border-slate-800/50">
+               <div className="text-xs font-mono flex items-center gap-2">
+                 {error ? (
+                   <span className="text-red-400 flex items-center gap-1 animate-pulse">
+                     <AlertTriangle className="w-3 h-3" /> {error}
+                   </span>
+                 ) : (
+                   <span className="text-slate-500">READY TO SCAN</span>
+                 )}
                </div>
-               <div className="text-slate-600 flex gap-4">
-                  <span>[ENTER] TO EXECUTE</span>
-                  <span>[ESC] TO CLEAR</span>
-               </div>
+               
+               <button 
+                type="submit"
+                className="group/btn flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider hover:text-cyan-400 transition-colors"
+               >
+                 Execute Scan
+                 <div className="bg-slate-700 p-1 rounded group-hover/btn:bg-cyan-900/50 transition-colors">
+                   <Radio className="w-3 h-3" />
+                 </div>
+               </button>
             </div>
           </form>
         </div>
 
-        {/* CAPABILITIES / SENSOR GRID */}
-        <div className="mt-16">
-          <div className="flex items-center justify-between mb-6 px-2">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Activity className="w-4 h-4" /> Active Sensor Array
-            </h3>
-            <span className="text-xs font-mono text-slate-600">ALL SYSTEMS NOMINAL</span>
+        {/* 4. THE GLASS CARDS (Sensors) */}
+        <div className="mt-20 w-full">
+          <div className="flex items-end justify-between mb-6 px-4">
+             <div>
+               <h3 className="text-sm font-semibold text-white">Active Modules</h3>
+               <p className="text-xs text-slate-500 mt-1">Real-time threat feeds configured</p>
+             </div>
+             <div className="flex gap-1">
+                {[1,2,3].map(i => (
+                  <div key={i} className={`w-1 h-1 rounded-full ${i===1 ? 'bg-cyan-500' : 'bg-slate-700'}`} />
+                ))}
+             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 px-2">
             {sensors.map((sensor) => {
               const Icon = sensor.icon;
               return (
-                <div key={sensor.id} className="group relative bg-slate-900/40 border border-white/5 hover:border-cyan-500/30 p-4 rounded-lg transition-all hover:bg-slate-800/60 cursor-default">
-                  <div className="flex flex-col items-center text-center gap-3">
-                    <div className="p-2 bg-slate-800 rounded-lg group-hover:text-cyan-400 group-hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all text-slate-400">
-                      <Icon className="w-5 h-5" />
+                <div key={sensor.id} className="group relative bg-white/[0.02] backdrop-blur-sm border border-white/5 rounded-xl p-4 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 hover:-translate-y-1">
+                  
+                  {/* Top Row: Icon & Dot */}
+                  <div className="flex justify-between items-start mb-4">
+                    <div className={`p-2 rounded-lg bg-[#0B1120] border border-white/5 group-hover:border-${sensor.color.split('-')[1]}-500/30 transition-colors`}>
+                      <Icon className={`w-4 h-4 ${sensor.color} opacity-80 group-hover:opacity-100`} />
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-300 group-hover:text-white">{sensor.name}</div>
-                      <div className="text-[10px] font-mono text-emerald-500 mt-1 flex items-center justify-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        {sensor.status}
-                      </div>
+                    <div className={`w-1.5 h-1.5 rounded-full ${sensor.status === 'OPERATIONAL' ? 'bg-emerald-500' : 'bg-slate-600'} shadow-lg`} />
+                  </div>
+
+                  {/* Info */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-slate-300 tracking-wide">{sensor.name}</div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] text-slate-600 font-mono">{sensor.status}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{sensor.load}</span>
                     </div>
                   </div>
-                  
-                  {/* Tech decoration corners */}
-                  <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-white/10 group-hover:border-cyan-500/50 rounded-tl transition-colors"></div>
-                  <div className="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-white/10 group-hover:border-cyan-500/50 rounded-br transition-colors"></div>
+
+                  {/* Decorative Gradient Line on Hover */}
+                  <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 </div>
               );
             })}
           </div>
-        </div>
-
-        {/* BOTTOM STATS DECORATION */}
-        <div className="mt-16 border-t border-white/5 pt-6 grid grid-cols-3 gap-4 text-center">
-            <div className="flex flex-col gap-1">
-               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Global Queries</span>
-               <span className="text-xl font-mono text-slate-400">8,492,102</span>
-            </div>
-            <div className="flex flex-col gap-1 border-x border-white/5">
-               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Threats Blocked</span>
-               <span className="text-xl font-mono text-red-400/80">142,093</span>
-            </div>
-            <div className="flex flex-col gap-1">
-               <span className="text-[10px] uppercase text-slate-600 tracking-wider">Node Status</span>
-               <span className="text-xl font-mono text-emerald-400/80 flex items-center justify-center gap-2">
-                 <Wifi className="w-4 h-4" /> 100%
-               </span>
-            </div>
         </div>
 
       </div>
