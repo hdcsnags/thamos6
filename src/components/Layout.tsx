@@ -340,7 +340,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
       </button>
 
       {open && (
-        <div className="absolute left-full ml-2 top-0 w-96 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden z-50">
+        <div className="fixed left-20 top-20 w-96 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden z-[100]">
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-white">Alerts</h3>
@@ -643,7 +643,7 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
       </aside>
 
       {/* Main content area */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
       </main>
 
