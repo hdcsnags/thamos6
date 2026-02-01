@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Newspaper, RefreshCw, Search, Bookmark, ExternalLink, Calendar, Settings, Eye, Zap, ChevronLeft, ChevronRight, X, Copy, Check } from 'lucide-react';
+import { Newspaper, RefreshCw, Search, Bookmark, ExternalLink, Calendar, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
 
@@ -54,9 +54,6 @@ export default function NewsFeed() {
   const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
   const { checkForNewMatches } = useAlerts();
   const hasAutoRefreshed = useRef(false);
-  const [showIOCExtractor, setShowIOCExtractor] = useState(false);
-  const [extractedIOCs, setExtractedIOCs] = useState<{ ips: string[], domains: string[], urls: string[], hashes: string[] } | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
 
   const categories = [
     { id: 'all', name: 'All', color: 'cyan' },
@@ -64,7 +61,14 @@ export default function NewsFeed() {
     { id: 'threats', name: 'Threats', color: 'rose' },
     { id: 'alerts', name: 'Alerts', color: 'orange' },
     { id: 'news', name: 'News', color: 'blue' },
+    { id: 'ransomware', name: '🔴 Ransomware', color: 'red' },
   ];
+
+  // Helper to strip CDATA tags from RSS content
+  const stripCDATA = (text: string) => {
+    if (!text) return '';
+    return text.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '');
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -234,32 +238,8 @@ export default function NewsFeed() {
     ));
   };
 
-  const extractIOCs = (text: string) => {
-    const ipRegex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
-    const domainRegex = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/gi;
-    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-    const hashRegex = /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b/gi;
-
-    return {
-      ips: Array.from(new Set((text.match(ipRegex) || []).filter(ip => !ip.startsWith('127.') && !ip.startsWith('0.')))),
-      domains: Array.from(new Set((text.match(domainRegex) || []).filter(d => !d.match(/\.(jpg|png|gif|pdf)$/i)))),
-      urls: Array.from(new Set(text.match(urlRegex) || [])),
-      hashes: Array.from(new Set(text.match(hashRegex) || [])),
-    };
-  };
-
-  const handleExtractIOCs = () => {
-    if (!selectedItem) return;
-    const text = `${selectedItem.title} ${selectedItem.description}`.toLowerCase();
-    const iocs = extractIOCs(text);
-    setExtractedIOCs(iocs);
-    setShowIOCExtractor(true);
-  };
-
-  const copyToClipboard = async (text: string, type: string) => {
+  const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text);
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
   };
 
   const getCategoryColor = (category: string) => {
@@ -493,7 +473,7 @@ export default function NewsFeed() {
                       )}
                     </div>
                     <h3 className={`text-sm font-bold mb-2 leading-tight ${item.is_read ? 'text-slate-400' : 'text-white'}`}>
-                      {item.title}
+                      {stripCDATA(item.title)}
                     </h3>
                     <div className="flex items-center gap-3 text-xs text-slate-500">
                       <span>📅 {getRelativeTime(item.pub_date)}</span>
@@ -545,22 +525,25 @@ export default function NewsFeed() {
                               ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                               : 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 border-slate-700/50'
                           }`}
+                          title={selectedItem.is_saved ? 'Remove from saved' : 'Save article'}
                         >
                           <Bookmark className={`w-4 h-4 ${selectedItem.is_saved ? 'fill-current' : ''}`} />
                         </button>
                       )}
                       <button
-                        onClick={() => window.open(selectedItem.link, '_blank')}
-                        className="px-3 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-xs font-bold uppercase transition-all border border-slate-700/50 text-slate-300"
+                        onClick={() => copyToClipboard(selectedItem.link)}
+                        className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-xs font-bold uppercase transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
+                        title="Copy article link"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <Copy className="w-4 h-4" />
+                        COPY LINK
                       </button>
                       <button
-                        onClick={handleExtractIOCs}
-                        className="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 rounded-lg text-xs font-bold uppercase transition-all text-white"
+                        onClick={() => window.open(selectedItem.link, '_blank')}
+                        className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 rounded-lg text-sm font-bold uppercase tracking-wider transition-all text-white flex items-center gap-2"
                       >
-                        <Zap className="w-4 h-4 inline mr-1" />
-                        EXTRACT IOCs
+                        <ExternalLink className="w-5 h-5" />
+                        READ FULL ARTICLE
                       </button>
                     </div>
                   </div>
@@ -588,16 +571,30 @@ export default function NewsFeed() {
 
                   <h1 className="text-3xl font-bold text-white leading-tight"
                       style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6)' }}>
-                    {selectedItem.title}
+                    {stripCDATA(selectedItem.title)}
                   </h1>
                 </div>
 
                 {/* Article Content */}
                 <div className="p-6 overflow-y-auto flex-1">
                   <div className="prose prose-invert max-w-none">
-                    <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
-                      {selectedItem.description?.replace(/<[^>]*>/g, '') || 'No description available.'}
-                    </p>
+                    {selectedItem.description ? (
+                      <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-lg">
+                        {stripCDATA(selectedItem.description)}
+                      </p>
+                    ) : (
+                      <div className="text-center py-12">
+                        <Newspaper className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+                        <p className="text-slate-400 text-lg mb-4">Full article content not available in feed</p>
+                        <button
+                          onClick={() => window.open(selectedItem.link, '_blank')}
+                          className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 rounded-lg text-sm font-bold uppercase tracking-wider transition-all text-white inline-flex items-center gap-2"
+                        >
+                          <ExternalLink className="w-5 h-5" />
+                          READ FULL ARTICLE
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -630,121 +627,6 @@ export default function NewsFeed() {
           </div>
         </div>
       </div>
-
-      {/* IOC Extractor Modal */}
-      {showIOCExtractor && extractedIOCs && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-white">💎 Extracted IOCs</h2>
-              <button
-                onClick={() => setShowIOCExtractor(false)}
-                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-6">
-              {/* IPs */}
-              {extractedIOCs.ips.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-bold text-cyan-400">IP Addresses ({extractedIOCs.ips.length})</h3>
-                    <button
-                      onClick={() => copyToClipboard(extractedIOCs.ips.join('\n'), 'ips')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
-                    >
-                      {copied === 'ips' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {extractedIOCs.ips.map((ip, idx) => (
-                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-cyan-400">
-                        {ip}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Domains */}
-              {extractedIOCs.domains.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-bold text-blue-400">Domains ({extractedIOCs.domains.length})</h3>
-                    <button
-                      onClick={() => copyToClipboard(extractedIOCs.domains.join('\n'), 'domains')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
-                    >
-                      {copied === 'domains' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {extractedIOCs.domains.map((domain, idx) => (
-                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-blue-400">
-                        {domain}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* URLs */}
-              {extractedIOCs.urls.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-bold text-amber-400">URLs ({extractedIOCs.urls.length})</h3>
-                    <button
-                      onClick={() => copyToClipboard(extractedIOCs.urls.join('\n'), 'urls')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
-                    >
-                      {copied === 'urls' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {extractedIOCs.urls.map((url, idx) => (
-                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-amber-400 break-all">
-                        {url}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Hashes */}
-              {extractedIOCs.hashes.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-bold text-rose-400">File Hashes ({extractedIOCs.hashes.length})</h3>
-                    <button
-                      onClick={() => copyToClipboard(extractedIOCs.hashes.join('\n'), 'hashes')}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
-                    >
-                      {copied === 'hashes' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {extractedIOCs.hashes.map((hash, idx) => (
-                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-rose-400 break-all">
-                        {hash}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Empty State */}
-              {extractedIOCs.ips.length === 0 && extractedIOCs.domains.length === 0 && 
-               extractedIOCs.urls.length === 0 && extractedIOCs.hashes.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-slate-400">No IOCs found in this article.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
