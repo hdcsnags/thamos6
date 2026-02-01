@@ -1,4 +1,12 @@
-import { CheckCircle, XCircle, AlertCircle, ExternalLink, ChevronDown, ChevronUp, ShieldOff } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  ShieldOff,
+} from 'lucide-react';
 import { useState } from 'react';
 import type { ThreatResult } from '../types';
 
@@ -55,6 +63,11 @@ const sourceInfo: Record<string, { name: string; url: string; description: strin
   },
   rdap: {
     name: 'RDAP/WHOIS',
+    url: 'https://about.rdap.org',
+    description: 'Registration data',
+  },
+  whois: {
+    name: 'WHOIS/RDAP',
     url: 'https://about.rdap.org',
     description: 'Registration data',
   },
@@ -119,7 +132,9 @@ function extractKeyData(source: string, data: Record<string, unknown>): Record<s
     }
     case 'proxycheck': {
       const d = data as any;
-      const ipData = d ? Object.values(d).find((v: any) => typeof v === 'object' && v !== null && 'proxy' in v) as any : null;
+      const ipData = d
+        ? (Object.values(d).find((v: any) => typeof v === 'object' && v !== null && 'proxy' in v) as any)
+        : null;
       if (ipData) {
         result['Proxy'] = ipData.proxy === 'yes';
         if (ipData.type) result['Type'] = ipData.type;
@@ -264,7 +279,9 @@ function extractKeyData(source: string, data: Record<string, unknown>): Record<s
       if (d && d.provider) {
         result['Provider'] = d.provider;
         result['Confidence'] = d.confidence || 'unknown';
-        if (d.matched_by) result['Matched By'] = d.matched_by === 'asn' ? 'ASN' : d.matched_by === 'org_pattern' ? 'Organization' : 'Keyword';
+        if (d.matched_by)
+          result['Matched By'] =
+            d.matched_by === 'asn' ? 'ASN' : d.matched_by === 'org_pattern' ? 'Organization' : 'Keyword';
       } else {
         result['VPN Detected'] = false;
       }
@@ -307,13 +324,16 @@ function extractKeyData(source: string, data: Record<string, unknown>): Record<s
 }
 
 export default function SourceCard({ source, result }: SourceCardProps) {
+  // Hardening: never allow a null/undefined result to white-screen the app
+  const safeResult: any = result ?? { data: {}, isMalicious: false, threatScore: undefined, error: undefined };
+
   const [expanded, setExpanded] = useState(false);
   const info = sourceInfo[source] || { name: source, url: '#', description: '' };
 
-  const hasError = !!result.error;
-  const isApiKeyMissing = result.error === 'API key not configured';
-  const hasThreat = result.isMalicious || (result.threatScore !== undefined && result.threatScore > 30);
-  const keyData = hasError ? {} : extractKeyData(source, result.data);
+  const hasError = !!safeResult.error;
+  const isApiKeyMissing = safeResult.error === 'API key not configured';
+  const hasThreat = safeResult.isMalicious || (safeResult.threatScore !== undefined && safeResult.threatScore > 30);
+  const keyData = hasError ? {} : extractKeyData(source, safeResult.data);
 
   const getStatusIcon = () => {
     if (isApiKeyMissing) return <ShieldOff className="w-5 h-5 text-amber-500" />;
@@ -344,15 +364,20 @@ export default function SourceCard({ source, result }: SourceCardProps) {
         </div>
       );
     }
-    if (result.threatScore !== undefined) {
+    if (safeResult.threatScore !== undefined) {
       return (
-        <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-          result.threatScore >= 70 ? 'bg-red-500/20 text-red-400' :
-          result.threatScore >= 40 ? 'bg-orange-500/20 text-orange-400' :
-          result.threatScore >= 20 ? 'bg-yellow-500/20 text-yellow-400' :
-          'bg-emerald-500/20 text-emerald-400'
-        }`}>
-          Score: {result.threatScore}
+        <div
+          className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+            safeResult.threatScore >= 70
+              ? 'bg-red-500/20 text-red-400'
+              : safeResult.threatScore >= 40
+              ? 'bg-orange-500/20 text-orange-400'
+              : safeResult.threatScore >= 20
+              ? 'bg-yellow-500/20 text-yellow-400'
+              : 'bg-emerald-500/20 text-emerald-400'
+          }`}
+        >
+          Score: {safeResult.threatScore}
         </div>
       );
     }
@@ -364,7 +389,9 @@ export default function SourceCard({ source, result }: SourceCardProps) {
   };
 
   return (
-    <div className={`bg-slate-800/50 rounded-xl border ${getStatusBorder()} overflow-hidden transition-all hover:bg-slate-800/70`}>
+    <div
+      className={`bg-slate-800/50 rounded-xl border ${getStatusBorder()} overflow-hidden transition-all hover:bg-slate-800/70`}
+    >
       <div className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -390,24 +417,31 @@ export default function SourceCard({ source, result }: SourceCardProps) {
 
         {hasError ? (
           <div className="mt-3 p-2 bg-slate-900/50 rounded-lg">
-            <p className="text-sm text-slate-500">{result.error}</p>
+            <p className="text-sm text-slate-500">{safeResult.error}</p>
           </div>
         ) : (
           Object.keys(keyData).length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {Object.entries(keyData).slice(0, expanded ? undefined : 4).map(([key, value]) => (
-                <div key={key} className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg">
-                  <span className="text-xs text-slate-500">{key}</span>
-                  <span className={`text-xs font-medium ${
-                    value === true ? 'text-red-400' :
-                    value === false ? 'text-emerald-400' :
-                    typeof value === 'number' && value > 50 ? 'text-red-400' :
-                    'text-white'
-                  }`}>
-                    {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
-                  </span>
-                </div>
-              ))}
+              {Object.entries(keyData)
+                .slice(0, expanded ? undefined : 4)
+                .map(([key, value]) => (
+                  <div key={key} className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg">
+                    <span className="text-xs text-slate-500">{key}</span>
+                    <span
+                      className={`text-xs font-medium ${
+                        value === true
+                          ? 'text-red-400'
+                          : value === false
+                          ? 'text-emerald-400'
+                          : typeof value === 'number' && value > 50
+                          ? 'text-red-400'
+                          : 'text-white'
+                      }`}
+                    >
+                      {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
+                    </span>
+                  </div>
+                ))}
             </div>
           )
         )}
