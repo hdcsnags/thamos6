@@ -166,11 +166,17 @@ export default function DomainResult({ domain }: DomainResultProps) {
       {whoisData?.nameservers && whoisData.nameservers.length > 0 && (
         <EvidenceCard
           title="Nameservers"
-          items={whoisData.nameservers.map((ns: any) => ({
-            label: 'NS',
-            value: ns.ldhName || ns,
-          }))}
-        />
+          icon={Globe}
+        >
+          <div className="space-y-2">
+            {whoisData.nameservers.map((ns: any, idx: number) => (
+              <div key={idx} className="flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">NS:</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">{ns.ldhName || ns}</span>
+              </div>
+            ))}
+          </div>
+        </EvidenceCard>
       )}
 
       {data.sources && Object.keys(data.sources).length > 0 && (
