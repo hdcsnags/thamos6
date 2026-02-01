@@ -174,15 +174,15 @@ export default function DomainResult({ domain }: DomainResultProps) {
         <div>
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Source Results</h2>
           <div className="grid gap-4 md:grid-cols-2">
-            {Object.entries(data.sources).map(([sourceKey, source]) => (
+            {Object.entries(data.sources).map(([sourceKey, source]: [string, any]) => (
               <SourceCard
                 key={sourceKey}
                 name={getSourceDisplayName(sourceKey)}
-                found={source.found}
-                malicious={source.malicious}
-                details={source.details}
-                error={source.error}
-                threatScore={source.threatScore}
+                found={source?.found ?? false}
+                malicious={source?.malicious ?? false}
+                details={source?.details}
+                error={source?.error}
+                threatScore={source?.threatScore}
               />
             ))}
           </div>
