@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Shield, Search, Link, Layers, History, Menu, X, AlertTriangle,
-  Mail, FileSearch, Hash, Globe, ShieldOff, Code, FileText,
-  LogIn, LogOut, Settings, User, ChevronDown, Newspaper, Bell,
-  ExternalLink, Check, Trash2, MoreHorizontal, Puzzle
+  Shield, Search, Link, Layers, History, AlertTriangle, Mail, FileSearch, 
+  Hash, Globe, ShieldOff, Code, FileText, LogIn, LogOut, Settings, User, 
+  Newspaper, Bell, ExternalLink, Check, Trash2, Puzzle, Zap, Clock, Grid3X3,
+  Palette
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
 import { supabase } from '../lib/supabase';
-import { detectIOCType } from '../lib/iocDetection';
 import ThemeToggle from './ThemeToggle';
 
 export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
@@ -20,13 +19,16 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-const primaryNavItems: { id: Page; label: string; icon: React.ElementType }[] = [
+// Sidebar navigation items
+const sidebarItems: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: 'scanner', label: 'Scanner', icon: Search },
-  { id: 'news', label: 'Intel Stream', icon: Newspaper },
+  { id: 'news', label: 'Intel Stream', icon: Zap },
+  { id: 'history', label: 'History', icon: Clock },
 ];
 
-const advancedToolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
-  { id: 'ip', label: 'IP Lookup', icon: Search },
+// Tools dropdown items
+const toolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
+  { id: 'ip', label: 'IP Lookup', icon: Globe },
   { id: 'url', label: 'URL Scanner', icon: Link },
   { id: 'hash', label: 'Hash Lookup', icon: Hash },
   { id: 'domain', label: 'Domain Intel', icon: Globe },
@@ -36,137 +38,10 @@ const advancedToolsItems: { id: Page; label: string; icon: React.ElementType }[]
   { id: 'bulk', label: 'Bulk Lookup', icon: Layers },
   { id: 'defang', label: 'Defang/Refang', icon: ShieldOff },
   { id: 'decoder', label: 'Decoder', icon: Code },
-];
-
-const extrasItems: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: 'cases', label: 'Case Notes', icon: FileText },
-  { id: 'history', label: 'History', icon: History },
 ];
 
-function AdvancedToolsDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const isActiveAdvancedTools = advancedToolsItems.some(item => item.id === currentPage);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
-          isActiveAdvancedTools
-            ? 'bg-cyan-500/20 text-cyan-400'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-        }`}
-      >
-        <MoreHorizontal className="w-4 h-4" />
-        <span className="font-medium">Advanced Tools</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50 max-h-96 overflow-y-auto">
-          <div className="p-2">
-            {advancedToolsItems.map(item => {
-              const Icon = item.icon;
-              const isActive = currentPage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onNavigate(item.id);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-                    isActive
-                      ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExtrasDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const isActiveExtras = extrasItems.some(item => item.id === currentPage);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
-          isActiveExtras
-            ? 'bg-cyan-500/20 text-cyan-400'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-        }`}
-      >
-        <MoreHorizontal className="w-4 h-4" />
-        <span className="font-medium">Extras</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
-          <div className="p-2">
-            {extrasItems.map(item => {
-              const Icon = item.icon;
-              const isActive = currentPage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onNavigate(item.id);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-                    isActive
-                      ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
+// Login Modal Component
 function LoginModal({ onClose }: { onClose: () => void }) {
   const { signInWithGoogle, signInWithMicrosoft, signInWithPassword, signUpWithPassword, resetPassword } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -223,7 +98,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl mb-4">
+          <div className="inline-flex p-3 bg-gradient-to-br from-cyan-500 to-emerald-400 rounded-xl mb-4 shadow-[0_0_24px_rgba(34,211,238,0.3)]">
             <Shield className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Sign in to Thamos6</h2>
@@ -235,7 +110,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
             <button
               onClick={handleGoogle}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white hover:bg-gray-100 text-gray-800 font-medium rounded-xl transition-all disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white hover:bg-gray-100 text-gray-800 font-medium rounded-xl transition-all disabled:opacity-50 border-2 border-slate-200"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -249,9 +124,10 @@ function LoginModal({ onClose }: { onClose: () => void }) {
             <button
               onClick={handleMicrosoft}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white font-medium rounded-xl transition-all disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white hover:bg-gray-100 text-gray-800 font-medium rounded-xl transition-all disabled:opacity-50 border-2 border-slate-200"
             >
               <svg className="w-5 h-5" viewBox="0 0 23 23">
+                <path fill="#f3f3f3" d="M0 0h23v23H0z"/>
                 <path fill="#f35325" d="M1 1h10v10H1z"/>
                 <path fill="#81bc06" d="M12 1h10v10H12z"/>
                 <path fill="#05a6f0" d="M1 12h10v10H1z"/>
@@ -260,18 +136,10 @@ function LoginModal({ onClose }: { onClose: () => void }) {
               Continue with Microsoft
             </button>
 
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-300 dark:border-slate-700"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400">Or continue with email</span>
-              </div>
-            </div>
-
             <button
               onClick={() => setShowEmailForm(true)}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white font-medium rounded-xl transition-all"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all disabled:opacity-50"
             >
               <Mail className="w-5 h-5" />
               Continue with Email
@@ -279,17 +147,31 @@ function LoginModal({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <form onSubmit={handleEmailAuth} className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+            {success && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm flex items-start gap-2">
+                <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{success}</span>
+              </div>
+            )}
+            
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                placeholder="your@email.com"
                 required
+                className="w-full px-4 py-2 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                placeholder="you@example.com"
               />
             </div>
+            
             {!showResetPassword && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
@@ -297,100 +179,128 @@ function LoginModal({ onClose }: { onClose: () => void }) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  placeholder="••••••••"
                   required
-                  minLength={6}
+                  className="w-full px-4 py-2 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                  placeholder="••••••••"
                 />
               </div>
             )}
-            {error && (
-              <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="text-green-400 text-sm bg-green-500/10 border border-green-500/20 rounded-lg p-3">
-                {success}
-              </div>
-            )}
+            
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-medium rounded-xl transition-all disabled:opacity-50"
+              className="w-full py-3 bg-gradient-to-r from-cyan-500 to-emerald-400 hover:from-cyan-400 hover:to-emerald-300 text-white font-semibold rounded-xl transition-all disabled:opacity-50 shadow-lg"
             >
-              {loading ? 'Loading...' : showResetPassword ? 'Send Reset Link' : isSignUp ? 'Sign Up' : 'Sign In'}
+              {loading ? 'Loading...' : showResetPassword ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Sign In'}
             </button>
-            <div className="flex items-center justify-between text-sm">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEmailForm(false);
-                  setShowResetPassword(false);
-                  setError('');
-                  setSuccess('');
-                }}
-                className="text-slate-400 hover:text-white transition-all"
-              >
-                Back
-              </button>
-              {!showResetPassword ? (
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowResetPassword(true);
-                      setError('');
-                      setSuccess('');
-                    }}
-                    className="text-slate-400 hover:text-cyan-400 transition-all"
-                  >
-                    Forgot password?
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSignUp(!isSignUp);
-                      setError('');
-                      setSuccess('');
-                    }}
-                    className="text-cyan-400 hover:text-cyan-300 transition-all"
-                  >
-                    {isSignUp ? 'Sign in' : 'Sign up'}
-                  </button>
-                </div>
-              ) : (
+            
+            <div className="space-y-2 text-center text-sm">
+              {!showResetPassword && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowResetPassword(false);
-                    setError('');
-                    setSuccess('');
-                  }}
+                  onClick={() => setIsSignUp(!isSignUp)}
                   className="text-cyan-400 hover:text-cyan-300 transition-all"
                 >
-                  Back to sign in
+                  {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                 </button>
               )}
+              <br />
+              <button
+                type="button"
+                onClick={() => setShowResetPassword(!showResetPassword)}
+                className="text-slate-500 hover:text-slate-400 transition-all"
+              >
+                {showResetPassword ? 'Back to sign in' : 'Forgot password?'}
+              </button>
+              <br />
+              <button
+                type="button"
+                onClick={() => setShowEmailForm(false)}
+                className="text-slate-500 hover:text-slate-400 transition-all"
+              >
+                ← Back to options
+              </button>
             </div>
           </form>
-        )}
-
-        {!showEmailForm && (
-          <p className="text-center text-slate-500 text-sm mt-6">
-            Sign in to manage your API keys and track usage
-          </p>
         )}
       </div>
     </div>
   );
 }
 
-function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
-  const { user } = useAuth();
-  const { alerts, unreadCount, markAsRead, markAllAsRead, dismissAlert, dismissAllAlerts } = useAlerts();
+// Tools Dropdown Component
+function ToolsDropdown({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const isActive = toolsItems.some(item => item.id === currentPage);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+          isActive
+            ? 'bg-cyan-500/15 text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+            : 'text-slate-500 hover:bg-white/5 hover:text-cyan-400'
+        }`}
+        title="Tools"
+      >
+        <Grid3X3 className="w-5 h-5" />
+      </button>
+
+      {open && (
+        <div className="absolute left-full ml-2 top-0 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="p-2 border-b border-slate-800">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-3 py-2">Tools & Utilities</p>
+          </div>
+          <div className="p-2 max-h-96 overflow-y-auto">
+            {toolsItems.map(item => {
+              const Icon = item.icon;
+              const isItemActive = currentPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${
+                    isItemActive
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Alert Dropdown Component
+function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
+  const { user } = useAuth();
+  const { alerts, markAsRead, dismissAlert, markAllAsRead, dismissAllAlerts } = useAlerts();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = alerts.filter(a => !a.is_read).length;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -418,22 +328,23 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+        className="relative w-10 h-10 rounded-xl flex items-center justify-center transition-all text-slate-500 hover:bg-white/5 hover:text-cyan-400"
+        title="Alerts"
       >
-        <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-amber-400' : 'text-slate-400'}`} />
+        <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-amber-400' : ''}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <div className="absolute left-full ml-2 top-0 w-96 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">Alerts</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
+              <h3 className="font-semibold text-white">Alerts</h3>
+              <p className="text-xs text-slate-400">
                 {unreadCount > 0 ? `${unreadCount} unread` : 'No new alerts'}
               </p>
             </div>
@@ -441,13 +352,13 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
               <div className="flex gap-2">
                 <button
                   onClick={markAllAsRead}
-                  className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-all"
+                  className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all"
                 >
                   Mark all read
                 </button>
                 <button
                   onClick={dismissAllAlerts}
-                  className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                  className="px-2 py-1 text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
                 >
                   Clear all
                 </button>
@@ -458,24 +369,24 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
           <div className="max-h-96 overflow-y-auto">
             {alerts.length === 0 ? (
               <div className="p-8 text-center">
-                <Bell className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-600 dark:text-slate-400 text-sm">No alerts yet</p>
-                <p className="text-slate-500 dark:text-slate-500 text-xs mt-1">
-                  Add items to your watchlist to receive alerts when they appear in the news feed
+                <Bell className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 text-sm">No alerts yet</p>
+                <p className="text-slate-500 text-xs mt-1">
+                  Add items to your watchlist to receive alerts
                 </p>
                 <button
                   onClick={() => { onNavigate('news'); setOpen(false); }}
-                  className="mt-4 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white text-sm font-medium rounded-lg transition-all"
+                  className="mt-4 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-medium rounded-lg transition-all"
                 >
                   Go to News Feed
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-200 dark:divide-slate-800">
+              <div className="divide-y divide-slate-800">
                 {alerts.map(alert => (
                   <div
                     key={alert.id}
-                    className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all ${!alert.is_read ? 'bg-slate-50 dark:bg-slate-800/30' : ''}`}
+                    className={`p-4 hover:bg-slate-800/50 transition-all ${!alert.is_read ? 'bg-slate-800/30' : ''}`}
                   >
                     <div className="flex items-start gap-3">
                       <div className={`p-1.5 rounded-lg bg-${getSeverityColor(alert.severity)}-500/20`}>
@@ -490,10 +401,10 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                             <span className="w-2 h-2 rounded-full bg-cyan-400" />
                           )}
                         </div>
-                        <p className="text-sm text-slate-900 dark:text-white font-medium line-clamp-2">{alert.title}</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{alert.description}</p>
+                        <p className="text-sm text-white font-medium line-clamp-2">{alert.title}</p>
+                        <p className="text-xs text-slate-400 mt-1">{alert.description}</p>
                         {alert.watchlist_entry && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          <p className="text-xs text-amber-400 mt-1">
                             Matched: {alert.watchlist_entry.value}
                           </p>
                         )}
@@ -504,7 +415,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={() => markAsRead(alert.id)}
-                              className="inline-flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all"
+                              className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-all"
                             >
                               <ExternalLink className="w-3 h-3" />
                               Read article
@@ -513,7 +424,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                           {!alert.is_read && (
                             <button
                               onClick={() => markAsRead(alert.id)}
-                              className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-all"
                             >
                               <Check className="w-3 h-3" />
                               Mark read
@@ -521,7 +432,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
                           )}
                           <button
                             onClick={() => dismissAlert(alert.id)}
-                            className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
+                            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-400 transition-all"
                           >
                             <Trash2 className="w-3 h-3" />
                             Dismiss
@@ -536,7 +447,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
           </div>
 
           {alerts.length > 0 && (
-            <div className="p-3 border-t border-slate-700">
+            <div className="p-3 border-t border-slate-800">
               <button
                 onClick={() => { onNavigate('news'); setOpen(false); }}
                 className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-all"
@@ -551,6 +462,7 @@ function AlertDropdown({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
+// User Menu Component
 function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const { user, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -588,53 +500,60 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
 
   const avatarUrl = user.user_metadata?.avatar_url;
   const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
-  const email = user.email;
+  const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+        className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-cyan-400 hover:border-cyan-500/50 transition-all overflow-hidden"
+        title="Profile"
       >
         {avatarUrl ? (
-          <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full" />
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
         ) : (
-          <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
-            <User className="w-4 h-4 text-cyan-400" />
-          </div>
+          <span>{initials}</span>
         )}
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-50">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <p className="font-medium text-slate-900 dark:text-white truncate">{name}</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{email}</p>
+        <div className="absolute left-full ml-2 bottom-0 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="p-4 border-b border-slate-800">
+            <p className="font-semibold text-white truncate">{name}</p>
+            <p className="text-xs text-slate-400 truncate">{user.email}</p>
           </div>
+
           <div className="p-2">
-            {isAdmin && (
-              <button
-                onClick={() => { onNavigate('admin'); setOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-cyan-600 dark:hover:text-cyan-400 transition-all"
-              >
-                <Shield className="w-4 h-4" />
-                <span>Admin Panel</span>
-              </button>
-            )}
             <button
-              onClick={() => { onNavigate('settings'); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all"
+              onClick={() => {
+                onNavigate('settings');
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
             >
               <Settings className="w-4 h-4" />
-              <span>Settings & API Keys</span>
+              <span className="text-sm font-medium">Settings</span>
             </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  onNavigate('admin');
+                  setOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+              >
+                <Shield className="w-4 h-4" />
+                <span className="text-sm font-medium">Admin Panel</span>
+              </button>
+            )}
+
             <button
-              onClick={() => { signOut(); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-600 dark:hover:text-red-400 transition-all"
+              onClick={signOut}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"
             >
               <LogOut className="w-4 h-4" />
-              <span>Sign out</span>
+              <span className="text-sm font-medium">Sign Out</span>
             </button>
           </div>
         </div>
@@ -643,250 +562,93 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
-export default function Layout({ currentPage, onNavigate, onScan, children }: LayoutProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+// Main Layout Component
+export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
+  const { user, loading } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const { user, loading, authError, clearAuthError } = useAuth();
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchInput.trim()) return;
-
-    const detection = detectIOCType(searchInput.trim());
-    if (detection.type === 'unknown') return;
-
-    onNavigate('scanner');
-    onScan(detection.type, detection.normalizedValue);
-    setSearchInput('');
-  };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
-      <nav className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
-        {/* Top Search Bar - Full Width */}
-        <div className="bg-slate-900 dark:bg-slate-950 border-b border-slate-700 dark:border-slate-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <form onSubmit={handleSearch} className="py-2">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search IP, URL, domain, hash, or Chrome extension..."
-                  className="w-full pl-12 pr-4 py-2.5 bg-slate-800 dark:bg-slate-900 border border-slate-700 dark:border-slate-800 rounded-lg text-sm text-slate-200 dark:text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                />
-              </div>
-            </form>
+    <div className="h-screen flex bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Ultra-minimal left sidebar */}
+      <aside className="w-16 border-r border-white/5 bg-[#01040a] flex flex-col items-center py-6 z-50">
+        {/* Logo */}
+        <button
+          onClick={() => onNavigate('scanner')}
+          className="mb-10 group"
+        >
+          <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-emerald-400 rounded-xl flex items-center justify-center shadow-[0_0_24px_rgba(34,211,238,0.3)] group-hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] transition-all">
+            <span className="text-black font-black text-xl italic">T6</span>
           </div>
+        </button>
+
+        {/* Main navigation icons */}
+        <div className="flex-1 flex flex-col gap-4">
+          {sidebarItems.map(item => {
+            const Icon = item.icon;
+            const isActive = currentPage === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                  isActive
+                    ? 'bg-cyan-500/15 text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+                    : 'text-slate-500 hover:bg-white/5 hover:text-cyan-400'
+                }`}
+                title={item.label}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            );
+          })}
+
+          {/* Tools dropdown */}
+          <ToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
         </div>
 
-        {/* Main Bar - Branding, Navigation, and User */}
-        <div className="border-b border-slate-200 dark:border-slate-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-14">
-              <div className="flex items-center gap-6">
-                <button
-                  onClick={() => onNavigate('scanner')}
-                  className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-                >
-                  <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
-                    <Shield className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <h1 className="text-lg font-bold text-slate-900 dark:text-white">Thamos6</h1>
-                    <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-none">What Would Will Do?</p>
-                  </div>
-                </button>
+        {/* Bottom icons */}
+        <div className="flex flex-col items-center gap-4">
+          {/* System status */}
+          <div 
+            className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(52,211,153,0.6)]" 
+            title="System Online"
+          />
 
-                {/* Navigation Items - Desktop */}
-                <div className="hidden lg:flex items-center gap-1">
-                  {primaryNavItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onNavigate(item.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm whitespace-nowrap ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
-                  <AdvancedToolsDropdown currentPage={currentPage} onNavigate={onNavigate} />
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-2" />
-                  <ExtrasDropdown currentPage={currentPage} onNavigate={onNavigate} />
-                </div>
-              </div>
+          {/* Theme toggle (placeholder for now) */}
+          <button
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all text-slate-500 hover:bg-white/5 hover:text-cyan-400"
+            title="Themes (Coming Soon)"
+          >
+            <Palette className="w-5 h-5" />
+          </button>
 
-              <div className="flex items-center gap-2">
-                <ThemeToggle />
-                {!loading && (
-                  user ? (
-                    <>
-                      <AlertDropdown onNavigate={onNavigate} />
-                      <UserMenu onNavigate={onNavigate} />
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setShowLogin(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white font-medium rounded-lg transition-all"
-                    >
-                      <LogIn className="w-4 h-4" />
-                      <span>Sign In</span>
-                    </button>
-                  )
-                )}
-                <button
-                  className="lg:hidden p-2 text-slate-400 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                >
-                  {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                </button>
-              </div>
-            </div>
-          </div>
+          {/* Auth-dependent icons */}
+          {loading ? (
+            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 animate-pulse" />
+          ) : user ? (
+            <>
+              <AlertDropdown onNavigate={onNavigate} />
+              <UserMenu onNavigate={onNavigate} />
+            </>
+          ) : (
+            <button
+              onClick={() => setShowLogin(true)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all text-slate-500 hover:bg-cyan-500/15 hover:text-cyan-400"
+              title="Sign In"
+            >
+              <LogIn className="w-5 h-5" />
+            </button>
+          )}
         </div>
+      </aside>
 
-        {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-800 bg-slate-900 max-h-[calc(100vh-4rem)] overflow-auto">
-            <div className="px-4 py-3 space-y-4">
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-                  Primary
-                </p>
-                <div className="space-y-1">
-                  {primaryNavItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          onNavigate(item.id);
-                          setMobileMenuOpen(false);
-                        }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-5 h-5" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-                  Advanced Tools
-                </p>
-                <div className="space-y-1">
-                  {advancedToolsItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          onNavigate(item.id);
-                          setMobileMenuOpen(false);
-                        }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-5 h-5" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-                  Extras
-                </p>
-                <div className="space-y-1">
-                  {extrasItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = currentPage === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          onNavigate(item.id);
-                          setMobileMenuOpen(false);
-                        }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-400'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        <Icon className="w-5 h-5" />
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {!user && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
-            <div className="flex items-center gap-3 text-amber-400">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              <p className="text-xs sm:text-sm">
-                <span className="font-semibold">Sign in</span> to add your own API keys and unlock full threat intel capabilities.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main content area */}
+      <main className="flex-1 flex flex-col overflow-hidden">
         {children}
       </main>
 
+      {/* Login modal */}
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
-
-      {authError && (
-        <div className="fixed bottom-4 right-4 max-w-md bg-red-500/10 border border-red-500/30 rounded-xl p-4 shadow-2xl z-50">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium text-red-400">Sign in failed</p>
-              <p className="text-sm text-slate-300 mt-1">{authError}</p>
-              <p className="text-xs text-slate-400 mt-2">
-                Please check that your OAuth provider is configured correctly in the Supabase dashboard.
-              </p>
-            </div>
-            <button
-              onClick={clearAuthError}
-              className="text-slate-400 hover:text-white transition-all"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
