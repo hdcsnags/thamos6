@@ -7,7 +7,7 @@ import RawJsonCollapse from '../../components/scanner/RawJsonCollapse';
 import ActionsBar from '../../components/scanner/ActionsBar';
 import ThreatScore from '../../components/ThreatScore';
 import SourceCard from '../../components/SourceCard';
-import { lookupDomain, getSourceDisplayName } from '../../lib/threatIntel';
+import { lookupDomain } from '../../lib/threatIntel';
 import type { DomainLookupResult } from '../../types';
 
 interface DomainResultProps {
@@ -35,23 +35,24 @@ export default function DomainResult({ domain }: DomainResultProps) {
         const result = await lookupDomain(domain);
         setData(result);
 
-        setSources(prev => prev.map(s => {
-          if (!result.sources) {
-            return { ...s, state: 'error' as const };
-          }
-          const sourceKey = s.name.toLowerCase().replace(/\s+/g, '').replace('/', '');
-          const found = result.sources[sourceKey] || result.sources['whois'];
+        setSources(prev =>
+          prev.map(s => {
+            if (!result.sources) {
+              return { ...s, state: 'error' as const };
+            }
+            const sourceKey = s.name.toLowerCase().replace(/\s+/g, '').replace('/', '');
+            const found = result.sources[sourceKey] || result.sources['whois'];
 
-          // Check if source exists and succeeded
-          if (found && found.found && !found.error) {
-            return { ...s, state: 'success' as const };
-          } else if (found && found.error) {
-            return { ...s, state: 'error' as const };
-          } else if (found && !found.found) {
+            if (found && found.found && !found.error) {
+              return { ...s, state: 'success' as const };
+            } else if (found && found.error) {
+              return { ...s, state: 'error' as const };
+            } else if (found && !found.found) {
+              return { ...s, state: 'disabled' as const };
+            }
             return { ...s, state: 'disabled' as const };
-          }
-          return { ...s, state: 'disabled' as const };
-        }));
+          })
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to lookup domain');
         setSources(prev => prev.map(s => ({ ...s, state: 'error' as const })));
@@ -64,18 +65,26 @@ export default function DomainResult({ domain }: DomainResultProps) {
   }, [domain]);
 
   const whoisData = data?.sources?.whois?.details;
-  const domainAge = whoisData ? 
-    Math.floor((Date.now() - new Date(whoisData.events?.find((e: any) => e.eventAction === 'registration')?.eventDate || 0).getTime()) / (1000 * 60 * 60 * 24)) + ' days'
+
+  const domainAge = whoisData
+    ? Math.floor(
+        (Date.now() -
+          new Date(
+            whoisData.events?.find((e: any) => e.eventAction === 'registration')?.eventDate || 0
+          ).getTime()) /
+          (1000 * 60 * 60 * 24)
+      ) + ' days'
     : 'Unknown';
-  
+
   // Extract registrar from WHOIS entities
   const registrarEntity = whoisData?.entities?.find((e: any) => e.roles?.includes('registrar'));
-  const registrar = registrarEntity?.vcardArray?.[1]?.find((item: any) => item[0] === 'fn')?.[3] || 'Unknown';
-  
+  const registrar =
+    registrarEntity?.vcardArray?.[1]?.find((item: any) => item[0] === 'fn')?.[3] || 'Unknown';
+
   // Extract dates from events
   const registrationEvent = whoisData?.events?.find((e: any) => e.eventAction === 'registration');
   const expirationEvent = whoisData?.events?.find((e: any) => e.eventAction === 'expiration');
-  
+
   const created = registrationEvent ? new Date(registrationEvent.eventDate).toLocaleDateString() : 'Unknown';
   const expires = expirationEvent ? new Date(expirationEvent.eventDate).toLocaleDateString() : 'Unknown';
 
@@ -83,28 +92,28 @@ export default function DomainResult({ domain }: DomainResultProps) {
     {
       label: 'Domain',
       value: domain,
-      icon: <Globe className="w-4 h-4 text-cyan-400" />
+      icon: <Globe className="w-4 h-4 text-cyan-400" />,
     },
     {
       label: 'Domain Age',
       value: domainAge,
-      icon: <Calendar className="w-4 h-4 text-cyan-400" />
+      icon: <Calendar className="w-4 h-4 text-cyan-400" />,
     },
     {
       label: 'Registrar',
       value: registrar,
-      icon: <User className="w-4 h-4 text-cyan-400" />
+      icon: <User className="w-4 h-4 text-cyan-400" />,
     },
     {
       label: 'Created',
       value: created,
-      icon: <Calendar className="w-4 h-4 text-cyan-400" />
+      icon: <Calendar className="w-4 h-4 text-cyan-400" />,
     },
     {
       label: 'Expires',
       value: expires,
-      icon: <Calendar className="w-4 h-4 text-cyan-400" />
-    }
+      icon: <Calendar className="w-4 h-4 text-cyan-400" />,
+    },
   ];
 
   const summary = data?.isMalicious
@@ -139,16 +148,10 @@ export default function DomainResult({ domain }: DomainResultProps) {
 
   return (
     <div className="space-y-6">
-      <ActionsBar
-        summary={summary}
-        jsonData={data}
-        iocValue={domain}
-      />
+      <ActionsBar summary={summary} jsonData={data} iocValue={domain} />
 
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-          {domain}
-        </h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">{domain}</h1>
       </div>
 
       <SourceStatus sources={sources} />
@@ -165,7 +168,7 @@ export default function DomainResult({ domain }: DomainResultProps) {
           title="Nameservers"
           items={whoisData.nameservers.map((ns: any) => ({
             label: 'NS',
-            value: ns.ldhName || ns
+            value: ns.ldhName || ns,
           }))}
         />
       )}
@@ -174,17 +177,20 @@ export default function DomainResult({ domain }: DomainResultProps) {
         <div>
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Source Results</h2>
           <div className="grid gap-4 md:grid-cols-2">
-            {Object.entries(data.sources).map(([sourceKey, source]: [string, any]) => (
-              <SourceCard
-                key={sourceKey}
-                name={getSourceDisplayName(sourceKey)}
-                found={source?.found ?? false}
-                malicious={source?.malicious ?? false}
-                details={source?.details}
-                error={source?.error}
-                threatScore={source?.threatScore}
-              />
-            ))}
+            {Object.entries(data.sources).map(([sourceKey, source]: [string, any]) => {
+              // Domain endpoint returns: { found, malicious, details, error, threatScore }
+              // SourceCard expects: { source, result: { data, error, isMalicious, threatScore } }
+              const sourceId = sourceKey === 'whois' ? 'rdap' : sourceKey;
+
+              const result = {
+                error: source?.error,
+                isMalicious: Boolean(source?.malicious),
+                threatScore: source?.threatScore,
+                data: source?.details ?? {},
+              } as any;
+
+              return <SourceCard key={sourceKey} source={sourceId} result={result} />;
+            })}
           </div>
         </div>
       )}
