@@ -255,8 +255,6 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
     {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
     COPY JSON
   </button>
-  
-  {/* I mean, or I could fix the route in Layout, every damn time I do this I get this same error LEL */}
   <button
     onClick={() => navigate('/scanner')}
     className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-cyan-500/30 text-cyan-400 flex items-center gap-2"
