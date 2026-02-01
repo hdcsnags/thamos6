@@ -29,7 +29,7 @@ function Pill({ label, tone }: { label: string; tone: Severity }) {
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
-  const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('recent');
+  const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('stream');
   
   // Real data state
   const [recentLookups, setRecentLookups] = useState<any[]>([]);
@@ -44,7 +44,7 @@ export default function Scanner({ onScan }: ScannerProps) {
       
       try {
         // Fetch recent lookups (combine IP and URL)
-        const [ipRes, urlRes, watchlistRes, feedRes] = await Promise.all([
+        const [ipRes, urlRes, alertsRes, feedRes] = await Promise.all([
           supabase
             .from('ip_lookups')
             .select('*')
@@ -56,8 +56,8 @@ export default function Scanner({ onScan }: ScannerProps) {
             .order('created_at', { ascending: false })
             .limit(3),
           supabase
-            .from('watchlist_entries')
-            .select('*')
+            .from('user_alerts')
+            .select('*, watchlist_entry:watchlist_entries(ioc_value, ioc_type), feed_item:feed_items(title)')
             .order('created_at', { ascending: false })
             .limit(3),
           supabase
@@ -74,7 +74,7 @@ export default function Scanner({ onScan }: ScannerProps) {
         ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 3);
 
         setRecentLookups(combined);
-        setWatchlistEntries(watchlistRes.data || []);
+        setWatchlistEntries(alertsRes.data || []);
         setFeedItems(feedRes.data || []);
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -428,24 +428,24 @@ export default function Scanner({ onScan }: ScannerProps) {
                     </div>
                   ))
                 ) : watchlistEntries.length > 0 ? (
-                  watchlistEntries.map((entry) => {
+                  watchlistEntries.map((alert: any) => {
                     const severityMap: Record<string, Severity> = {
                       critical: 'high',
                       high: 'high',
                       medium: 'medium',
                       low: 'info',
                     };
-                    const severity = severityMap[entry.severity || 'medium'] || 'medium';
-                    const dotColor = entry.severity === 'critical' || entry.severity === 'high' 
+                    const severity = severityMap[alert.severity || 'medium'] || 'medium';
+                    const dotColor = alert.severity === 'critical' || alert.severity === 'high' 
                       ? 'bg-rose-500 animate-pulse' 
                       : 'bg-amber-500';
-                    const borderColor = entry.severity === 'critical' || entry.severity === 'high'
+                    const borderColor = alert.severity === 'critical' || alert.severity === 'high'
                       ? 'rgba(251, 113, 133, 0.2)'
                       : 'rgba(251, 191, 36, 0.2)';
                     
                     return (
                       <div 
-                        key={entry.id}
+                        key={alert.id}
                         className="rounded-xl p-5 transition-all hover:bg-white/5"
                         style={{
                           background: 'rgba(0, 0, 0, 0.3)',
@@ -456,19 +456,24 @@ export default function Scanner({ onScan }: ScannerProps) {
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
                             <h3 className="text-xs font-bold text-white uppercase tracking-wider break-all truncate">
-                              {entry.ioc_value}
+                              {alert.title}
                             </h3>
                           </div>
                           <Pill 
-                            label={entry.severity || 'Medium'} 
+                            label={alert.severity || 'Medium'} 
                             tone={severity} 
                           />
                         </div>
-                        <div className="text-xs text-slate-400 mb-3">
-                          {entry.reason || 'Monitored IOC'}
+                        <div className="text-xs text-slate-400 mb-3 line-clamp-2">
+                          {alert.description || 'Watchlist match detected'}
                         </div>
+                        {alert.watchlist_entry && (
+                          <div className="text-[10px] text-amber-400 mono mb-2">
+                            Matched: {alert.watchlist_entry.ioc_value}
+                          </div>
+                        )}
                         <div className="text-[10px] text-slate-600 mono">
-                          Added {getRelativeTime(entry.created_at)}
+                          {getRelativeTime(alert.created_at)}
                         </div>
                       </div>
                     );
@@ -476,8 +481,8 @@ export default function Scanner({ onScan }: ScannerProps) {
                 ) : (
                   <div className="col-span-3 text-center py-12">
                     <Shield className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400">No watchlist entries yet</p>
-                    <p className="text-slate-600 text-sm mt-1">Add IOCs to your watchlist to monitor them</p>
+                    <p className="text-slate-400">No watchlist alerts yet</p>
+                    <p className="text-slate-600 text-sm mt-1">Alerts will appear when watchlist IOCs match news items</p>
                   </div>
                 )}
               </div>
