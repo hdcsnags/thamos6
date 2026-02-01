@@ -241,21 +241,30 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
 
       {/* Quick Actions */}
       <div className="flex items-center justify-center gap-3">
-        <button
-          onClick={copySummary}
-          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-        >
-          {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-          COPY SUMMARY
-        </button>
-        <button
-          onClick={copyJson}
-          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-        >
-          {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
-          COPY JSON
-        </button>
-      </div>
+  <button
+    onClick={copySummary}
+    className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
+  >
+    {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+    COPY SUMMARY
+  </button>
+  <button
+    onClick={copyJson}
+    className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
+  >
+    {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
+    COPY JSON
+  </button>
+  
+  {/* I mean, or I could fix the route in Layout, every damn time I do this I get this same error LEL */}
+  <button
+    onClick={() => navigate('/scanner')}
+    className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-cyan-500/30 text-cyan-400 flex items-center gap-2"
+  >
+    <Search className="w-4 h-4" />
+    NEW SCAN
+  </button>
+</div>
 
       {/* Key Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
