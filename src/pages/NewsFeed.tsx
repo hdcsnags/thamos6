@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Newspaper, RefreshCw, Filter, Search, Check, Bookmark, ExternalLink, Calendar, Tag, Settings, Plus, X, AlertTriangle, Eye, Trash2, Shield, Fingerprint, TrendingUp, Copy, Zap } from 'lucide-react';
+import { Newspaper, RefreshCw, Search, Bookmark, ExternalLink, Calendar, Settings, Eye, Zap, ChevronLeft, ChevronRight, X, Copy, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
-import VictimIntelligence from '../components/VictimIntelligence';
 
 interface FeedItem {
   id: string;
@@ -24,18 +23,6 @@ interface FeedItem {
   watchlist_matches?: WatchlistMatch[];
 }
 
-interface RSSSource {
-  id: string;
-  name: string;
-  url: string;
-  category: string;
-  icon_url: string | null;
-  description: string | null;
-  is_active: boolean;
-  is_default?: boolean;
-  is_enabled?: boolean;
-}
-
 interface WatchlistEntry {
   id: string;
   entry_type: string;
@@ -54,8 +41,6 @@ interface WatchlistMatch {
 
 export default function NewsFeed() {
   const [items, setItems] = useState<FeedItem[]>([]);
-  const [sources, setSources] = useState<RSSSource[]>([]);
-  const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,27 +49,20 @@ export default function NewsFeed() {
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showWatchlist, setShowWatchlist] = useState(false);
-  const [showAddFeed, setShowAddFeed] = useState(false);
-  const [showAddWatchlist, setShowAddWatchlist] = useState(false);
-  const [activeView, setActiveView] = useState<'news' | 'ransomware'>('news');
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
-  const [newFeed, setNewFeed] = useState({ name: '', url: '', category: 'news', description: '' });
-  const [newWatchlistEntry, setNewWatchlistEntry] = useState({ type: 'keyword', value: '', description: '', severity: 'medium' });
+  const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
   const { checkForNewMatches } = useAlerts();
   const hasAutoRefreshed = useRef(false);
-  const [extractedIOCs, setExtractedIOCs] = useState<{ ips: string[], domains: string[], urls: string[], hashes: string[] } | null>(null);
   const [showIOCExtractor, setShowIOCExtractor] = useState(false);
+  const [extractedIOCs, setExtractedIOCs] = useState<{ ips: string[], domains: string[], urls: string[], hashes: string[] } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [showTrending, setShowTrending] = useState(true);
 
   const categories = [
-    { id: 'all', name: 'All News', color: 'slate' },
+    { id: 'all', name: 'All', color: 'cyan' },
     { id: 'vulnerabilities', name: 'Vulnerabilities', color: 'red' },
-    { id: 'alerts', name: 'Alerts', color: 'orange' },
     { id: 'threats', name: 'Threats', color: 'rose' },
+    { id: 'alerts', name: 'Alerts', color: 'orange' },
     { id: 'news', name: 'News', color: 'blue' },
   ];
 
@@ -97,14 +75,12 @@ export default function NewsFeed() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setIsAuthenticated(!!session?.access_token);
-      loadSources();
       loadItems();
     });
 
-    loadSources();
     loadWatchlist();
-    loadItems().then(async (loadedCount) => {
-      if (loadedCount === 0 && !hasAutoRefreshed.current) {
+    loadItems().then(async (count) => {
+      if (count === 0 && !hasAutoRefreshed.current) {
         hasAutoRefreshed.current = true;
         await refreshFeeds();
       }
@@ -127,28 +103,24 @@ export default function NewsFeed() {
     }
   }, [items, searchTerm, showUnreadOnly, showSavedOnly, showWatchlistOnly, sortBy]);
 
-  const loadSources = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const isAuthenticated = !!session?.access_token;
+  const checkWatchlistMatches = (item: FeedItem): WatchlistMatch[] => {
+    const matches: WatchlistMatch[] = [];
+    const content = `${item.title} ${item.description}`.toLowerCase();
 
-      const endpoint = isAuthenticated ? '/my/sources' : '/sources';
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds${endpoint}`;
-
-      const headers: Record<string, string> = {
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-      };
-
-      if (isAuthenticated) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+    watchlist.forEach(entry => {
+      const searchValue = entry.value.toLowerCase();
+      if (content.includes(searchValue)) {
+        matches.push({
+          entry,
+          context: content.substring(
+            Math.max(0, content.indexOf(searchValue) - 50),
+            Math.min(content.length, content.indexOf(searchValue) + searchValue.length + 50)
+          ),
+        });
       }
+    });
 
-      const response = await fetch(url, { headers });
-      const data = await response.json();
-      setSources(data.sources || []);
-    } catch (error) {
-      console.error('Failed to load sources:', error);
-    }
+    return matches;
   };
 
   const loadWatchlist = async () => {
@@ -172,30 +144,25 @@ export default function NewsFeed() {
     try {
       setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
-      const isAuthenticated = !!session?.access_token;
+      const isAuth = !!session?.access_token;
 
       const params = new URLSearchParams();
-      if (selectedCategory !== 'all') {
-        params.append('category', selectedCategory);
-      }
+      if (selectedCategory !== 'all') params.append('category', selectedCategory);
       params.append('limit', '100');
 
-      const endpoint = isAuthenticated ? '/my/items' : '/items';
+      const endpoint = isAuth ? '/my/items' : '/items';
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds${endpoint}?${params}`;
 
       const headers: Record<string, string> = {
         'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
       };
 
-      if (isAuthenticated) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
+      if (isAuth) headers['Authorization'] = `Bearer ${session.access_token}`;
 
       const response = await fetch(url, { headers });
       const data = await response.json();
 
       let feedItems = data.items || [];
-
       feedItems = feedItems.map((item: FeedItem) => ({
         ...item,
         watchlist_matches: checkWatchlistMatches(item),
@@ -215,7 +182,7 @@ export default function NewsFeed() {
     try {
       setRefreshing(true);
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/refresh`;
-      const response = await fetch(url, {
+      await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -223,7 +190,6 @@ export default function NewsFeed() {
         },
         body: JSON.stringify({}),
       });
-      await response.json();
       await loadItems();
       await checkForNewMatches();
     } catch (error) {
@@ -233,204 +199,67 @@ export default function NewsFeed() {
     }
   };
 
-  const toggleRead = async (itemId: string, currentState: boolean) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const newState = !currentState;
-    await supabase
-      .from('user_feed_items')
-      .upsert({
-        user_id: user.id,
-        item_id: itemId,
-        is_read: newState,
-        read_at: newState ? new Date().toISOString() : null,
-      }, { onConflict: 'user_id,item_id' });
-
-    setItems(items.map(item =>
-      item.id === itemId ? { ...item, is_read: newState } : item
-    ));
-  };
-
   const toggleSaved = async (itemId: string, currentState: boolean) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const newState = !currentState;
     await supabase
       .from('user_feed_items')
       .upsert({
         user_id: user.id,
         item_id: itemId,
-        is_saved: newState,
-        saved_at: newState ? new Date().toISOString() : null,
+        is_saved: !currentState,
       }, { onConflict: 'user_id,item_id' });
 
     setItems(items.map(item =>
-      item.id === itemId ? { ...item, is_saved: newState } : item
+      item.id === itemId ? { ...item, is_saved: !currentState } : item
     ));
   };
 
-  const checkWatchlistMatches = (item: FeedItem): WatchlistMatch[] => {
-    const matches: WatchlistMatch[] = [];
-    const searchText = `${item.title} ${item.description || ''}`.toLowerCase();
+  const markAsRead = async (itemId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    for (const entry of watchlist) {
-      const value = entry.value.toLowerCase();
-      if (searchText.includes(value)) {
-        const context = item.title.toLowerCase().includes(value) ? 'title' : 'description';
-        matches.push({ entry, context });
-      }
-    }
-
-    return matches;
-  };
-
-  const addCustomFeed = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        console.error('Must be logged in to add custom feeds');
-        return;
-      }
-
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/sources`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(newFeed),
-      });
-
-      if (response.ok) {
-        await loadSources();
-        await refreshFeeds();
-        setNewFeed({ name: '', url: '', category: 'news', description: '' });
-        setShowAddFeed(false);
-      }
-    } catch (error) {
-      console.error('Failed to add feed:', error);
-    }
-  };
-
-  const deleteFeed = async (sourceId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/sources/${sourceId}`;
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: {
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (response.ok) {
-        await loadSources();
-        await loadItems();
-      }
-    } catch (error) {
-      console.error('Failed to delete feed:', error);
-    }
-  };
-
-  const toggleSourceEnabled = async (sourceId: string, currentEnabled: boolean) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/news-feeds/my/preferences`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          source_id: sourceId,
-          is_enabled: !currentEnabled,
-        }),
-      });
-
-      if (response.ok) {
-        setSources(sources.map(s =>
-          s.id === sourceId ? { ...s, is_enabled: !currentEnabled } : s
-        ));
-        await loadItems();
-      }
-    } catch (error) {
-      console.error('Failed to toggle source:', error);
-    }
-  };
-
-  const addWatchlistEntry = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      await supabase.from('watchlist_entries').insert({
+    await supabase
+      .from('user_feed_items')
+      .upsert({
         user_id: user.id,
-        entry_type: newWatchlistEntry.type,
-        value: newWatchlistEntry.value,
-        description: newWatchlistEntry.description || null,
-        severity: newWatchlistEntry.severity,
-        is_active: true,
-      });
+        item_id: itemId,
+        is_read: true,
+        read_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,item_id' });
 
-      await loadWatchlist();
-      await loadItems();
-      setNewWatchlistEntry({ type: 'keyword', value: '', description: '', severity: 'medium' });
-      setShowAddWatchlist(false);
-    } catch (error) {
-      console.error('Failed to add watchlist entry:', error);
-    }
+    setItems(items.map(item =>
+      item.id === itemId ? { ...item, is_read: true } : item
+    ));
   };
 
-  const deleteWatchlistEntry = async (entryId: string) => {
-    try {
-      await supabase.from('watchlist_entries').delete().eq('id', entryId);
-      await loadWatchlist();
-      await loadItems();
-    } catch (error) {
-      console.error('Failed to delete watchlist entry:', error);
-    }
+  const extractIOCs = (text: string) => {
+    const ipRegex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
+    const domainRegex = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/gi;
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+    const hashRegex = /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b/gi;
+
+    return {
+      ips: Array.from(new Set((text.match(ipRegex) || []).filter(ip => !ip.startsWith('127.') && !ip.startsWith('0.')))),
+      domains: Array.from(new Set((text.match(domainRegex) || []).filter(d => !d.match(/\.(jpg|png|gif|pdf)$/i)))),
+      urls: Array.from(new Set(text.match(urlRegex) || [])),
+      hashes: Array.from(new Set(text.match(hashRegex) || [])),
+    };
   };
 
-  const filteredItems = items.filter(item => {
-    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !item.description?.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
-    if (showUnreadOnly && item.is_read) {
-      return false;
-    }
-    if (showSavedOnly && !item.is_saved) {
-      return false;
-    }
-    if (showWatchlistOnly && (!item.watchlist_matches || item.watchlist_matches.length === 0)) {
-      return false;
-    }
-    return true;
-  }).sort((a, b) => {
-    const dateA = new Date(a.pub_date).getTime();
-    const dateB = new Date(b.pub_date).getTime();
-    return sortBy === 'newest' ? dateB - dateA : dateA - dateB;
-  });
+  const handleExtractIOCs = () => {
+    if (!selectedItem) return;
+    const text = `${selectedItem.title} ${selectedItem.description}`.toLowerCase();
+    const iocs = extractIOCs(text);
+    setExtractedIOCs(iocs);
+    setShowIOCExtractor(true);
+  };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'red';
-      case 'high': return 'orange';
-      case 'medium': return 'yellow';
-      case 'low': return 'blue';
-      default: return 'slate';
-    }
+  const copyToClipboard = async (text: string, type: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(type);
+    setTimeout(() => setCopied(null), 2000);
   };
 
   const getCategoryColor = (category: string) => {
@@ -438,911 +267,482 @@ export default function NewsFeed() {
     return cat?.color || 'slate';
   };
 
-  const extractIOCsFromArticle = (item: FeedItem) => {
-    const text = `${item.title} ${item.description || ''}`;
-
-    const ipv4Regex = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
-    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-    const domainRegex = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|edu|gov|mil|int|io|co|uk|de|fr|jp|cn|ru|br|in|au|info|biz|xyz|online|site|app|dev|tech|cloud|ai|me|tv|cc)\b/gi;
-    const hashRegex = /\b[a-fA-F0-9]{32,64}\b/g;
-
-    const ips = [...new Set((text.match(ipv4Regex) || []).filter(ip => !ip.startsWith('0.') && !ip.startsWith('127.')))];
-    const urls = [...new Set(text.match(urlRegex) || [])];
-    const domains = [...new Set(text.match(domainRegex) || [])];
-    const hashes = [...new Set(text.match(hashRegex) || [])];
-
-    return { ips, urls, domains, hashes };
+  const getSeverityColor = (severity: string) => {
+    const map: Record<string, string> = {
+      critical: 'rose',
+      high: 'rose',
+      medium: 'amber',
+      low: 'blue',
+    };
+    return map[severity] || 'slate';
   };
 
-  const handleExtractIOCs = (item: FeedItem) => {
-    const iocs = extractIOCsFromArticle(item);
-    setExtractedIOCs(iocs);
-    setShowIOCExtractor(true);
-  };
+  const filteredItems = items
+    .filter(item => {
+      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
+          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+      if (showUnreadOnly && item.is_read) return false;
+      if (showSavedOnly && !item.is_saved) return false;
+      if (showWatchlistOnly && (!item.watchlist_matches || item.watchlist_matches.length === 0)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.pub_date).getTime();
+      const dateB = new Date(b.pub_date).getTime();
+      return sortBy === 'newest' ? dateB - dateA : dateA - dateB;
+    });
 
-  const handleCopyIOCs = async (iocs: string[], type: string) => {
-    await navigator.clipboard.writeText(iocs.join('\n'));
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
-  };
+  const currentIndex = selectedItem ? filteredItems.findIndex(i => i.id === selectedItem.id) : -1;
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex < filteredItems.length - 1;
 
-  const handleAddIOCToWatchlist = async (ioc: string, type: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert('Please sign in to add to watchlist');
-      return;
+  const navigatePrevious = () => {
+    if (hasPrevious) {
+      const prev = filteredItems[currentIndex - 1];
+      setSelectedItem(prev);
+      if (!prev.is_read) markAsRead(prev.id);
     }
-
-    await supabase.from('watchlist_entries').insert({
-      user_id: user.id,
-      entry_type: type,
-      value: ioc,
-      severity: 'medium',
-      is_active: true
-    });
-
-    alert('Added to watchlist');
   };
 
-  const getTrendingKeywords = () => {
-    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentItems = items.filter(item => new Date(item.pub_date) > last24Hours);
-
-    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'been', 'be', 'has', 'have', 'had', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'it', 'its', 'new', 'more', 'their', 'them']);
-
-    const wordCount: { [key: string]: number } = {};
-
-    recentItems.forEach(item => {
-      const text = `${item.title} ${item.description || ''}`.toLowerCase();
-      const words = text.match(/\b[a-z]{4,}\b/g) || [];
-
-      words.forEach(word => {
-        if (!stopWords.has(word)) {
-          wordCount[word] = (wordCount[word] || 0) + 1;
-        }
-      });
-    });
-
-    return Object.entries(wordCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .filter(([_, count]) => count > 2);
+  const navigateNext = () => {
+    if (hasNext) {
+      const next = filteredItems[currentIndex + 1];
+      setSelectedItem(next);
+      if (!next.is_read) markAsRead(next.id);
+    }
   };
 
-  const trendingKeywords = getTrendingKeywords();
+  const getRelativeTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="text-center max-w-3xl mx-auto">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 mb-4">
-          <Newspaper className="w-8 h-8 text-white" />
+    <div className="space-y-6">
+      {/* Scanline Effect */}
+      <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent animate-pulse" 
+             style={{ backgroundSize: '100% 4px', animation: 'scanline 8s linear infinite' }} />
+      </div>
+
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="text-center mb-6">
+          <h1 className="text-5xl font-bold mb-2">
+            <span className="text-white">INTEL</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500" style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6)' }}>STREAM</span>
+          </h1>
+          <p className="text-slate-400 text-sm uppercase tracking-wider">Real-Time Threat Intelligence Feed</p>
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Threat Intel Center</h1>
-        <p className="text-slate-400">
-          Real-time security intelligence and ransomware tracking
-        </p>
-      </div>
 
-      <div className="flex justify-center gap-3 mb-4">
-        <button
-          onClick={() => setActiveView('news')}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
-            activeView === 'news'
-              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          <Newspaper className="w-5 h-5" />
-          Intel Stream
-        </button>
-        <button
-          onClick={() => setActiveView('ransomware')}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
-            activeView === 'ransomware'
-              ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          <Shield className="w-5 h-5" />
-          Ransomware Tracker
-        </button>
-      </div>
-
-      {activeView === 'ransomware' ? (
-        <VictimIntelligence />
-      ) : (
-        <div className="space-y-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
-            <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
-              <div className="relative flex-1 min-w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  placeholder="Search intel..."
-                  className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex gap-2">
-                <select
-                  value={sortBy}
-                  onChange={e => setSortBy(e.target.value as 'newest' | 'oldest')}
-                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                </select>
-                <button
-                  onClick={() => setShowWatchlist(!showWatchlist)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors flex items-center gap-2"
-                >
-                  <Eye className="w-4 h-4" />
-                  Watchlist
-                </button>
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors flex items-center gap-2"
-                >
-                  <Settings className="w-4 h-4" />
-                  Sources
-                </button>
-                <button
-                  onClick={refreshFeeds}
-                  disabled={refreshing}
-                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 transition-all flex items-center gap-2"
-                >
-                  <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
+        {/* Status Bar */}
+        <div className="flex items-center justify-between px-6 py-3 rounded-xl mb-6"
+             style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <div className="flex items-center gap-6 text-xs uppercase tracking-wider">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-emerald-400 font-bold">FEED_ACTIVE</span>
             </div>
+            <div className="text-slate-500">|</div>
+            <div className="text-slate-400">ARTICLES: <span className="text-white font-bold">{items.length}</span></div>
+            <div className="text-slate-500">|</div>
+            <div className="text-slate-400">WATCHLIST: <span className="text-amber-400 font-bold">{items.filter(i => i.watchlist_matches && i.watchlist_matches.length > 0).length} MATCHES</span></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={refreshFeeds}
+              disabled={refreshing}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 inline mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
 
-            <div className="flex gap-2 items-center flex-wrap">
-              <span className="text-sm text-slate-400">Filter:</span>
-              {categories.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    selectedCategory === cat.id
-                      ? `bg-${cat.color}-500/20 text-${cat.color}-400 border border-${cat.color}-500/30`
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
-              <div className="h-4 w-px bg-slate-700 mx-1" />
-              <button
-                onClick={() => setShowUnreadOnly(!showUnreadOnly)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  showUnreadOnly
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                }`}
-              >
-                Unread
-              </button>
-              <button
-                onClick={() => setShowSavedOnly(!showSavedOnly)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${
-                  showSavedOnly
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                }`}
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-                Saved
-              </button>
-              <button
-                onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${
-                  showWatchlistOnly
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Alerts
-              </button>
-            </div>
+        {/* Filters */}
+        <div className="px-6 py-4 rounded-xl space-y-3 mb-6"
+             style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="SEARCH INTELLIGENCE..."
+              className="w-full px-10 py-3 bg-slate-900/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm uppercase tracking-wider font-medium"
+            />
           </div>
 
-          {trendingKeywords.length > 0 && showTrending && (
-            <div className="bg-gradient-to-r from-emerald-900/20 to-teal-900/20 rounded-xl border border-emerald-500/30 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-emerald-400" />
-                  <h3 className="text-lg font-semibold text-white">Trending in Last 24h</h3>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-semibold">
-                    HOT
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowTrending(false)}
-                  className="text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {trendingKeywords.map(([keyword, count]) => (
-                  <button
-                    key={keyword}
-                    onClick={() => setSearchTerm(keyword)}
-                    className="group flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-emerald-500/20 border border-slate-700 hover:border-emerald-500/50 rounded-lg transition-all"
-                  >
-                    <span className="text-white font-medium capitalize">{keyword}</span>
-                    <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-bold group-hover:bg-emerald-500/30">
-                      {count}
-                    </span>
-                  </button>
-                ))}
+          {/* Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500 uppercase tracking-wider font-bold">FILTER:</span>
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                  selectedCategory === cat.id
+                    ? `bg-${cat.color}-500/20 text-${cat.color}-400 border border-${cat.color}-500/30`
+                    : 'bg-slate-800/50 text-slate-400 border border-slate-700/30 hover:bg-slate-700/50'
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+            
+            <div className="w-px h-4 bg-slate-700 mx-2"></div>
+            
+            <button
+              onClick={() => setShowUnreadOnly(!showUnreadOnly)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                showUnreadOnly
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/30 hover:bg-slate-700/50'
+              }`}
+            >
+              📖 UNREAD
+            </button>
+            <button
+              onClick={() => setShowSavedOnly(!showSavedOnly)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                showSavedOnly
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/30 hover:bg-slate-700/50'
+              }`}
+            >
+              ⭐ SAVED
+            </button>
+            <button
+              onClick={() => setShowWatchlistOnly(!showWatchlistOnly)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                showWatchlistOnly
+                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/30 hover:bg-slate-700/50'
+              }`}
+            >
+              ⚠️ WATCHLIST ({items.filter(i => i.watchlist_matches && i.watchlist_matches.length > 0).length})
+            </button>
+          </div>
+        </div>
+
+        {/* Main Content: Two Column Layout */}
+        <div className="grid grid-cols-12 gap-6" style={{ height: 'calc(100vh - 500px)', minHeight: '600px' }}>
+          
+          {/* LEFT: Article List */}
+          <div className="col-span-4 rounded-xl overflow-hidden"
+               style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-slate-800/50">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Latest Intelligence</span>
+                <span className="text-xs font-bold text-cyan-400">{filteredItems.length} ARTICLES</span>
               </div>
             </div>
-          )}
 
-          {showWatchlist && (
-            <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-amber-400" />
-                  Watchlist
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowAddWatchlist(true)}
-                    className="px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-400 transition-colors flex items-center gap-1 text-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Entry
-                  </button>
-                  <button
-                    onClick={() => setShowWatchlist(false)}
-                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+            {/* Article List */}
+            <div className="overflow-y-auto h-full">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <RefreshCw className="w-8 h-8 text-slate-500 animate-spin" />
                 </div>
-              </div>
-
-              {showAddWatchlist && (
-                <div className="bg-slate-800/50 rounded-lg p-4 space-y-3 border border-slate-700">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1">Type</label>
-                      <select
-                        value={newWatchlistEntry.type}
-                        onChange={e => setNewWatchlistEntry({ ...newWatchlistEntry, type: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      >
-                        <option value="keyword">Keyword</option>
-                        <option value="ip">IP Address</option>
-                        <option value="domain">Domain</option>
-                        <option value="url">URL</option>
-                        <option value="hash">Hash</option>
-                        <option value="email">Email</option>
-                        <option value="cve">CVE</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1">Severity</label>
-                      <select
-                        value={newWatchlistEntry.severity}
-                        onChange={e => setNewWatchlistEntry({ ...newWatchlistEntry, severity: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      >
-                        <option value="critical">Critical</option>
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Value</label>
-                    <input
-                      type="text"
-                      value={newWatchlistEntry.value}
-                      onChange={e => setNewWatchlistEntry({ ...newWatchlistEntry, value: e.target.value })}
-                      placeholder="Enter IOC or keyword to monitor"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Description (Optional)</label>
-                    <input
-                      type="text"
-                      value={newWatchlistEntry.description}
-                      onChange={e => setNewWatchlistEntry({ ...newWatchlistEntry, description: e.target.value })}
-                      placeholder="Why are you monitoring this?"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addWatchlistEntry}
-                      disabled={!newWatchlistEntry.value}
-                      className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-400 disabled:opacity-50 transition-colors"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowAddWatchlist(false);
-                        setNewWatchlistEntry({ type: 'keyword', value: '', description: '', severity: 'medium' });
-                      }}
-                      className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                  <Newspaper className="w-12 h-12 text-slate-600 mb-3" />
+                  <p className="text-slate-400">No articles found</p>
                 </div>
-              )}
-
-              {watchlist.length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-4">No watchlist entries yet. Add IOCs or keywords to monitor.</p>
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {watchlist.map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium bg-${getSeverityColor(entry.severity)}-500/20 text-${getSeverityColor(entry.severity)}-400 border border-${getSeverityColor(entry.severity)}-500/30`}>
-                            {entry.severity}
-                          </span>
-                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-700 text-slate-300 capitalize">
-                            {entry.entry_type}
-                          </span>
-                        </div>
-                        <p className="text-white font-medium">{entry.value}</p>
-                        {entry.description && (
-                          <p className="text-slate-400 text-sm mt-0.5">{entry.description}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => deleteWatchlistEntry(entry.id)}
-                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {showSettings && (
-            <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Filter className="w-5 h-5 text-emerald-400" />
-                  Feed Sources
-                </h3>
-                <div className="flex gap-2">
-                  {isAuthenticated && (
-                    <button
-                      onClick={() => setShowAddFeed(true)}
-                      className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-400 transition-colors flex items-center gap-1 text-sm"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Custom Feed
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowSettings(false)}
-                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                filteredItems.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedItem(item);
+                      if (!item.is_read) markAsRead(item.id);
+                    }}
+                    className={`relative p-4 border-b border-slate-800/30 cursor-pointer transition-all ${
+                      selectedItem?.id === item.id ? 'bg-slate-800/30' : 'hover:bg-slate-800/20'
+                    } ${item.is_read ? 'opacity-60' : ''}`}
+                    style={{
+                      borderLeft: selectedItem?.id === item.id ? '3px solid #06b6d4' : '3px solid transparent',
+                    }}
                   >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {!isAuthenticated && (
-                <p className="text-sm text-slate-400 bg-slate-800/50 rounded-lg p-3">
-                  Sign in to customize your feed sources and add your own RSS feeds.
-                </p>
+                    <div className="flex items-start gap-2 mb-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-${getCategoryColor(item.source.category)}-500/20 text-${getCategoryColor(item.source.category)}-400 border border-${getCategoryColor(item.source.category)}-500/30`}>
+                        {item.source.name}
+                      </span>
+                      {item.watchlist_matches && item.watchlist_matches.length > 0 && (
+                        <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                      )}
+                      {!item.is_read && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+                      )}
+                    </div>
+                    <h3 className={`text-sm font-bold mb-2 leading-tight ${item.is_read ? 'text-slate-400' : 'text-white'}`}>
+                      {item.title}
+                    </h3>
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span>📅 {getRelativeTime(item.pub_date)}</span>
+                      {item.watchlist_matches && item.watchlist_matches.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-rose-400 font-bold">⚠️ WATCHLIST</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
               )}
-
-              {showAddFeed && (
-                <div className="bg-slate-800/50 rounded-lg p-4 space-y-3 border border-slate-700">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Feed Name</label>
-                    <input
-                      type="text"
-                      value={newFeed.name}
-                      onChange={e => setNewFeed({ ...newFeed, name: e.target.value })}
-                      placeholder="e.g., My Security Blog"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">RSS Feed URL</label>
-                    <input
-                      type="url"
-                      value={newFeed.url}
-                      onChange={e => setNewFeed({ ...newFeed, url: e.target.value })}
-                      placeholder="https://example.com/rss"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Category</label>
-                    <select
-                      value={newFeed.category}
-                      onChange={e => setNewFeed({ ...newFeed, category: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="vulnerabilities">Vulnerabilities</option>
-                      <option value="alerts">Alerts</option>
-                      <option value="threats">Threats</option>
-                      <option value="news">News</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Description (Optional)</label>
-                    <input
-                      type="text"
-                      value={newFeed.description}
-                      onChange={e => setNewFeed({ ...newFeed, description: e.target.value })}
-                      placeholder="Brief description of this feed"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addCustomFeed}
-                      disabled={!newFeed.name || !newFeed.url}
-                      className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-400 disabled:opacity-50 transition-colors"
-                    >
-                      Add Feed
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowAddFeed(false);
-                        setNewFeed({ name: '', url: '', category: 'news', description: '' });
-                      }}
-                      className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                <div>
-                  <h4 className="text-sm font-medium text-slate-400 mb-2">Default Sources</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {sources.filter(s => s.is_default !== false).map(source => (
-                      <div
-                        key={source.id}
-                        className={`p-3 rounded-lg border transition-all ${
-                          source.is_enabled !== false
-                            ? 'border-emerald-500 bg-emerald-500/10'
-                            : 'border-slate-700 bg-slate-800/50 opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {isAuthenticated ? (
-                            <button
-                              onClick={() => toggleSourceEnabled(source.id, source.is_enabled !== false)}
-                              className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                                source.is_enabled !== false
-                                  ? 'border-emerald-500 bg-emerald-500'
-                                  : 'border-slate-600'
-                              }`}
-                            >
-                              {source.is_enabled !== false && (
-                                <Check className="w-3 h-3 text-white" />
-                              )}
-                            </button>
-                          ) : (
-                            <div className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 border-emerald-500 bg-emerald-500`}>
-                              <Check className="w-3 h-3 text-white" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-white text-sm">{source.name}</p>
-                            <p className="text-xs text-slate-400 mt-0.5 capitalize">{source.category}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {sources.some(s => s.is_default === false) && (
-                  <div>
-                    <h4 className="text-sm font-medium text-slate-400 mb-2">Your Custom Sources</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {sources.filter(s => s.is_default === false).map(source => (
-                        <div
-                          key={source.id}
-                          className="p-3 rounded-lg border border-amber-500/50 bg-amber-500/10"
-                        >
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-white text-sm">{source.name}</p>
-                                <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">Custom</span>
-                              </div>
-                              <p className="text-xs text-slate-400 mt-0.5 capitalize">{source.category}</p>
-                            </div>
-                            <button
-                              onClick={() => deleteFeed(source.id)}
-                              className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                              title="Delete custom feed"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            <div className="grid grid-cols-12 h-[calc(100vh-28rem)]">
-              <div className="col-span-4 border-r border-slate-800 overflow-y-auto">
-                {loading ? (
-                  <div className="flex items-center justify-center h-full">
-                    <RefreshCw className="w-8 h-8 text-slate-500 animate-spin" />
-                  </div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                    <Newspaper className="w-12 h-12 text-slate-600 mb-3" />
-                    <p className="text-slate-400">No articles found</p>
-                    <p className="text-slate-500 text-sm mt-1">Try adjusting your filters</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-800">
-                    {filteredItems.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => setSelectedItem(item)}
-                        className={`w-full text-left p-4 transition-all hover:bg-slate-800/50 ${
-                          selectedItem?.id === item.id ? 'bg-slate-800' : ''
-                        } ${item.is_read ? 'opacity-60' : ''}`}
-                      >
-                        <div className="flex items-start gap-2 mb-2">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium bg-${getCategoryColor(item.source.category)}-500/20 text-${getCategoryColor(item.source.category)}-400`}>
-                            {item.source.name}
-                          </span>
-                          {item.is_saved && (
-                            <Bookmark className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />
-                          )}
-                          {item.watchlist_matches && item.watchlist_matches.length > 0 && (
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 fill-rose-400 flex-shrink-0" />
-                          )}
-                        </div>
-                        <h4 className={`font-semibold mb-1 line-clamp-2 text-sm ${
-                          item.is_read ? 'text-slate-400' : 'text-white'
-                        }`}>
-                          {item.title}
-                        </h4>
-                        <p className="text-xs text-slate-500 flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(item.pub_date).toLocaleDateString()}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="col-span-8 overflow-y-auto">
-                {loading ? (
-                  <div className="flex items-center justify-center h-full">
-                    <RefreshCw className="w-8 h-8 text-slate-500 animate-spin" />
-                  </div>
-                ) : !selectedItem ? (
-                  <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                    <Newspaper className="w-16 h-16 text-slate-600 mb-4" />
-                    <p className="text-slate-400 text-lg">Select an article to preview</p>
-                  </div>
-                ) : (
-                  <div className="p-6">
-                    <div className="flex items-start gap-4 mb-6">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-3 flex-wrap">
-                          <span className={`px-3 py-1 rounded-lg text-sm font-medium bg-${getCategoryColor(selectedItem.source.category)}-500/20 text-${getCategoryColor(selectedItem.source.category)}-400 border border-${getCategoryColor(selectedItem.source.category)}-500/30`}>
-                            {selectedItem.source.name}
-                          </span>
-                          <span className="flex items-center gap-1 text-sm text-slate-400">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(selectedItem.pub_date).toLocaleDateString(undefined, {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </span>
-                          {selectedItem.is_saved && (
-                            <span className="flex items-center gap-1 text-sm text-amber-400">
-                              <Bookmark className="w-4 h-4 fill-amber-400" />
-                              Saved
-                            </span>
-                          )}
-                        </div>
-
-                        {selectedItem.watchlist_matches && selectedItem.watchlist_matches.length > 0 && (
-                          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg">
-                            <div className="flex items-center gap-2 mb-2">
-                              <AlertTriangle className="w-4 h-4 text-rose-400" />
-                              <span className="text-sm font-semibold text-rose-400">Watchlist Matches</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {selectedItem.watchlist_matches.map((match, idx) => (
-                                <span
-                                  key={idx}
-                                  className={`px-2 py-1 rounded text-xs font-medium bg-${getSeverityColor(match.entry.severity)}-500/20 text-${getSeverityColor(match.entry.severity)}-400 border border-${getSeverityColor(match.entry.severity)}-500/30`}
-                                >
-                                  {match.entry.value} ({match.entry.severity})
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        <h2 className="text-2xl font-bold text-white mb-4">{selectedItem.title}</h2>
-
-                        {selectedItem.description && (
-                          <div className="prose prose-invert max-w-none mb-6">
-                            <p className="text-slate-300 leading-relaxed">
-                              {selectedItem.description.replace(/<[^>]*>/g, '')}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-800">
-                          <a
-                            href={selectedItem.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-400 transition-colors font-medium"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            Read Full Article
-                          </a>
-                          <button
-                            onClick={() => handleExtractIOCs(selectedItem)}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:from-cyan-400 hover:to-blue-500 transition-all font-medium"
-                          >
-                            <Fingerprint className="w-4 h-4" />
-                            Extract IOCs
-                          </button>
-                          <button
-                            onClick={() => toggleRead(selectedItem.id, selectedItem.is_read || false)}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-                          >
-                            <Check className="w-4 h-4" />
-                            {selectedItem.is_read ? 'Mark Unread' : 'Mark Read'}
-                          </button>
-                          <button
-                            onClick={() => toggleSaved(selectedItem.id, selectedItem.is_saved || false)}
-                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                              selectedItem.is_saved
-                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30'
-                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-                            }`}
-                          >
-                            <Bookmark className={`w-4 h-4 ${selectedItem.is_saved ? 'fill-amber-400' : ''}`} />
-                            {selectedItem.is_saved ? 'Saved' : 'Save'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-sm text-slate-500 mt-8 pt-6 border-t border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <span>Article {filteredItems.findIndex(i => i.id === selectedItem.id) + 1} of {filteredItems.length}</span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              const currentIndex = filteredItems.findIndex(i => i.id === selectedItem.id);
-                              if (currentIndex > 0) {
-                                setSelectedItem(filteredItems[currentIndex - 1]);
-                              }
-                            }}
-                            disabled={filteredItems.findIndex(i => i.id === selectedItem.id) === 0}
-                            className="px-3 py-1 bg-slate-800 text-slate-400 rounded hover:bg-slate-700 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          >
-                            Previous
-                          </button>
-                          <button
-                            onClick={() => {
-                              const currentIndex = filteredItems.findIndex(i => i.id === selectedItem.id);
-                              if (currentIndex < filteredItems.length - 1) {
-                                setSelectedItem(filteredItems[currentIndex + 1]);
-                              }
-                            }}
-                            disabled={filteredItems.findIndex(i => i.id === selectedItem.id) === filteredItems.length - 1}
-                            className="px-3 py-1 bg-slate-800 text-slate-400 rounded hover:bg-slate-700 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
-          {showIOCExtractor && extractedIOCs && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-              <div className="bg-slate-900 rounded-xl border border-slate-800 max-w-3xl w-full max-h-[80vh] overflow-auto">
-                <div className="sticky top-0 bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-cyan-400" />
-                    <h3 className="text-lg font-semibold text-white">Extracted IOCs</h3>
-                    <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded text-xs font-semibold">
-                      {extractedIOCs.ips.length + extractedIOCs.domains.length + extractedIOCs.urls.length + extractedIOCs.hashes.length} Found
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowIOCExtractor(false);
-                      setExtractedIOCs(null);
-                    }}
-                    className="text-slate-400 hover:text-white transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="p-6 space-y-4">
-                  {extractedIOCs.ips.length === 0 && extractedIOCs.domains.length === 0 && extractedIOCs.urls.length === 0 && extractedIOCs.hashes.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Fingerprint className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                      <p className="text-slate-400">No IOCs found in this article</p>
-                    </div>
-                  ) : (
-                    <>
-                      {extractedIOCs.ips.length > 0 && (
-                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
-                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-bold">
-                                {extractedIOCs.ips.length}
-                              </span>
-                              <span className="font-semibold text-white">IP Addresses</span>
-                            </div>
-                            <button
-                              onClick={() => handleCopyIOCs(extractedIOCs.ips, 'ips')}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
-                            >
-                              {copied === 'ips' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                              Copy
-                            </button>
-                          </div>
-                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {extractedIOCs.ips.map((ip, i) => (
-                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
-                                <code className="text-sm text-slate-300 font-mono">{ip}</code>
-                                <button
-                                  onClick={() => handleAddIOCToWatchlist(ip, 'ip')}
-                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors"
-                                >
-                                  + Watchlist
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {extractedIOCs.domains.length > 0 && (
-                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
-                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded text-xs font-bold">
-                                {extractedIOCs.domains.length}
-                              </span>
-                              <span className="font-semibold text-white">Domains</span>
-                            </div>
-                            <button
-                              onClick={() => handleCopyIOCs(extractedIOCs.domains, 'domains')}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
-                            >
-                              {copied === 'domains' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                              Copy
-                            </button>
-                          </div>
-                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {extractedIOCs.domains.map((domain, i) => (
-                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
-                                <code className="text-sm text-slate-300 font-mono">{domain}</code>
-                                <button
-                                  onClick={() => handleAddIOCToWatchlist(domain, 'domain')}
-                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors"
-                                >
-                                  + Watchlist
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {extractedIOCs.urls.length > 0 && (
-                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
-                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-bold">
-                                {extractedIOCs.urls.length}
-                              </span>
-                              <span className="font-semibold text-white">URLs</span>
-                            </div>
-                            <button
-                              onClick={() => handleCopyIOCs(extractedIOCs.urls, 'urls')}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
-                            >
-                              {copied === 'urls' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                              Copy
-                            </button>
-                          </div>
-                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {extractedIOCs.urls.map((url, i) => (
-                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
-                                <code className="text-sm text-slate-300 font-mono break-all">{url}</code>
-                                <button
-                                  onClick={() => handleAddIOCToWatchlist(url, 'url')}
-                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors flex-shrink-0 ml-2"
-                                >
-                                  + Watchlist
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {extractedIOCs.hashes.length > 0 && (
-                        <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
-                          <div className="flex items-center justify-between p-3 border-b border-slate-700">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 rounded text-xs font-bold">
-                                {extractedIOCs.hashes.length}
-                              </span>
-                              <span className="font-semibold text-white">Hashes</span>
-                            </div>
-                            <button
-                              onClick={() => handleCopyIOCs(extractedIOCs.hashes, 'hashes')}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition-colors"
-                            >
-                              {copied === 'hashes' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                              Copy
-                            </button>
-                          </div>
-                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {extractedIOCs.hashes.map((hash, i) => (
-                              <div key={i} className="flex items-center justify-between p-2 bg-slate-900 rounded">
-                                <code className="text-sm text-slate-300 font-mono break-all">{hash}</code>
-                                <button
-                                  onClick={() => handleAddIOCToWatchlist(hash, 'hash')}
-                                  className="text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 transition-colors flex-shrink-0 ml-2"
-                                >
-                                  + Watchlist
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+          {/* RIGHT: Article Preview */}
+          <div className="col-span-8 rounded-xl overflow-hidden flex flex-col"
+               style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <RefreshCw className="w-8 h-8 text-slate-500 animate-spin" />
               </div>
+            ) : !selectedItem ? (
+              <div className="flex flex-col items-center justify-center h-full">
+                <Newspaper className="w-16 h-16 text-slate-600 mb-4" />
+                <p className="text-slate-400 text-lg">Select an article to preview</p>
+              </div>
+            ) : (
+              <>
+                {/* Article Header */}
+                <div className="p-6 border-b border-slate-800/50">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-${getCategoryColor(selectedItem.source.category)}-500/20 text-${getCategoryColor(selectedItem.source.category)}-400 border border-${getCategoryColor(selectedItem.source.category)}-500/30`}>
+                        {selectedItem.source.name}
+                      </span>
+                      <span className="text-sm text-slate-400">
+                        📅 {new Date(selectedItem.pub_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {getRelativeTime(selectedItem.pub_date)}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      {isAuthenticated && (
+                        <button
+                          onClick={() => toggleSaved(selectedItem.id, selectedItem.is_saved || false)}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold uppercase transition-all border ${
+                            selectedItem.is_saved
+                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              : 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 border-slate-700/50'
+                          }`}
+                        >
+                          <Bookmark className={`w-4 h-4 ${selectedItem.is_saved ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => window.open(selectedItem.link, '_blank')}
+                        className="px-3 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-xs font-bold uppercase transition-all border border-slate-700/50 text-slate-300"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={handleExtractIOCs}
+                        className="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 rounded-lg text-xs font-bold uppercase transition-all text-white"
+                      >
+                        <Zap className="w-4 h-4 inline mr-1" />
+                        EXTRACT IOCs
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Watchlist Alert */}
+                  {selectedItem.watchlist_matches && selectedItem.watchlist_matches.length > 0 && (
+                    <div className="p-4 rounded-lg mb-4"
+                         style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                        <span className="text-sm font-bold text-rose-400 uppercase tracking-wider">⚠️ WATCHLIST MATCH DETECTED</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedItem.watchlist_matches.map((match, idx) => (
+                          <span
+                            key={idx}
+                            className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider bg-${getSeverityColor(match.entry.severity)}-500/20 text-${getSeverityColor(match.entry.severity)}-400 border border-${getSeverityColor(match.entry.severity)}-500/30`}
+                          >
+                            {match.entry.value} ({match.entry.severity})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <h1 className="text-3xl font-bold text-white leading-tight"
+                      style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6)' }}>
+                    {selectedItem.title}
+                  </h1>
+                </div>
+
+                {/* Article Content */}
+                <div className="p-6 overflow-y-auto flex-1">
+                  <div className="prose prose-invert max-w-none">
+                    <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+                      {selectedItem.description?.replace(/<[^>]*>/g, '') || 'No description available.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Article Footer */}
+                <div className="px-6 py-4 border-t border-slate-800/50 flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={navigatePrevious}
+                      disabled={!hasPrevious}
+                      className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-xs font-bold uppercase transition-all border border-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300"
+                    >
+                      <ChevronLeft className="w-4 h-4 inline mr-1" />
+                      PREVIOUS
+                    </button>
+                    <button
+                      onClick={navigateNext}
+                      disabled={!hasNext}
+                      className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-xs font-bold uppercase transition-all border border-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300"
+                    >
+                      NEXT
+                      <ChevronRight className="w-4 h-4 inline ml-1" />
+                    </button>
+                  </div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider">
+                    Article {currentIndex + 1} of {filteredItems.length}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* IOC Extractor Modal */}
+      {showIOCExtractor && extractedIOCs && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white">💎 Extracted IOCs</h2>
+              <button
+                onClick={() => setShowIOCExtractor(false)}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
             </div>
-          )}
+
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* IPs */}
+              {extractedIOCs.ips.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-cyan-400">IP Addresses ({extractedIOCs.ips.length})</h3>
+                    <button
+                      onClick={() => copyToClipboard(extractedIOCs.ips.join('\n'), 'ips')}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
+                    >
+                      {copied === 'ips' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {extractedIOCs.ips.map((ip, idx) => (
+                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-cyan-400">
+                        {ip}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Domains */}
+              {extractedIOCs.domains.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-blue-400">Domains ({extractedIOCs.domains.length})</h3>
+                    <button
+                      onClick={() => copyToClipboard(extractedIOCs.domains.join('\n'), 'domains')}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
+                    >
+                      {copied === 'domains' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {extractedIOCs.domains.map((domain, idx) => (
+                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-blue-400">
+                        {domain}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* URLs */}
+              {extractedIOCs.urls.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-amber-400">URLs ({extractedIOCs.urls.length})</h3>
+                    <button
+                      onClick={() => copyToClipboard(extractedIOCs.urls.join('\n'), 'urls')}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
+                    >
+                      {copied === 'urls' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {extractedIOCs.urls.map((url, idx) => (
+                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-amber-400 break-all">
+                        {url}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hashes */}
+              {extractedIOCs.hashes.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-rose-400">File Hashes ({extractedIOCs.hashes.length})</h3>
+                    <button
+                      onClick={() => copyToClipboard(extractedIOCs.hashes.join('\n'), 'hashes')}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase transition-all"
+                    >
+                      {copied === 'hashes' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {extractedIOCs.hashes.map((hash, idx) => (
+                      <div key={idx} className="p-3 bg-slate-800/50 rounded-lg font-mono text-sm text-rose-400 break-all">
+                        {hash}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {extractedIOCs.ips.length === 0 && extractedIOCs.domains.length === 0 && 
+               extractedIOCs.urls.length === 0 && extractedIOCs.hashes.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-slate-400">No IOCs found in this article.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
