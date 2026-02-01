@@ -11,6 +11,9 @@
     @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white antialiased;
   }
 }
+html {
+  overflow-y: scroll;
+}
 
 @layer utilities {
   .animate-in {
