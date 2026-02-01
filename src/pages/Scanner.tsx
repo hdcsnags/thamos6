@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, AlertTriangle } from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
 
@@ -6,21 +6,20 @@ interface ScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
-type Severity = 'high' | 'medium' | 'clean' | 'info' | 'live' | 'feed' | 'scanner';
+type Severity = 'high' | 'medium' | 'clean' | 'info' | 'live' | 'feed';
 
 const pillClass: Record<Severity, string> = {
-  high: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
-  medium: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
-  clean: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
-  info: 'border-slate-500/20 bg-slate-500/10 text-slate-200',
-  live: 'border-violet-500/20 bg-violet-500/10 text-violet-200',
-  feed: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
-  scanner: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+  high: 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
+  medium: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+  clean: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
+  info: 'bg-slate-500/15 text-slate-300 border border-slate-500/30',
+  live: 'bg-violet-500/15 text-violet-300 border border-violet-500/30',
+  feed: 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30',
 };
 
 function Pill({ label, tone }: { label: string; tone: Severity }) {
   return (
-    <span className={`px-2 py-1 rounded-full text-[11px] font-medium border ${pillClass[tone]}`}>
+    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${pillClass[tone]}`}>
       {label}
     </span>
   );
@@ -29,6 +28,7 @@ function Pill({ label, tone }: { label: string; tone: Severity }) {
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('recent');
 
   const detection = useMemo(() => {
     if (!input.trim()) return { type: 'unknown', normalizedValue: '' };
@@ -52,258 +52,439 @@ export default function Scanner({ onScan }: ScannerProps) {
     onScan(detection.type, detection.normalizedValue);
   };
 
-  // Small, calm status label (optional)
-  const statusLabel = useMemo(() => {
-    if (!input.trim()) return 'STATUS: READY';
-    if (detection.type === 'unknown') return 'STATUS: CHECK INPUT';
-    return `DETECTED: ${String(detection.type).toUpperCase()}`;
+  // Detection status label and styling
+  const detectionStatus = useMemo(() => {
+    if (!input.trim()) {
+      return { text: 'READY', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
+    }
+    
+    if (detection.type === 'unknown') {
+      return { text: 'ANALYZING...', color: 'bg-slate-700/50 border-slate-600 text-slate-300' };
+    }
+
+    const typeMap: Record<string, { text: string; color: string }> = {
+      ip: { text: 'IP DETECTED', color: 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300' },
+      url: { text: 'URL DETECTED', color: 'bg-violet-500/20 border-violet-500/40 text-violet-300' },
+      domain: { text: 'DOMAIN DETECTED', color: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' },
+      hash: { text: 'HASH DETECTED', color: 'bg-amber-500/20 border-amber-500/40 text-amber-300' },
+      extension: { text: 'EXTENSION DETECTED', color: 'bg-rose-500/20 border-rose-500/40 text-rose-300' },
+    };
+
+    return typeMap[detection.type] || { text: 'CHECK INPUT', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
   }, [input, detection.type]);
 
-  const statusActive = input.trim() && detection.type !== 'unknown';
-
   return (
-    <div className="relative">
-      {/* Local styles (kept tiny + contained) */}
+    <div className="flex-1 overflow-y-auto">
+      {/* Local styles for cursor animation */}
       <style>{`
-        @keyframes t6Blink { 0%,100%{opacity:1;} 50%{opacity:0;} }
-        .t6-cursor {
-          width: 10px; height: 18px;
+        @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .cursor-blink {
+          width: 10px;
+          height: 20px;
+          background: rgba(34, 211, 238, 0.85);
           border-radius: 2px;
-          background: rgba(34,211,238,0.85);
           display: inline-block;
-          animation: t6Blink 1s infinite;
+          animation: cursorBlink 1s infinite;
+          margin-left: 4px;
+          vertical-align: middle;
+        }
+        
+        /* Scanline effect */
+        @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+        .scanline {
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: linear-gradient(to bottom, transparent 40%, rgba(34, 211, 238, 0.02) 50%, transparent 60%);
+          animation: scanline 8s linear infinite;
+          pointer-events: none;
+          opacity: 0.3;
         }
       `}</style>
 
-      {/* Full-width dark canvas inside Layout's constrained <main> */}
-      <div className="-mx-4 sm:-mx-6 lg:-mx-8">
-        <div
-          className="px-4 sm:px-6 lg:px-8 py-10 sm:py-12 rounded-2xl border border-white/5"
-          style={{
-            background:
-              'radial-gradient(1000px 520px at 50% 10%, rgba(34,211,238,0.08), transparent 60%),' +
-              'radial-gradient(900px 520px at 15% 65%, rgba(52,211,153,0.05), transparent 55%),' +
-              'radial-gradient(900px 520px at 85% 70%, rgba(167,139,250,0.04), transparent 55%),' +
-              'rgba(1,3,10,0.85)',
-          }}
-        >
-          {/* One-line guidance */}
-          <p className="text-center text-sm sm:text-base text-slate-300">
-            Paste IP, URL, hash, domain, or Chrome extension ID for fast intelligence correlation &amp; analysis.
-          </p>
+      {/* Scanline effect */}
+      <div className="scanline absolute inset-0 pointer-events-none z-0" />
 
-          {/* Terminal shell */}
-          <form onSubmit={handleSubmit} className="mt-8 flex justify-center">
-            <div className="w-full max-w-5xl rounded-2xl overflow-hidden border border-slate-700/30 bg-black/30 shadow-[0_26px_120px_rgba(0,0,0,0.75)]">
-              {/* Top chrome */}
-              <div className="h-8 bg-[#0B1120] border-b border-slate-800 flex items-center px-4 justify-between select-none">
-                <div className="flex gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/50" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/50" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/50" />
-                </div>
-                <div className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest">
-                  root@thamos6:~
-                </div>
-                <div className="w-10" />
-              </div>
+      {/* Top status bar */}
+      <header className="h-12 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center justify-between px-8 z-40 relative">
+        <div className="flex items-center gap-6">
+          <h1 className="text-sm font-bold mono text-white uppercase tracking-wider">
+            SCANNER<span className="text-slate-600 font-normal"> / </span><span className="text-cyan-400">CORE</span>
+          </h1>
+        </div>
+        
+        <div className="flex items-center gap-6 text-[10px] mono text-slate-500 uppercase tracking-wider">
+          <span className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            ENGINE_ONLINE
+          </span>
+          <span>SESSION: <span className="text-slate-400">0x8A2F</span></span>
+          <span>LATENCY: <span className="text-emerald-400">24MS</span></span>
+        </div>
+      </header>
 
-              <div className="p-6 md:p-8">
-                <div className="flex items-start gap-4">
-                  <span className="text-cyan-400 font-mono text-xl font-bold mt-1 select-none">{'>_'}</span>
-
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value);
-                        setError('');
-                      }}
-                      placeholder="awaiting_input..."
-                      className="w-full bg-transparent border-none p-0 text-xl md:text-2xl text-white font-mono placeholder-slate-600 focus:outline-none focus:ring-0"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
+      {/* Main content */}
+      <div className="px-8 py-12 relative z-10">
+        <div className="max-w-7xl mx-auto space-y-10">
+          
+          {/* Hero Header */}
+          <div className="text-center mb-10">
+            <h1 
+              className="text-6xl md:text-7xl font-black tracking-tighter mb-4"
+              style={{ textShadow: '0 0 40px rgba(34, 211, 238, 0.3)' }}
+            >
+              <span className="text-white">THAMOS</span>
+              <span className="bg-gradient-to-r from-cyan-400 via-cyan-500 to-emerald-400 bg-clip-text text-transparent">6</span>
+            </h1>
+            <div className="mono text-[10px] tracking-[0.35em] text-slate-600 uppercase mb-3">Neural Router v4.0</div>
+            <p className="text-sm text-slate-400 max-w-2xl mx-auto">
+              Inject IP, URL, hash, domain, or Chrome extension ID for intelligence correlation
+            </p>
+          </div>
+          
+          {/* Scanner Terminal */}
+          <div className="max-w-5xl mx-auto">
+            <form onSubmit={handleSubmit}>
+              <div 
+                className="rounded-2xl overflow-hidden transition-all duration-300"
+                style={{
+                  background: 'rgba(2, 6, 23, 0.75)',
+                  border: '1px solid rgba(148, 163, 184, 0.12)',
+                  boxShadow: input.trim() 
+                    ? '0 30px 140px rgba(34, 211, 238, 0.15)' 
+                    : '0 26px 120px rgba(0, 0, 0, 0.8)'
+                }}
+              >
+                {/* Terminal chrome */}
+                <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-black/40">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50"></div>
                   </div>
-
-                  {/* Clean icon submit */}
-                  <button
-                    type="submit"
-                    className="h-11 w-11 rounded-xl border border-slate-600/20 bg-slate-900/30 hover:bg-slate-900/50 hover:border-slate-600/30 transition-all grid place-items-center"
-                    title="Analyze"
-                  >
-                    <Search className="w-5 h-5 text-slate-200/90" />
-                  </button>
+                  <div className="mono text-[10px] text-slate-600 uppercase tracking-widest">root@thamos6:~</div>
+                  <div className="w-16"></div>
                 </div>
-
-                {/* subtle blinking cursor when empty (visual only) */}
-                {!input.trim() && (
-                  <div className="mt-2 ml-[54px]">
-                    <span className="t6-cursor" aria-hidden="true" />
-                  </div>
-                )}
-
-                {/* Footer strip */}
-                <div className="mt-8 flex flex-wrap items-center justify-between border-t border-slate-800/60 pt-4 gap-4">
-                  {/* status chip */}
-                  <div
-                    className={[
-                      'text-[10px] font-mono uppercase tracking-widest px-2 py-1 rounded-md border',
-                      statusActive
-                        ? 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200'
-                        : 'border-slate-500/20 bg-slate-500/10 text-slate-200',
-                    ].join(' ')}
-                  >
-                    {statusLabel}
-                  </div>
-
-                  {/* micro stats + execute */}
-                  <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500 uppercase">
-                    <span className="hidden sm:inline">
-                      Sources: <span className="text-slate-300">13+</span>
-                    </span>
-                    <span className="hidden sm:inline">
-                      Latency: <span className="text-emerald-300">24ms</span>
-                    </span>
-                    <span className="text-emerald-200">System: Online</span>
-
-                    <button
+                
+                {/* Input area */}
+                <div className="p-6 md:p-8">
+                  <div className="flex items-center gap-4">
+                    <span className="mono text-cyan-400 text-2xl font-bold select-none">&gt;_</span>
+                    <div className="flex-1 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value);
+                          setError('');
+                        }}
+                        placeholder="awaiting_input..."
+                        className="w-full bg-transparent border-none outline-none mono text-xl text-white placeholder-slate-700 caret-cyan-400 focus:ring-0"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {!input.trim() && <span className="cursor-blink" />}
+                    </div>
+                    <button 
                       type="submit"
-                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-cyan-600 text-white rounded transition-colors group"
+                      className="h-11 w-11 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:border-cyan-500/30 hover:bg-slate-900/70 transition-all grid place-items-center"
                     >
-                      EXECUTE <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                      <Search className="w-5 h-5 text-slate-300" />
                     </button>
                   </div>
+                  
+                  {/* Status footer */}
+                  <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between flex-wrap gap-4">
+                    <div className="flex items-center gap-6 text-[11px] mono text-slate-500 uppercase tracking-wider">
+                      <span>SOURCES: <span className="text-slate-300">13+</span></span>
+                      <span>MODE: <span className="text-emerald-300">PARALLEL</span></span>
+                      <div className={`px-2 py-1 rounded-md border ${detectionStatus.color}`}>
+                        {detectionStatus.text}
+                      </div>
+                    </div>
+                    
+                    {/* Source dots indicator */}
+                    <div className="flex items-center gap-2">
+                      <div className="grid grid-cols-7 gap-1">
+                        {[...Array(7)].map((_, i) => (
+                          <div 
+                            key={i}
+                            className={`w-1.5 h-1.5 rounded-full transition-all ${
+                              (input.trim() && Math.random() > 0.5) || i < 3
+                                ? 'bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)]'
+                                : 'bg-slate-700'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </form>
 
-          {/* Error */}
-          {error && (
-            <div className="mt-5 max-w-5xl mx-auto flex items-start gap-2 text-red-200 text-sm bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* 3 panels under scanner */}
-          <div className="mt-10 max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Recent Investigations */}
-              <section className="lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-extrabold text-white">Recent Investigations</h2>
-                  <span className="text-xs text-slate-400">Mock</span>
+              {/* Error message */}
+              {error && (
+                <div className="mt-5 flex items-start gap-2 text-red-200 text-sm bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
                 </div>
-
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">Suspicious URL</div>
-                      <Pill label="Medium" tone="medium" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300 truncate">
-                      hxxps://login-microsoftonline-security[.]com
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">IP Reputation</div>
-                      <Pill label="Clean" tone="clean" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300 truncate">8.8.8.8</div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">Hash Lookup</div>
-                      <Pill label="High" tone="high" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300 truncate">sha256: 4b7c…e2a1 (mock)</div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Watchlist Hits */}
-              <section className="lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-extrabold text-white">Watchlist Hits</h2>
-                  <span className="text-xs text-slate-400">Last 24h</span>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">185.234.219.12</div>
-                      <Pill label="High" tone="high" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">
-                      Matched: Proxy / DC-like • seen in email artifact
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white truncate">
-                        login-microsoftonline-security[.]com
-                      </div>
-                      <Pill label="Medium" tone="medium" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">Matched: Brand impersonation heuristic</div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">CVE-2025-XXXX</div>
-                      <Pill label="Info" tone="info" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">Tracked for internal patch awareness</div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Intel Stream */}
-              <section className="lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-extrabold text-white">Intel Stream</h2>
-                  <span className="text-xs text-slate-400">Curated</span>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">Ransomware Victim Intel</div>
-                      <Pill label="Live" tone="live" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">Victims • Groups • Sector targeting</div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">Security News</div>
-                      <Pill label="Feed" tone="feed" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">Watchlist-aware headlines + summaries</div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 hover:bg-white/5 transition">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-bold text-white">Extension Threats</div>
-                      <Pill label="Scanner" tone="scanner" />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">CRX unpack → heuristic rules → token signals</div>
-                  </div>
-                </div>
-              </section>
-            </div>
+              )}
+            </form>
           </div>
 
-          {/* end canvas */}
+          {/* Intelligence Feed Section */}
+          <section className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider">Intelligence Feed</h2>
+                <p className="text-xs text-slate-500 mt-1">Real-time activity awareness</p>
+              </div>
+              
+              {/* Toggle buttons */}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setActivePanel('recent')}
+                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
+                    activePanel === 'recent'
+                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
+                  }`}
+                >
+                  Recent
+                </button>
+                <button 
+                  onClick={() => setActivePanel('watchlist')}
+                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
+                    activePanel === 'watchlist'
+                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
+                  }`}
+                >
+                  Watchlist
+                </button>
+                <button 
+                  onClick={() => setActivePanel('stream')}
+                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
+                    activePanel === 'stream'
+                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
+                  }`}
+                >
+                  Stream
+                </button>
+              </div>
+            </div>
+            
+            {/* Recent Investigations Panel */}
+            {activePanel === 'recent' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Suspicious URL</h3>
+                    </div>
+                    <Pill label="Medium" tone="medium" />
+                  </div>
+                  <div className="mono text-xs text-slate-400 break-all mb-3">
+                    hxxps://login-microsoftonline-security[.]com
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">2 minutes ago</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">IP Reputation</h3>
+                    </div>
+                    <Pill label="Clean" tone="clean" />
+                  </div>
+                  <div className="mono text-xs text-slate-400 break-all mb-3">
+                    8.8.8.8
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">18 minutes ago</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Hash Lookup</h3>
+                    </div>
+                    <Pill label="High" tone="high" />
+                  </div>
+                  <div className="mono text-xs text-slate-400 break-all mb-3">
+                    sha256: 4b7c...e2a1
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">1 hour ago</div>
+                </div>
+              </div>
+            )}
+            
+            {/* Watchlist Hits Panel */}
+            {activePanel === 'watchlist' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(251, 113, 133, 0.2)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">185.234.219.12</h3>
+                    </div>
+                    <Pill label="High" tone="high" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    Matched: Proxy/DC-like • seen in email artifact
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(251, 191, 36, 0.2)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider break-all">
+                        login-microsoftonline[.]com
+                      </h3>
+                    </div>
+                    <Pill label="Medium" tone="medium" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    Matched: Brand impersonation heuristic
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-slate-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">CVE-2025-XXXX</h3>
+                    </div>
+                    <Pill label="Info" tone="info" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    Tracked for internal patch awareness
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
+                </div>
+              </div>
+            )}
+            
+            {/* Intel Stream Panel */}
+            {activePanel === 'stream' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-violet-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Ransomware Victim Intel</h3>
+                    </div>
+                    <Pill label="Live" tone="live" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    Victims • Groups • Sector targeting
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Real-time feed</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Security News</h3>
+                    </div>
+                    <Pill label="Feed" tone="feed" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    Watchlist-aware headlines + summaries
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Curated updates</div>
+                </div>
+                
+                <div 
+                  className="rounded-xl p-5 transition-all hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Extension Threats</h3>
+                    </div>
+                    <Pill label="Scanner" tone="medium" />
+                  </div>
+                  <div className="text-xs text-slate-400 mb-3">
+                    CRX unpack → heuristic rules → token signals
+                  </div>
+                  <div className="text-[10px] text-slate-600 mono">Automated analysis</div>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </div>
+
+      {/* Bottom status bar */}
+      <footer className="h-10 border-t border-white/5 bg-black/50 backdrop-blur-md flex items-center justify-between px-8 z-40 relative">
+        <div className="flex items-center gap-6 text-[10px] mono text-slate-600 uppercase tracking-wider">
+          <span>Region: <span className="text-slate-400">US-EAST</span></span>
+          <span>Encryption: <span className="text-slate-400">AES-256</span></span>
+          <span>Protocol: <span className="text-emerald-400">TLS 1.3</span></span>
+        </div>
+        <div className="text-[10px] mono text-slate-600 uppercase tracking-wider">
+          THAMOS_OS v6.0_TACTICAL
+        </div>
+      </footer>
     </div>
   );
 }
