@@ -45,8 +45,12 @@ function App() {
         case 'url':
           return <URLResult url={scanResult.value} />;
         case 'domain':
-          return <DomainResult domain={scanResult.value} />;
-        case 'hash':
+  return (
+    <div style={{ padding: 24 }}>
+      Domain route works: {scanResult.value}
+    </div>
+  );
+       case 'hash':
           return <HashResult hash={scanResult.value} />;
         case 'extension':
           return <ExtensionResult extensionId={scanResult.value} />;
