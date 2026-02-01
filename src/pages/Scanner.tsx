@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { Search, AlertTriangle } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Search, AlertTriangle, Shield, Newspaper } from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
+import { supabase } from '../lib/supabase';
 
 interface ScannerProps {
   onScan: (type: string, value: string) => void;
@@ -29,6 +30,61 @@ export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('recent');
+  
+  // Real data state
+  const [recentLookups, setRecentLookups] = useState<any[]>([]);
+  const [watchlistEntries, setWatchlistEntries] = useState<any[]>([]);
+  const [feedItems, setFeedItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      
+      try {
+        // Fetch recent lookups (combine IP and URL)
+        const [ipRes, urlRes, watchlistRes, feedRes] = await Promise.all([
+          supabase
+            .from('ip_lookups')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(3),
+          supabase
+            .from('url_lookups')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(3),
+          supabase
+            .from('watchlist_entries')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(3),
+          supabase
+            .from('feed_items')
+            .select('*, source:rss_sources(name)')
+            .order('pub_date', { ascending: false })
+            .limit(3),
+        ]);
+
+        // Combine and sort IP and URL lookups by date
+        const combined = [
+          ...(ipRes.data || []).map(item => ({ ...item, type: 'ip' })),
+          ...(urlRes.data || []).map(item => ({ ...item, type: 'url' })),
+        ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 3);
+
+        setRecentLookups(combined);
+        setWatchlistEntries(watchlistRes.data || []);
+        setFeedItems(feedRes.data || []);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const detection = useMemo(() => {
     if (!input.trim()) return { type: 'unknown', normalizedValue: '' };
@@ -72,6 +128,21 @@ export default function Scanner({ onScan }: ScannerProps) {
 
     return typeMap[detection.type] || { text: 'CHECK INPUT', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
   }, [input, detection.type]);
+
+  // Format relative time
+  const getRelativeTime = (dateStr: string) => {
+    const now = new Date().getTime();
+    const then = new Date(dateStr).getTime();
+    const diffMs = now - then;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -277,197 +348,197 @@ export default function Scanner({ onScan }: ScannerProps) {
             {/* Recent Investigations Panel */}
             {activePanel === 'recent' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Suspicious URL</h3>
+                {loading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className="rounded-xl p-5 animate-pulse"
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(148, 163, 184, 0.1)'
+                      }}
+                    >
+                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
+                      <div className="h-3 bg-slate-800 rounded"></div>
                     </div>
-                    <Pill label="Medium" tone="medium" />
+                  ))
+                ) : recentLookups.length > 0 ? (
+                  recentLookups.map((lookup, idx) => {
+                    const isIP = lookup.type === 'ip';
+                    const isMalicious = isIP ? lookup.threat_score > 50 : lookup.is_malicious;
+                    const severity = isMalicious ? 'high' : 'clean';
+                    const dotColor = isMalicious ? 'bg-rose-500' : 'bg-emerald-500';
+                    const displayValue = isIP ? lookup.ip_address : lookup.url;
+                    
+                    return (
+                      <div 
+                        key={lookup.id}
+                        className="rounded-xl p-5 transition-all hover:bg-white/5 cursor-pointer"
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: '1px solid rgba(148, 163, 184, 0.1)'
+                        }}
+                        onClick={() => {
+                          // Could navigate to the result page here if desired
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
+                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                              {isIP ? 'IP Lookup' : 'URL Scan'}
+                            </h3>
+                          </div>
+                          <Pill label={isMalicious ? 'High' : 'Clean'} tone={severity} />
+                        </div>
+                        <div className="mono text-xs text-slate-400 break-all mb-3 truncate">
+                          {displayValue}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mono">
+                          {getRelativeTime(lookup.created_at)}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-3 text-center py-12">
+                    <Search className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-400">No recent lookups yet</p>
+                    <p className="text-slate-600 text-sm mt-1">Start analyzing IOCs to see them here</p>
                   </div>
-                  <div className="mono text-xs text-slate-400 break-all mb-3">
-                    hxxps://login-microsoftonline-security[.]com
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">2 minutes ago</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">IP Reputation</h3>
-                    </div>
-                    <Pill label="Clean" tone="clean" />
-                  </div>
-                  <div className="mono text-xs text-slate-400 break-all mb-3">
-                    8.8.8.8
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">18 minutes ago</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-rose-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Hash Lookup</h3>
-                    </div>
-                    <Pill label="High" tone="high" />
-                  </div>
-                  <div className="mono text-xs text-slate-400 break-all mb-3">
-                    sha256: 4b7c...e2a1
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">1 hour ago</div>
-                </div>
+                )}
               </div>
             )}
             
             {/* Watchlist Hits Panel */}
             {activePanel === 'watchlist' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(251, 113, 133, 0.2)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">185.234.219.12</h3>
+                {loading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className="rounded-xl p-5 animate-pulse"
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(148, 163, 184, 0.1)'
+                      }}
+                    >
+                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
+                      <div className="h-3 bg-slate-800 rounded"></div>
                     </div>
-                    <Pill label="High" tone="high" />
+                  ))
+                ) : watchlistEntries.length > 0 ? (
+                  watchlistEntries.map((entry) => {
+                    const severityMap: Record<string, Severity> = {
+                      critical: 'high',
+                      high: 'high',
+                      medium: 'medium',
+                      low: 'info',
+                    };
+                    const severity = severityMap[entry.severity || 'medium'] || 'medium';
+                    const dotColor = entry.severity === 'critical' || entry.severity === 'high' 
+                      ? 'bg-rose-500 animate-pulse' 
+                      : 'bg-amber-500';
+                    const borderColor = entry.severity === 'critical' || entry.severity === 'high'
+                      ? 'rgba(251, 113, 133, 0.2)'
+                      : 'rgba(251, 191, 36, 0.2)';
+                    
+                    return (
+                      <div 
+                        key={entry.id}
+                        className="rounded-xl p-5 transition-all hover:bg-white/5"
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: `1px solid ${borderColor}`
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
+                            <h3 className="text-xs font-bold text-white uppercase tracking-wider break-all truncate">
+                              {entry.ioc_value}
+                            </h3>
+                          </div>
+                          <Pill 
+                            label={entry.severity || 'Medium'} 
+                            tone={severity} 
+                          />
+                        </div>
+                        <div className="text-xs text-slate-400 mb-3">
+                          {entry.reason || 'Monitored IOC'}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mono">
+                          Added {getRelativeTime(entry.created_at)}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-3 text-center py-12">
+                    <Shield className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-400">No watchlist entries yet</p>
+                    <p className="text-slate-600 text-sm mt-1">Add IOCs to your watchlist to monitor them</p>
                   </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    Matched: Proxy/DC-like • seen in email artifact
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(251, 191, 36, 0.2)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider break-all">
-                        login-microsoftonline[.]com
-                      </h3>
-                    </div>
-                    <Pill label="Medium" tone="medium" />
-                  </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    Matched: Brand impersonation heuristic
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-slate-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">CVE-2025-XXXX</h3>
-                    </div>
-                    <Pill label="Info" tone="info" />
-                  </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    Tracked for internal patch awareness
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Last 24h</div>
-                </div>
+                )}
               </div>
             )}
             
             {/* Intel Stream Panel */}
             {activePanel === 'stream' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-violet-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Ransomware Victim Intel</h3>
+                {loading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className="rounded-xl p-5 animate-pulse"
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(148, 163, 184, 0.1)'
+                      }}
+                    >
+                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
+                      <div className="h-3 bg-slate-800 rounded"></div>
                     </div>
-                    <Pill label="Live" tone="live" />
+                  ))
+                ) : feedItems.length > 0 ? (
+                  feedItems.map((item) => {
+                    return (
+                      <a
+                        key={item.id}
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-xl p-5 transition-all hover:bg-white/5 block"
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: '1px solid rgba(148, 163, 184, 0.1)'
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
+                            <h3 className="text-xs font-bold text-white uppercase tracking-wider line-clamp-1">
+                              {item.source?.name || 'Security News'}
+                            </h3>
+                          </div>
+                          <Pill label="Feed" tone="feed" />
+                        </div>
+                        <div className="text-xs text-slate-400 mb-3 line-clamp-2">
+                          {item.title}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mono">
+                          {getRelativeTime(item.pub_date)}
+                        </div>
+                      </a>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-3 text-center py-12">
+                    <Newspaper className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-400">No feed items yet</p>
+                    <p className="text-slate-600 text-sm mt-1">Check back later for security news</p>
                   </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    Victims • Groups • Sector targeting
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Real-time feed</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Security News</h3>
-                    </div>
-                    <Pill label="Feed" tone="feed" />
-                  </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    Watchlist-aware headlines + summaries
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Curated updates</div>
-                </div>
-                
-                <div 
-                  className="rounded-xl p-5 transition-all hover:bg-white/5"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Extension Threats</h3>
-                    </div>
-                    <Pill label="Scanner" tone="medium" />
-                  </div>
-                  <div className="text-xs text-slate-400 mb-3">
-                    CRX unpack → heuristic rules → token signals
-                  </div>
-                  <div className="text-[10px] text-slate-600 mono">Automated analysis</div>
-                </div>
+                )}
               </div>
             )}
           </section>
