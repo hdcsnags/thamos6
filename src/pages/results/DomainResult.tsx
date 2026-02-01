@@ -42,10 +42,13 @@ export default function DomainResult({ domain }: DomainResultProps) {
           const sourceKey = s.name.toLowerCase().replace(/\s+/g, '').replace('/', '');
           const found = result.sources[sourceKey] || result.sources['whois'];
 
-          if (found && !found.error) {
+          // Check if source exists and succeeded
+          if (found && found.found && !found.error) {
             return { ...s, state: 'success' as const };
-          } else if (found?.error) {
+          } else if (found && found.error) {
             return { ...s, state: 'error' as const };
+          } else if (found && !found.found) {
+            return { ...s, state: 'disabled' as const };
           }
           return { ...s, state: 'disabled' as const };
         }));
@@ -60,11 +63,21 @@ export default function DomainResult({ domain }: DomainResultProps) {
     performLookup();
   }, [domain]);
 
-  const whoisData = data?.whois;
-  const domainAge = whoisData?.domainAge ? `${whoisData.domainAge} days` : 'Unknown';
-  const registrar = whoisData?.registrar || 'Unknown';
-  const created = whoisData?.registrationDate ? new Date(whoisData.registrationDate).toLocaleDateString() : 'Unknown';
-  const expires = whoisData?.expirationDate ? new Date(whoisData.expirationDate).toLocaleDateString() : 'Unknown';
+  const whoisData = data?.sources?.whois?.details;
+  const domainAge = whoisData ? 
+    Math.floor((Date.now() - new Date(whoisData.events?.find((e: any) => e.eventAction === 'registration')?.eventDate || 0).getTime()) / (1000 * 60 * 60 * 24)) + ' days'
+    : 'Unknown';
+  
+  // Extract registrar from WHOIS entities
+  const registrarEntity = whoisData?.entities?.find((e: any) => e.roles?.includes('registrar'));
+  const registrar = registrarEntity?.vcardArray?.[1]?.find((item: any) => item[0] === 'fn')?.[3] || 'Unknown';
+  
+  // Extract dates from events
+  const registrationEvent = whoisData?.events?.find((e: any) => e.eventAction === 'registration');
+  const expirationEvent = whoisData?.events?.find((e: any) => e.eventAction === 'expiration');
+  
+  const created = registrationEvent ? new Date(registrationEvent.eventDate).toLocaleDateString() : 'Unknown';
+  const expires = expirationEvent ? new Date(expirationEvent.eventDate).toLocaleDateString() : 'Unknown';
 
   const keyFacts = [
     {
@@ -150,9 +163,9 @@ export default function DomainResult({ domain }: DomainResultProps) {
       {whoisData?.nameservers && whoisData.nameservers.length > 0 && (
         <EvidenceCard
           title="Nameservers"
-          items={whoisData.nameservers.map(ns => ({
+          items={whoisData.nameservers.map((ns: any) => ({
             label: 'NS',
-            value: ns
+            value: ns.ldhName || ns
           }))}
         />
       )}
