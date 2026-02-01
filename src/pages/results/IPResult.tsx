@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Globe, AlertTriangle, Shield, Database, MapPin, Server } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { 
+  Globe, AlertTriangle, Shield, Database, MapPin, Server, Wifi, 
+  ExternalLink, ChevronDown, ChevronUp, Copy, Check, Clock, Activity
+} from 'lucide-react';
 import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
-import KeyFacts from '../../components/scanner/KeyFacts';
-import SourceStatus, { type Source, type SourceState } from '../../components/scanner/SourceStatus';
-import EvidenceCard from '../../components/scanner/EvidenceCard';
-import VarianceCard from '../../components/scanner/VarianceCard';
-import RawJsonCollapse from '../../components/scanner/RawJsonCollapse';
+import ThreatScore from '../../components/ThreatScore';
 import ActionsBar from '../../components/scanner/ActionsBar';
 
 interface IPResultProps {
@@ -17,38 +16,35 @@ export default function IPResult({ ip }: IPResultProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<IPLookupResult | null>(null);
-  const [sources, setSources] = useState<Source[]>([
-    { name: 'AbuseIPDB', state: 'pending', icon: AlertTriangle },
-    { name: 'ipinfo', state: 'pending', icon: Globe },
-    { name: 'ProxyCheck', state: 'pending', icon: Database },
-  ]);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    pulses: false,
+    spamhaus: true,
+    vpn: true,
+    sources: false,
+  });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Scroll to top when component mounts
+    if (containerRef.current) {
+      const mainContainer = containerRef.current.closest('[style*="overflow"]');
+      if (mainContainer) {
+        mainContainer.scrollTop = 0;
+      }
+    }
+    window.scrollTo(0, 0);
+  }, []);
 
   useEffect(() => {
     const performLookup = async () => {
       setLoading(true);
       setError('');
-      setSources(prev => prev.map(s => ({ ...s, state: 'loading' as SourceState })));
 
       try {
         const data = await lookupIP(ip);
         setResult(data);
-
-        const resultsData = data.results || data.sources || {};
-
-        setSources(prev => prev.map(source => {
-          const sourceKey = source.name.toLowerCase().replace(/\s/g, '');
-          const sourceData = resultsData[sourceKey];
-          const hasError = sourceData?.error;
-          const hasData = sourceData && !hasError;
-
-          return {
-            ...source,
-            state: hasError ? 'error' : hasData ? 'success' : 'disabled'
-          };
-        }));
       } catch (err: any) {
         setError(err.message || 'Failed to lookup IP');
-        setSources(prev => prev.map(s => ({ ...s, state: 'error' as SourceState })));
       } finally {
         setLoading(false);
       }
@@ -57,15 +53,16 @@ export default function IPResult({ ip }: IPResultProps) {
     performLookup();
   }, [ip]);
 
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
   if (loading && !result) {
     return (
-      <div className="space-y-6">
-        <SourceStatus sources={sources} />
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-400">Analyzing IP address...</p>
-          </div>
+      <div ref={containerRef} className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-400 uppercase tracking-wider text-sm">Analyzing IP address...</p>
         </div>
       </div>
     );
@@ -73,7 +70,7 @@ export default function IPResult({ ip }: IPResultProps) {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div ref={containerRef} className="flex items-center justify-center py-12">
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 max-w-md">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="text-red-400 text-center">{error}</p>
@@ -85,220 +82,390 @@ export default function IPResult({ ip }: IPResultProps) {
   if (!result) return null;
 
   const enrichment = result.enrichment || {};
-  const resultsData = result.results || result.sources || {};
-  const abuseData = resultsData.abuseipdb?.data as any;
-  const proxyData = resultsData.proxycheck?.data as any;
-  const ipinfoData = resultsData.ipinfo?.data as any;
-
-  const keyFacts = [
-    {
-      label: 'Country',
-      value: enrichment.country || 'Unknown',
-      icon: <MapPin className="w-4 h-4 text-cyan-400" />
-    },
-    {
-      label: 'Organization',
-      value: enrichment.org || 'Unknown',
-      icon: <Server className="w-4 h-4 text-cyan-400" />
-    },
-    {
-      label: 'ASN',
-      value: enrichment.asn || 'Unknown',
-      icon: <Database className="w-4 h-4 text-cyan-400" />
-    },
-    {
-      label: 'ISP',
-      value: enrichment.isp || 'Unknown',
-      icon: <Globe className="w-4 h-4 text-cyan-400" />
-    },
-    {
-      label: 'Hosting/DC',
-      value: enrichment.isHosting ? 'Yes' : 'No',
-      icon: <Server className="w-4 h-4 text-cyan-400" />
-    },
-    {
-      label: 'VPN/Proxy/TOR',
-      value: enrichment.isVPN ? `VPN${enrichment.vpnService ? ` (${enrichment.vpnService})` : ''}` :
-             enrichment.isTor ? 'TOR' :
-             enrichment.isProxy ? 'Proxy' : 'No',
-      icon: <Shield className="w-4 h-4 text-cyan-400" />
-    }
-  ];
+  const sources = result.sources || {};
+  
+  // Extract all the hidden gems
+  const spamhausData = sources.spamhaus as any;
+  const alienVaultData = sources.alienvault as any;
+  const proxyCheckData = sources.proxycheck as any;
+  const virusTotalData = sources.virustotal as any;
+  const teamCymruData = sources.teamcymru as any;
 
   const summary = `IP: ${ip}\nCountry: ${enrichment.country || 'Unknown'}\nOrg: ${enrichment.org || 'Unknown'}\nThreat Score: ${result.overallThreatScore}\nMalicious: ${result.isMalicious ? 'Yes' : 'No'}`;
 
   return (
-    <div className="space-y-6">
-      <ActionsBar
-        summary={summary}
-        jsonData={result}
-        iocValue={ip}
-      />
+    <div ref={containerRef} className="space-y-6">
+      {/* Scanline Effect */}
+      <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent animate-pulse" 
+             style={{ backgroundSize: '100% 4px', animation: 'scanline 8s linear infinite' }} />
+      </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-            {ip}
-          </h1>
-          <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-lg text-sm font-semibold ${
-              result.overallThreatScore > 70 ? 'bg-red-500/20 text-red-400' :
-              result.overallThreatScore > 40 ? 'bg-amber-500/20 text-amber-400' :
-              'bg-green-500/20 text-green-400'
-            }`}>
-              Threat Score: {result.overallThreatScore}
-            </span>
-            {result.isMalicious && (
-              <span className="px-3 py-1 rounded-lg text-sm font-semibold bg-red-500/20 text-red-400">
-                Malicious
+      <div className="relative z-10">
+        {/* Actions Bar */}
+        <ActionsBar summary={summary} jsonData={result} iocValue={ip} />
+
+        {/* Hero Section */}
+        <div className="flex items-start justify-between gap-6 mb-8">
+          <div className="flex-1">
+            <h1 className="text-5xl font-bold text-white mb-4 font-mono" 
+                style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6)' }}>
+              {ip}
+            </h1>
+            
+            {/* Status Pills */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider border ${
+                result.overallThreatScore >= 70 ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                result.overallThreatScore >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+              }`}>
+                {result.isMalicious ? '⚠️ MALICIOUS' : '✓ CLEAN'}
               </span>
-            )}
+              
+              {enrichment.isVPN && (
+                <span className="px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  🔒 {enrichment.vpnService || 'VPN'} DETECTED
+                </span>
+              )}
+              
+              {enrichment.isProxy && (
+                <span className="px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  🌐 PROXY DETECTED
+                </span>
+              )}
+              
+              {enrichment.spamhausListed && (
+                <span className="px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse">
+                  🚫 SPAMHAUS LISTED
+                </span>
+              )}
+            </div>
+
+            {/* Quick Stats */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">COUNTRY</div>
+                <div className="text-lg font-bold text-white">{enrichment.country || 'Unknown'}</div>
+              </div>
+              <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ASN</div>
+                <div className="text-lg font-bold text-white">{enrichment.asn || 'Unknown'}</div>
+              </div>
+              <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">TIMEZONE</div>
+                <div className="text-lg font-bold text-white">{enrichment.timezone || 'Unknown'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Threat Score Circle */}
+          <div className="flex-shrink-0">
+            <ThreatScore score={result.overallThreatScore} size="lg" />
           </div>
         </div>
-      </div>
 
-      <SourceStatus sources={sources} />
-
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Key Facts</h2>
-        <KeyFacts facts={keyFacts} />
-      </div>
-
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Evidence</h2>
-
-        {abuseData && (
-          <EvidenceCard
-            title="AbuseIPDB"
-            icon={AlertTriangle}
-            badge={abuseData.abuseConfidenceScore ? `${abuseData.abuseConfidenceScore}% confidence` : undefined}
-            badgeColor="red"
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Abuse Confidence</span>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                    {abuseData.abuseConfidenceScore || 0}%
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Total Reports</span>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                    {abuseData.totalReports || 0}
-                  </p>
-                </div>
-              </div>
-              {abuseData.usageType && (
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Usage Type</span>
-                  <p className="text-base font-medium text-slate-900 dark:text-white">
-                    {abuseData.usageType}
-                  </p>
-                </div>
-              )}
-              {abuseData.domain && (
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Domain</span>
-                  <p className="text-base font-medium text-slate-900 dark:text-white">
-                    {abuseData.domain}
-                  </p>
-                </div>
-              )}
+        {/* Network Information */}
+        <div className="p-6 rounded-xl mb-6"
+             style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <h2 className="text-xl font-bold text-white mb-4 uppercase tracking-wider flex items-center gap-2">
+            <Server className="w-5 h-5 text-cyan-400" />
+            NETWORK INFORMATION
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ORGANIZATION</div>
+              <div className="text-base font-medium text-white">{enrichment.org || 'Unknown'}</div>
             </div>
-          </EvidenceCard>
-        )}
-
-        {proxyData && (
-          <EvidenceCard
-            title="ProxyCheck"
-            icon={Database}
-            badgeColor="purple"
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Proxy</span>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                    {proxyData.proxy || 'No'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">VPN</span>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                    {proxyData.vpn ? 'Yes' : 'No'}
-                  </p>
-                </div>
-              </div>
-              {proxyData.provider && (
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Provider</span>
-                  <p className="text-base font-medium text-slate-900 dark:text-white">
-                    {proxyData.provider}
-                  </p>
-                </div>
-              )}
-              {proxyData.type && (
-                <div>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Type</span>
-                  <p className="text-base font-medium text-slate-900 dark:text-white">
-                    {proxyData.type}
-                  </p>
-                </div>
-              )}
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ISP</div>
+              <div className="text-base font-medium text-white">{enrichment.isp || 'Unknown'}</div>
             </div>
-          </EvidenceCard>
-        )}
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">HOSTING/DC</div>
+              <div className="text-base font-medium text-white">{enrichment.isHosting ? 'Yes' : 'No'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">CITY</div>
+              <div className="text-base font-medium text-white">{enrichment.city || 'Unknown'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">REGION</div>
+              <div className="text-base font-medium text-white">{enrichment.region || 'Unknown'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">COORDINATES</div>
+              <div className="text-base font-medium text-white">
+                {enrichment.lat && enrichment.lon ? `${enrichment.lat}, ${enrichment.lon}` : 'Unknown'}
+              </div>
+            </div>
+          </div>
+        </div>
 
-        {ipinfoData && (
-          <EvidenceCard
-            title="ipinfo.io"
-            icon={Globe}
-            badgeColor="cyan"
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                {ipinfoData.city && (
+        {/* VPN/Proxy Details */}
+        {(enrichment.isVPN || enrichment.isProxy) && proxyCheckData?.operator && (
+          <div className="p-6 rounded-xl mb-6"
+               style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+            <button
+              onClick={() => toggleSection('vpn')}
+              className="w-full flex items-center justify-between mb-4"
+            >
+              <h2 className="text-xl font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Wifi className="w-5 h-5" />
+                VPN/PROXY DETAILS
+              </h2>
+              {expandedSections.vpn ? <ChevronUp className="w-5 h-5 text-amber-400" /> : <ChevronDown className="w-5 h-5 text-amber-400" />}
+            </button>
+            
+            {expandedSections.vpn && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">City</span>
-                    <p className="text-base font-medium text-slate-900 dark:text-white">
-                      {ipinfoData.city}
-                    </p>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">PROVIDER</div>
+                    <div className="text-base font-medium text-white">{proxyCheckData.operator.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ANONYMITY LEVEL</div>
+                    <div className="text-base font-medium text-white capitalize">{proxyCheckData.operator.anonymity}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">POPULARITY</div>
+                    <div className="text-base font-medium text-white capitalize">{proxyCheckData.operator.popularity}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">CONFIDENCE</div>
+                    <div className="text-base font-medium text-white">{enrichment.confidence}%</div>
+                  </div>
+                </div>
+                
+                {proxyCheckData.operator.url && (
+                  <div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">WEBSITE</div>
+                    <a href={proxyCheckData.operator.url} target="_blank" rel="noopener noreferrer"
+                       className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+                      {proxyCheckData.operator.url}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
                 )}
-                {ipinfoData.region && (
+                
+                {proxyCheckData.operator.protocols && (
                   <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Region</span>
-                    <p className="text-base font-medium text-slate-900 dark:text-white">
-                      {ipinfoData.region}
-                    </p>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">PROTOCOLS</div>
+                    <div className="flex flex-wrap gap-2">
+                      {proxyCheckData.operator.protocols.map((protocol: string, idx: number) => (
+                        <span key={idx} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800/50 text-slate-300 border border-slate-700/50">
+                          {protocol}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
-                {ipinfoData.timezone && (
+                
+                {proxyCheckData.operator.policies && (
                   <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Timezone</span>
-                    <p className="text-base font-medium text-slate-900 dark:text-white">
-                      {ipinfoData.timezone}
-                    </p>
-                  </div>
-                )}
-                {ipinfoData.postal && (
-                  <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Postal</span>
-                    <p className="text-base font-medium text-slate-900 dark:text-white">
-                      {ipinfoData.postal}
-                    </p>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">POLICIES</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className={proxyCheckData.operator.policies.logging ? 'text-red-400' : 'text-emerald-400'}>
+                          {proxyCheckData.operator.policies.logging ? '❌' : '✅'}
+                        </span>
+                        <span className="text-slate-300">Logging</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={proxyCheckData.operator.policies.free_access ? 'text-emerald-400' : 'text-slate-500'}>
+                          {proxyCheckData.operator.policies.free_access ? '✅' : '❌'}
+                        </span>
+                        <span className="text-slate-300">Free Access</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={proxyCheckData.operator.policies.crypto_payments ? 'text-emerald-400' : 'text-slate-500'}>
+                          {proxyCheckData.operator.policies.crypto_payments ? '✅' : '❌'}
+                        </span>
+                        <span className="text-slate-300">Crypto Payments</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-          </EvidenceCard>
+            )}
+          </div>
         )}
+
+        {/* Spamhaus Listings */}
+        {spamhausData?.listedIn && spamhausData.listedIn.length > 0 && (
+          <div className="p-6 rounded-xl mb-6"
+               style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
+            <button
+              onClick={() => toggleSection('spamhaus')}
+              className="w-full flex items-center justify-between mb-4"
+            >
+              <h2 className="text-xl font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
+                SPAMHAUS BLOCKLISTS ({spamhausData.listedIn.length})
+              </h2>
+              {expandedSections.spamhaus ? <ChevronUp className="w-5 h-5 text-rose-400" /> : <ChevronDown className="w-5 h-5 text-rose-400" />}
+            </button>
+            
+            {expandedSections.spamhaus && (
+              <div className="space-y-3">
+                {spamhausData.listedIn.map((list: string, idx: number) => {
+                  const details = spamhausData.details?.[list.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '') + '.spamhaus.org'];
+                  return (
+                    <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-rose-500/20">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="font-bold text-rose-400">{list}</div>
+                        <span className="px-2 py-1 rounded text-xs font-bold bg-rose-500/20 text-rose-400">LISTED</span>
+                      </div>
+                      {details && (
+                        <div className="text-sm text-slate-400">{details.description}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AlienVault OTX Pulses */}
+        {alienVaultData?.pulse_info?.pulses && alienVaultData.pulse_info.pulses.length > 0 && (
+          <div className="p-6 rounded-xl mb-6"
+               style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+            <button
+              onClick={() => toggleSection('pulses')}
+              className="w-full flex items-center justify-between mb-4"
+            >
+              <h2 className="text-xl font-bold text-violet-400 uppercase tracking-wider flex items-center gap-2">
+                <Activity className="w-5 h-5" />
+                THREAT INTELLIGENCE PULSES ({alienVaultData.pulse_info.count})
+              </h2>
+              {expandedSections.pulses ? <ChevronUp className="w-5 h-5 text-violet-400" /> : <ChevronDown className="w-5 h-5 text-violet-400" />}
+            </button>
+            
+            {expandedSections.pulses && (
+              <div className="space-y-3">
+                {alienVaultData.pulse_info.pulses.slice(0, 5).map((pulse: any, idx: number) => (
+                  <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-violet-500/20">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="font-bold text-white">{pulse.name}</div>
+                      <span className="px-2 py-1 rounded text-xs font-bold bg-violet-500/20 text-violet-400">
+                        {pulse.modified_text}
+                      </span>
+                    </div>
+                    {pulse.description && (
+                      <div className="text-sm text-slate-400 mb-2">{pulse.description}</div>
+                    )}
+                    {pulse.tags && pulse.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {pulse.tags.slice(0, 5).map((tag: string, tagIdx: number) => (
+                          <span key={tagIdx} className="px-2 py-0.5 rounded text-xs bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Team Cymru BGP Data */}
+        {teamCymruData && (
+          <div className="p-6 rounded-xl mb-6"
+               style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            <h2 className="text-xl font-bold text-white mb-4 uppercase tracking-wider flex items-center gap-2">
+              <Database className="w-5 h-5 text-cyan-400" />
+              BGP & ALLOCATION DATA
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {teamCymruData.bgp_prefix && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">BGP PREFIX</div>
+                  <div className="text-base font-medium text-white font-mono">{teamCymruData.bgp_prefix}</div>
+                </div>
+              )}
+              {teamCymruData.allocated && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ALLOCATED DATE</div>
+                  <div className="text-base font-medium text-white">{teamCymruData.allocated}</div>
+                </div>
+              )}
+              {teamCymruData.registry && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">REGISTRY</div>
+                  <div className="text-base font-medium text-white uppercase">{teamCymruData.registry}</div>
+                </div>
+              )}
+              {teamCymruData.country_code && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">COUNTRY CODE</div>
+                  <div className="text-base font-medium text-white">{teamCymruData.country_code}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VirusTotal Analysis */}
+        {virusTotalData?.data?.attributes?.last_analysis_stats && (
+          <div className="p-6 rounded-xl mb-6"
+               style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            <h2 className="text-xl font-bold text-white mb-4 uppercase tracking-wider flex items-center gap-2">
+              <Shield className="w-5 h-5 text-cyan-400" />
+              VIRUSTOTAL ANALYSIS
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                <div className="text-2xl font-bold text-rose-400 mb-1">
+                  {virusTotalData.data.attributes.last_analysis_stats.malicious || 0}
+                </div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider">Malicious</div>
+              </div>
+              <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <div className="text-2xl font-bold text-amber-400 mb-1">
+                  {virusTotalData.data.attributes.last_analysis_stats.suspicious || 0}
+                </div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider">Suspicious</div>
+              </div>
+              <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <div className="text-2xl font-bold text-emerald-400 mb-1">
+                  {virusTotalData.data.attributes.last_analysis_stats.harmless || 0}
+                </div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider">Clean</div>
+              </div>
+              <div className="p-4 rounded-lg bg-slate-700/10 border border-slate-700/20">
+                <div className="text-2xl font-bold text-slate-400 mb-1">
+                  {virusTotalData.data.attributes.last_analysis_stats.undetected || 0}
+                </div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider">Undetected</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Raw JSON Collapse */}
+        <div className="p-6 rounded-xl"
+             style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <button
+            onClick={() => toggleSection('sources')}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="text-xl font-bold text-white uppercase tracking-wider">RAW RESULTS DATA</h2>
+            {expandedSections.sources ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          </button>
+          
+          {expandedSections.sources && (
+            <div className="mt-4">
+              <pre className="p-4 text-xs text-slate-300 overflow-auto max-h-96 font-mono bg-slate-950 rounded-lg border border-slate-800">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
       </div>
-
-      <VarianceCard variances={[]} />
-
-      <RawJsonCollapse data={result} title="Raw Results Data" />
     </div>
   );
 }
