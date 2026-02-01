@@ -29,7 +29,7 @@ function Pill({ label, tone }: { label: string; tone: Severity }) {
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
-  const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('stream');
+  const [activePanel, setActivePanel] = useState<'recent' | 'stream'>('stream');
   
   // Real data state
   const [recentLookups, setRecentLookups] = useState<any[]>([]);
