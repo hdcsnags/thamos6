@@ -573,14 +573,7 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
       <aside className="w-16 border-r border-white/5 bg-[#01040a] flex flex-col items-center py-6 z-50">
         {/* Logo */}
         <button
-         onClick={() => {
-  if (location.pathname.startsWith('/scanner')) {
-    navigate('/scanner', { replace: true });
-    window.location.reload(); // Force refresh if already on scanner
-  } else {
-    navigate('/scanner');
-  }
-}}
+          onClick={() => onNavigate('scanner')}
         >
           <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-emerald-400 rounded-xl flex items-center justify-center shadow-[0_0_24px_rgba(34,211,238,0.3)] group-hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] transition-all">
             <span className="text-black font-black text-xl italic">T6</span>
