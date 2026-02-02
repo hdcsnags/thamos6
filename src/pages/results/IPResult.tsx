@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Globe, AlertTriangle, Shield, Database, MapPin, Server, Wifi, 
-  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap
+  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search
 } from 'lucide-react';
 import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
@@ -22,6 +23,7 @@ export default function IPResult({ ip }: IPResultProps) {
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Scroll to top when component mounts
@@ -232,6 +234,8 @@ export default function IPResult({ ip }: IPResultProps) {
 
 // Overview Section Component
 function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, virusTotalData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
+  const navigate = useNavigate();
+  
   return (
     <div className="space-y-6">
       {/* Threat Score */}
@@ -241,28 +245,28 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
 
       {/* Quick Actions */}
       <div className="flex items-center justify-center gap-3">
-  <button
-    onClick={copySummary}
-    className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-  >
-    {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-    COPY SUMMARY
-  </button>
-  <button
-    onClick={copyJson}
-    className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-  >
-    {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
-    COPY JSON
-  </button>
-  <button
-    onClick={() => navigate('/scanner')}
-    className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-cyan-500/30 text-cyan-400 flex items-center gap-2"
-  >
-    <Search className="w-4 h-4" />
-    NEW SCAN
-  </button>
-</div>
+        <button
+          onClick={copySummary}
+          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
+        >
+          {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          COPY SUMMARY
+        </button>
+        <button
+          onClick={copyJson}
+          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
+        >
+          {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
+          COPY JSON
+        </button>
+        <button
+          onClick={() => navigate('/scanner')}
+          className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-cyan-500/30 text-cyan-400 flex items-center gap-2"
+        >
+          <Search className="w-4 h-4" />
+          NEW SCAN
+        </button>
+      </div>
 
       {/* Key Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
