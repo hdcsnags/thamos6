@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Newspaper, RefreshCw, Search, Bookmark, ExternalLink, Calendar, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
+import VictimIntelligence from './VictimIntelligence';
 
 interface FeedItem {
   id: string;
@@ -420,8 +421,11 @@ export default function NewsFeed() {
           </div>
         </div>
 
-        {/* Main Content: Two Column Layout */}
-        <div className="grid grid-cols-12 gap-6" style={{ height: 'calc(100vh - 500px)', minHeight: '600px' }}>
+        {/* Main Content: Conditional Rendering */}
+        {selectedCategory === 'ransomware' ? (
+          <VictimIntelligence />
+        ) : (
+          <div className="grid grid-cols-12 gap-6" style={{ height: 'calc(100vh - 500px)', minHeight: '600px' }}>
           
           {/* LEFT: Article List */}
           <div className="col-span-4 rounded-xl overflow-hidden"
@@ -626,6 +630,7 @@ export default function NewsFeed() {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
