@@ -43,17 +43,21 @@ function App() {
     setCurrentPage(page);
   };
 
+  const handleBackToScanner = () => {
+    setScanResult(null);
+  };
+
   const renderTerminalPage = () => {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
-          return <TerminalIPResult ip={scanResult.value} />;
+          return <TerminalIPResult ip={scanResult.value} onBack={handleBackToScanner} />;
         case 'url':
-          return <TerminalURLResult url={scanResult.value} />;
+          return <TerminalURLResult url={scanResult.value} onBack={handleBackToScanner} />;
         case 'domain':
-          return <TerminalDomainResult domain={scanResult.value} />;
+          return <TerminalDomainResult domain={scanResult.value} onBack={handleBackToScanner} />;
         case 'hash':
-          return <TerminalHashResult hash={scanResult.value} />;
+          return <TerminalHashResult hash={scanResult.value} onBack={handleBackToScanner} />;
         default:
           return <TerminalScanner onScan={handleScan} />;
       }

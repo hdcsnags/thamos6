@@ -17,9 +17,10 @@ interface DomainResult {
 
 interface TerminalDomainResultProps {
   domain: string;
+  onBack?: () => void;
 }
 
-export default function TerminalDomainResult({ domain }: TerminalDomainResultProps) {
+export default function TerminalDomainResult({ domain, onBack }: TerminalDomainResultProps) {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<DomainResult | null>(null);
   const [error, setError] = useState('');
@@ -202,9 +203,21 @@ export default function TerminalDomainResult({ domain }: TerminalDomainResultPro
         </div>
       </div>
 
-      <div className="text-[#4a5568] text-xs">
+      {/* Back Button */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mt-4 px-4 py-2 border border-[#00d9ff] text-[#00d9ff] hover:bg-[#00d9ff] hover:text-[#0a0e1a] transition-all text-xs uppercase"
+          style={{ textShadow: '0 0 5px #00d9ff' }}
+        >
+          [ BACK TO SCANNER ]
+        </button>
+      )}
+
+      <div className="text-[#4a5568] text-xs mt-4">
         <div>Type "scan -domain [DOMAIN]" for another scan</div>
         <div>Type "help" for more commands</div>
+        <div>Click button above to return to terminal</div>
       </div>
     </div>
   );
