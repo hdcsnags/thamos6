@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react';
 import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
+import { shouldShowSection, type ScanFlags } from '../../lib/cliFlags';
 
 interface TerminalIPResultProps {
   ip: string;
+  flags?: ScanFlags;
   onBack?: () => void;
 }
 
-export default function TerminalIPResult({ ip, onBack }: TerminalIPResultProps) {
+export default function TerminalIPResult({ ip, flags, onBack }: TerminalIPResultProps) {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<IPLookupResult | null>(null);
   const [error, setError] = useState('');
+
+  const showGeo = !flags || shouldShowSection(flags, 'geo');
+  const showVpn = !flags || shouldShowSection(flags, 'vpn');
+  const showThreats = !flags || shouldShowSection(flags, 'threats');
+  const showSources = !flags || shouldShowSection(flags, 'sources');
+  const showJson = flags?.json || false;
 
   useEffect(() => {
     async function fetchData() {
@@ -57,6 +65,31 @@ export default function TerminalIPResult({ ip, onBack }: TerminalIPResultProps) 
   const boxBorderColor = isMalicious ? 'border-[#ff0080]' : 'border-[#00d9ff]';
   const boxBgColor = isMalicious ? 'bg-[#ff0080]/5' : 'bg-[#00d9ff]/5';
 
+  if (showJson) {
+    return (
+      <div className="h-full overflow-y-auto p-4 text-sm">
+        <div className="mb-4">
+          <div className="text-[#00d9ff] mb-2">{'>'} JSON Output</div>
+          <div className="text-[#4a5568]">[*] Raw data dump</div>
+        </div>
+        <div className="border border-[#4a5568] bg-[#0a0e1a] p-4 font-mono text-xs">
+          <pre className="text-[#a5d8ff] whitespace-pre-wrap break-all">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="mt-4 px-4 py-2 border border-[#00d9ff] text-[#00d9ff] hover:bg-[#00d9ff] hover:text-[#0a0e1a] transition-all text-xs uppercase"
+            style={{ textShadow: '0 0 5px #00d9ff' }}
+          >
+            [ BACK TO SCANNER ]
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 text-sm">
       <div className="mb-4">
@@ -67,7 +100,7 @@ export default function TerminalIPResult({ ip, onBack }: TerminalIPResultProps) 
       {/* Result Box */}
       <div className={`border ${boxBorderColor} ${boxBgColor} p-4 mb-4`}>
         <div className="text-[#00d9ff] mb-3">═══ IP ANALYSIS RESULTS ═══</div>
-        
+
         <div className="space-y-2 text-[#a5d8ff]">
           <div>IP Address: <span className="text-white">{ip}</span></div>
           <div>
@@ -77,22 +110,24 @@ export default function TerminalIPResult({ ip, onBack }: TerminalIPResultProps) 
             Status: <span className={statusColor}>{isMalicious ? '⚠ MALICIOUS' : '✓ CLEAN'}</span>
           </div>
 
-          <div className="border-t border-[#4a5568] my-3 pt-3">
-            <div className="text-[#4a5568] text-xs mb-2">LOCATION DATA:</div>
-            <div className="text-[#a5d8ff]">
-              Country: {result.enrichment?.country || 'Unknown'}<br />
-              City: {result.enrichment?.city || 'Unknown'}<br />
-              Region: {result.enrichment?.region || 'Unknown'}<br />
-              ISP: {result.enrichment?.isp || 'Unknown'}
+          {showGeo && (
+            <div className="border-t border-[#4a5568] my-3 pt-3">
+              <div className="text-[#4a5568] text-xs mb-2">LOCATION DATA:</div>
+              <div className="text-[#a5d8ff]">
+                Country: {result.enrichment?.country || 'Unknown'}<br />
+                City: {result.enrichment?.city || 'Unknown'}<br />
+                Region: {result.enrichment?.region || 'Unknown'}<br />
+                ISP: {result.enrichment?.isp || 'Unknown'}
+              </div>
             </div>
-          </div>
+          )}
 
-          {result.vpnData && (
+          {showVpn && result.vpnData && (
             <div className="border-t border-[#4a5568] my-3 pt-3">
               <div className="text-[#4a5568] text-xs mb-2">VPN/PROXY STATUS:</div>
               <div className="text-[#a5d8ff]">
-                Detection: {result.vpnData.isVPN ? 
-                  <span className="text-[#fbbf24]">VPN/Proxy Detected</span> : 
+                Detection: {result.vpnData.isVPN ?
+                  <span className="text-[#fbbf24]">VPN/Proxy Detected</span> :
                   <span className="text-[#00ff41]">Clean</span>
                 }<br />
                 Confidence: {result.vpnData.confidence}%
@@ -100,25 +135,42 @@ export default function TerminalIPResult({ ip, onBack }: TerminalIPResultProps) 
             </div>
           )}
 
-          {result.abuseIPDBData && result.abuseIPDBData.abuseConfidenceScore > 0 && (
+          {showThreats && result.abuseIPDBData && result.abuseIPDBData.abuseConfidenceScore > 0 && (
             <div className="border-t border-[#4a5568] my-3 pt-3">
               <div className="text-[#4a5568] text-xs mb-2">ABUSE DATA:</div>
               <div className="text-[#ff0080]">
                 Abuse Score: {result.abuseIPDBData.abuseConfidenceScore}%<br />
                 Reports: {result.abuseIPDBData.totalReports}<br />
-                Last Reported: {result.abuseIPDBData.lastReportedAt ? 
-                  new Date(result.abuseIPDBData.lastReportedAt).toLocaleDateString() : 
+                Last Reported: {result.abuseIPDBData.lastReportedAt ?
+                  new Date(result.abuseIPDBData.lastReportedAt).toLocaleDateString() :
                   'N/A'
                 }
               </div>
             </div>
           )}
 
-          {result.spamhausData && result.spamhausData.listed && (
+          {showThreats && result.spamhausData && result.spamhausData.listed && (
             <div className="border-t border-[#4a5568] my-3 pt-3">
               <div className="text-[#4a5568] text-xs mb-2">BLOCKLIST STATUS:</div>
               <div className="text-[#ff0080]">
                 Listed on: {result.spamhausData.lists?.join(', ') || 'Spamhaus'}
+              </div>
+            </div>
+          )}
+
+          {showSources && (
+            <div className="border-t border-[#4a5568] my-3 pt-3">
+              <div className="text-[#4a5568] text-xs mb-2">SOURCE DATA:</div>
+              <div className="text-[#a5d8ff] space-y-1">
+                {result.virusTotalData && (
+                  <div>VirusTotal: {result.virusTotalData.malicious || 0} detections</div>
+                )}
+                {result.abuseIPDBData && (
+                  <div>AbuseIPDB: {result.abuseIPDBData.abuseConfidenceScore}% confidence</div>
+                )}
+                {result.spamhausData && (
+                  <div>Spamhaus: {result.spamhausData.listed ? 'Listed' : 'Clean'}</div>
+                )}
               </div>
             </div>
           )}

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../contexts/themecontext';
+import { parseFlags, type ScanFlags } from '../lib/cliFlags';
 
 interface TerminalScannerProps {
-  onScan: (type: string, value: string) => void;
+  onScan: (type: string, value: string, flags?: ScanFlags) => void;
 }
 
 export default function TerminalScanner({ onScan }: TerminalScannerProps) {
@@ -51,7 +52,11 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
 
     switch (command.toLowerCase()) {
       case 'help':
-        showHelp();
+        if (args.length > 0 && args[0].toLowerCase() === 'scan') {
+          showScanHelp();
+        } else {
+          showHelp();
+        }
         break;
       case 'clear':
         setOutput([]);
@@ -63,7 +68,11 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
         showStatus();
         break;
       case 'scan':
-        handleScan(args);
+        if (args.length > 0 && (args[0] === '--help' || args[0] === '-h' || args[0] === '/?')) {
+          showScanHelp();
+        } else {
+          handleScan(args);
+        }
         break;
       case 'get':
         handleGet(args);
@@ -101,6 +110,48 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
     addOutput('  clear                Clear terminal', 'info');
     addOutput('  startx               Launch GUI mode', 'info');
     addOutput('  help                 Show this help', 'info');
+    addOutput('  help scan            Show scan flags and options', 'info');
+    addOutput('', 'info');
+    addOutput('TIP: Use "scan --help" or "help scan" for advanced scanning options', 'info');
+    addOutput('', 'info');
+  };
+
+  const showScanHelp = () => {
+    addOutput('', 'info');
+    addOutput('═══════════════════════════════════════════════════════════', 'success');
+    addOutput('                    SCAN COMMAND REFERENCE                  ', 'success');
+    addOutput('═══════════════════════════════════════════════════════════', 'success');
+    addOutput('', 'info');
+    addOutput('USAGE:', 'success');
+    addOutput('  scan [TYPE] [VALUE] [FLAGS]', 'info');
+    addOutput('', 'info');
+    addOutput('SCAN TYPES:', 'success');
+    addOutput('  -ip [IP]           Scan IP address', 'info');
+    addOutput('  -hash [HASH]       Scan file hash (MD5/SHA1/SHA256)', 'info');
+    addOutput('  -url [URL]         Scan URL for threats', 'info');
+    addOutput('  -domain [DOMAIN]   Scan domain and DNS records', 'info');
+    addOutput('', 'info');
+    addOutput('FLAGS:', 'success');
+    addOutput('  -v, --verbose      Show all available sections (full output)', 'info');
+    addOutput('  --threats          Show only threat intelligence data', 'info');
+    addOutput('  --network          Show only network information', 'info');
+    addOutput('  --vpn              Show only VPN/proxy detection', 'info');
+    addOutput('  --geo              Show only geolocation data', 'info');
+    addOutput('  --sources          Show raw source data', 'info');
+    addOutput('  --json             Output raw JSON data', 'info');
+    addOutput('', 'info');
+    addOutput('EXAMPLES:', 'success');
+    addOutput('  scan -ip 8.8.8.8                      # Standard IP scan', 'info');
+    addOutput('  scan -ip 8.8.8.8 -v                   # Verbose (all data)', 'info');
+    addOutput('  scan -ip 8.8.8.8 --threats            # Threats only', 'info');
+    addOutput('  scan -ip 8.8.8.8 --geo --vpn          # Geo + VPN data', 'info');
+    addOutput('  scan -hash abc123... --sources        # Show source details', 'info');
+    addOutput('  scan -url https://example.com --json  # Raw JSON output', 'info');
+    addOutput('', 'info');
+    addOutput('NOTES:', 'success');
+    addOutput('  • Combine multiple flags to show specific sections', 'info');
+    addOutput('  • Without flags, shows default summary view', 'info');
+    addOutput('  • -v flag enables all sections automatically', 'info');
     addOutput('', 'info');
   };
 
@@ -125,15 +176,16 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
   };
 
   const handleScan = (args: string[]) => {
-    const type = args[0]?.toLowerCase();
-    const value = args.slice(1).join(' ');
+    const { flags, remainingArgs } = parseFlags(args);
+    const type = remainingArgs[0]?.toLowerCase();
+    const value = remainingArgs.slice(1).join(' ');
 
     if (!type || !value) {
-      addOutput('ERROR: Invalid syntax. Usage: scan -ip [IP] | scan -hash [HASH] | scan -url [URL] | scan -domain [DOMAIN]', 'error');
+      addOutput('ERROR: Invalid syntax. Usage: scan -ip [IP] [FLAGS]', 'error');
+      addOutput('Type "scan --help" for more information', 'info');
       return;
     }
 
-    // Map CLI flags to app types
     const typeMap: Record<string, string> = {
       '-ip': 'ip',
       '-hash': 'hash',
@@ -144,16 +196,32 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
     const scanType = typeMap[type];
     if (!scanType) {
       addOutput('ERROR: Unknown scan type. Use: -ip, -hash, -url, or -domain', 'error');
+      addOutput('Type "scan --help" for more information', 'info');
       return;
     }
 
     addOutput('', 'info');
     addOutput(`[*] Initiating ${scanType.toUpperCase()} scan: ${value}`, 'success');
+
+    const activeFlags: string[] = [];
+    if (flags.verbose) activeFlags.push('verbose');
+    else {
+      if (flags.threats) activeFlags.push('threats');
+      if (flags.network) activeFlags.push('network');
+      if (flags.vpn) activeFlags.push('vpn');
+      if (flags.geo) activeFlags.push('geo');
+      if (flags.sources) activeFlags.push('sources');
+      if (flags.json) activeFlags.push('json');
+    }
+
+    if (activeFlags.length > 0) {
+      addOutput(`[*] Active flags: ${activeFlags.join(', ')}`, 'info');
+    }
+
     addOutput('[*] Querying threat intelligence databases...', 'info');
     addOutput('', 'info');
 
-    // Call the actual scan function (this will navigate to result page)
-    onScan(scanType, value);
+    onScan(scanType, value, flags);
   };
 
   const handleGet = (args: string[]) => {

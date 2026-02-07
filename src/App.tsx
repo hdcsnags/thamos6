@@ -28,14 +28,15 @@ import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import ExtensionScanner from './pages/ExtensionScanner';
 import { useTheme } from './contexts/themecontext';
+import type { ScanFlags } from './lib/cliFlags';
 
 function App() {
   const { theme } = useTheme();
   const [currentPage, setCurrentPage] = useState<Page>('scanner');
-  const [scanResult, setScanResult] = useState<{ type: string; value: string } | null>(null);
+  const [scanResult, setScanResult] = useState<{ type: string; value: string; flags?: ScanFlags } | null>(null);
 
-  const handleScan = (type: string, value: string) => {
-    setScanResult({ type, value });
+  const handleScan = (type: string, value: string, flags?: ScanFlags) => {
+    setScanResult({ type, value, flags });
   };
 
   const handleNavigate = (page: Page) => {
@@ -51,13 +52,13 @@ function App() {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
-          return <TerminalIPResult ip={scanResult.value} onBack={handleBackToScanner} />;
+          return <TerminalIPResult ip={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
         case 'url':
-          return <TerminalURLResult url={scanResult.value} onBack={handleBackToScanner} />;
+          return <TerminalURLResult url={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
         case 'domain':
-          return <TerminalDomainResult domain={scanResult.value} onBack={handleBackToScanner} />;
+          return <TerminalDomainResult domain={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
         case 'hash':
-          return <TerminalHashResult hash={scanResult.value} onBack={handleBackToScanner} />;
+          return <TerminalHashResult hash={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
         default:
           return <TerminalScanner onScan={handleScan} />;
       }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { shouldShowSection, type ScanFlags } from '../../lib/cliFlags';
 
 interface DnsRecords {
   a: string[];
@@ -17,13 +18,18 @@ interface DomainResult {
 
 interface TerminalDomainResultProps {
   domain: string;
+  flags?: ScanFlags;
   onBack?: () => void;
 }
 
-export default function TerminalDomainResult({ domain, onBack }: TerminalDomainResultProps) {
+export default function TerminalDomainResult({ domain, flags, onBack }: TerminalDomainResultProps) {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<DomainResult | null>(null);
   const [error, setError] = useState('');
+
+  const showNetwork = !flags || shouldShowSection(flags, 'network');
+  const showThreats = !flags || shouldShowSection(flags, 'threats');
+  const showJson = flags?.json || false;
 
   useEffect(() => {
     async function fetchData() {
@@ -119,6 +125,31 @@ export default function TerminalDomainResult({ domain, onBack }: TerminalDomainR
   const boxBorderColor = isSuspicious ? 'border-[#fbbf24]' : 'border-[#00d9ff]';
   const boxBgColor = isSuspicious ? 'bg-[#fbbf24]/5' : 'bg-[#00d9ff]/5';
 
+  if (showJson) {
+    return (
+      <div className="h-full overflow-y-auto p-4 text-sm">
+        <div className="mb-4">
+          <div className="text-[#00d9ff] mb-2">{'>'} JSON Output</div>
+          <div className="text-[#4a5568]">[*] Raw data dump</div>
+        </div>
+        <div className="border border-[#4a5568] bg-[#0a0e1a] p-4 font-mono text-xs">
+          <pre className="text-[#a5d8ff] whitespace-pre-wrap break-all">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="mt-4 px-4 py-2 border border-[#00d9ff] text-[#00d9ff] hover:bg-[#00d9ff] hover:text-[#0a0e1a] transition-all text-xs uppercase"
+            style={{ textShadow: '0 0 5px #00d9ff' }}
+          >
+            [ BACK TO SCANNER ]
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 text-sm">
       <div className="mb-4">
@@ -137,7 +168,7 @@ export default function TerminalDomainResult({ domain, onBack }: TerminalDomainR
             </span>
           </div>
 
-          {result.dns && (
+          {showNetwork && result.dns && (
             <>
               <div className="border-t border-[#4a5568] my-3 pt-3">
                 <div className="text-[#4a5568] text-xs mb-2">DNS RECORDS:</div>
@@ -190,7 +221,7 @@ export default function TerminalDomainResult({ domain, onBack }: TerminalDomainR
             </>
           )}
 
-          {result.suspiciousReasons.length > 0 && (
+          {showThreats && result.suspiciousReasons.length > 0 && (
             <div className="border-t border-[#4a5568] my-3 pt-3">
               <div className="text-[#4a5568] text-xs mb-2">SUSPICIOUS INDICATORS:</div>
               <div className="space-y-1">
