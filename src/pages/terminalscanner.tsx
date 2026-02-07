@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTheme } from '../contexts/themecontext';
 
 interface TerminalScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
 export default function TerminalScanner({ onScan }: TerminalScannerProps) {
+  const { setTheme } = useTheme();
   const [input, setInput] = useState('');
   const [output, setOutput] = useState<Array<{ text: string; type: 'prompt' | 'command' | 'success' | 'error' | 'info' }>>([]);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -68,10 +70,13 @@ export default function TerminalScanner({ onScan }: TerminalScannerProps) {
         break;
       case 'startx':
         addOutput('', 'info');
-        addOutput('Launching GUI mode...', 'error');
-        addOutput('ERROR: GUI mode not yet implemented in theme system', 'error');
-        addOutput('This will switch to Theme #1 (Tactical GUI) when ready', 'info');
+        addOutput('[*] Shutting down terminal interface...', 'success');
+        addOutput('[*] Initializing tactical GUI...', 'success');
+        addOutput('[*] Loading visual components...', 'success');
         addOutput('', 'info');
+        addOutput('✓ Switched to TACTICAL mode', 'success');
+        addOutput('', 'info');
+        setTimeout(() => setTheme('tactical'), 500);
         break;
       default:
         addOutput(`Command not found: ${command}`, 'error');

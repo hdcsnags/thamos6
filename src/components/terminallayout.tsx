@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/themecontext';
 import type { Page } from './Layout';
 
 interface TerminalLayoutProps {
@@ -10,6 +11,7 @@ interface TerminalLayoutProps {
 
 export default function TerminalLayout({ currentPage, onNavigate, children }: TerminalLayoutProps) {
   const { user, signOut } = useAuth();
+  const { setTheme } = useTheme();
   const [sessionId] = useState(() => 'NL-' + Math.random().toString(36).substr(2, 9).toUpperCase());
   const [uptime, setUptime] = useState('00:00:00');
   const sessionStartTime = useRef(Date.now());
@@ -102,10 +104,14 @@ export default function TerminalLayout({ currentPage, onNavigate, children }: Te
 
       {/* Theme Toggle Button */}
       <button
-        onClick={() => onNavigate('scanner')} // This will go back to GUI mode when implemented
-        className="fixed top-5 right-5 z-[100] px-4 py-2 border border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-[#0a0e1a] transition-all text-xs uppercase font-bold"
+        onClick={() => {
+          setTheme('tactical');
+          onNavigate('scanner');
+        }}
+        className="fixed top-5 right-5 z-[100] px-4 py-2 border border-[#00d9ff] text-[#00d9ff] hover:bg-[#00d9ff] hover:text-[#0a0e1a] transition-all text-xs uppercase font-bold"
+        style={{ textShadow: '0 0 5px #00d9ff' }}
       >
-        [ SWITCH TO GUI MODE ]
+        [ SWITCH TO TACTICAL MODE ]
       </button>
 
       {/* Main Container */}
