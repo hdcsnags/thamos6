@@ -57,7 +57,7 @@ export default function Scanner({ onScan }: ScannerProps) {
             .limit(3),
           supabase
             .from('user_alerts')
-            .select('*, watchlist_entry:watchlist_entries(ioc_value, ioc_type), feed_item:feed_items(title)')
+            .select('*, watchlist_entry:watchlist_entries(value, entry_type), feed_item:feed_items(title)')
             .order('created_at', { ascending: false })
             .limit(3),
           supabase
@@ -469,7 +469,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                         </div>
                         {alert.watchlist_entry && (
                           <div className="text-[10px] text-amber-400 mono mb-2">
-                            Matched: {alert.watchlist_entry.ioc_value}
+                            Matched: {alert.watchlist_entry.value}
                           </div>
                         )}
                         <div className="text-[10px] text-slate-600 mono">
