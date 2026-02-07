@@ -36,6 +36,87 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 
 ---
 
+## Dual Interface System
+
+Thamos6 features two distinct user interfaces that can be toggled on-the-fly:
+
+### 1. Tactical Mode (Default)
+**Visual Style**: Modern, card-based GUI with rich visualizations
+**Purpose**: Comprehensive analysis with visual threat scoring, charts, and source cards
+**Best For**: Detailed investigation, report generation, visual analysis
+**Pages**: All standard pages (Scanner, IP Lookup, Domain Intel, etc.)
+
+### 2. Terminal Mode
+**Visual Style**: Classic terminal/CLI interface with retro aesthetics
+**Purpose**: Fast, keyboard-driven analysis with minimal visual overhead
+**Best For**: Power users, rapid IOC triage, CLI enthusiasts, automation workflows
+**Features**:
+- CLI-style commands (`scan`, `help`, `status`, `history`, `clear`)
+- **Advanced CLI Flags System** for custom output filtering
+- Keyboard shortcuts and command history (Up/Down arrows)
+- Auto-detection of IOC types
+- Simplified result views optimized for terminal display
+- `startx` command to switch to Tactical mode
+- Settings → `killx` command to switch to Terminal mode
+
+**CLI Commands**:
+```bash
+help                      # Show all available commands
+help scan                 # Show scan command with flags
+scan -ip [IP] [FLAGS]     # Scan IP address
+scan -hash [HASH] [FLAGS] # Analyze file hash
+scan -url [URL] [FLAGS]   # Scan URL
+scan -domain [DOMAIN] [FLAGS] # Lookup domain
+status                    # Show system status
+history                   # Show command history
+clear                     # Clear terminal
+startx                    # Switch to Tactical mode
+```
+
+**CLI Flags System**:
+All scan commands support advanced filtering flags to customize output:
+
+| Flag | Short | Description | Applies To |
+|------|-------|-------------|------------|
+| `--verbose` | `-v` | Show all sections (full output) | All scans |
+| `--threats` | - | Show only threat intelligence data | All scans |
+| `--network` | - | Show only network/DNS information | Domain, IP |
+| `--vpn` | - | Show only VPN/proxy detection | IP |
+| `--geo` | - | Show only geolocation data | IP |
+| `--sources` | - | Show raw source data | All scans |
+| `--json` | - | Output raw JSON dump | All scans |
+
+**Examples**:
+```bash
+# Standard scan (default view)
+scan -ip 8.8.8.8
+
+# Verbose (show everything)
+scan -ip 8.8.8.8 -v
+
+# Threats only
+scan -ip 8.8.8.8 --threats
+
+# Combine flags
+scan -ip 8.8.8.8 --geo --vpn
+
+# JSON output for automation
+scan -hash abc123def456 --json
+
+# Network info only
+scan -domain evil.com --network
+```
+
+**Behavior**:
+- No flags = Clean default summary
+- With flags = Show only requested sections
+- `--verbose` overrides all flags (shows everything)
+- `--json` provides machine-readable output
+- Flags can be combined for custom views
+- Terminal displays active flags during scan
+
+---
+
 ## Technology Stack
 
 ### Frontend
@@ -75,6 +156,138 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 ### Deployment
 - Static hosting (via Vite build)
 - Supabase cloud for backend services
+
+---
+
+## Terminal Interface Implementation
+
+### CLI Flags System (`src/lib/cliFlags.ts`)
+
+The CLI flags system provides advanced filtering for scan results in terminal mode.
+
+**Core Functions**:
+
+```typescript
+// Parse command-line style flags from args array
+parseFlags(args: string[]): { flags: ScanFlags, remainingArgs: string[] }
+
+// Determine if a specific section should be shown
+shouldShowSection(flags: ScanFlags, section: string): boolean
+```
+
+**ScanFlags Interface**:
+```typescript
+interface ScanFlags {
+  verbose: boolean;    // Show all sections
+  threats: boolean;    // Show threat intelligence
+  network: boolean;    // Show network/DNS info
+  vpn: boolean;        // Show VPN/proxy detection
+  geo: boolean;        // Show geolocation data
+  sources: boolean;    // Show source details
+  json: boolean;       // Raw JSON output
+}
+```
+
+**Flag Precedence**:
+1. `--json` flag outputs raw JSON (overrides all visual formatting)
+2. `--verbose` or `-v` enables all sections (overrides specific flags)
+3. If no flags specified, show default clean summary
+4. If specific flags provided, show only those sections
+
+**Implementation Flow**:
+1. Terminal scanner parses command: `scan -ip 8.8.8.8 --threats --geo`
+2. `parseFlags()` extracts flags and returns `{ verbose: false, threats: true, geo: true, ... }`
+3. Flags passed to result component via route state
+4. Result component calls `shouldShowSection(flags, 'threats')` for each section
+5. Only matching sections are rendered
+
+**Terminal Result Pages**:
+- `terminalipresult.tsx` - IP scan results with flags
+- `TerminalDomainResult.tsx` - Domain results with flags
+- `TerminalURLResult.tsx` - URL results with flags
+- `TerminalHashResult.tsx` - Hash results with flags
+
+Each result page:
+- Accepts `flags?: ScanFlags` prop
+- Uses `shouldShowSection()` to conditionally render sections
+- Provides JSON output mode via `--json` flag
+- Maintains terminal aesthetic (monospace, cyan/green colors)
+
+### Terminal Commands
+
+**Command Parser** (`terminalscanner.tsx`):
+Splits input into command and args, routes to appropriate handler.
+
+```typescript
+const [command, ...args] = input.split(' ');
+
+switch (command.toLowerCase()) {
+  case 'scan':  handleScan(args);
+  case 'help':  showHelp();
+  case 'clear': clearScreen();
+  // ... etc
+}
+```
+
+**Available Commands**:
+- `help` - Show command list
+- `help scan` / `scan --help` - Show scan flags documentation
+- `scan -ip [IP] [FLAGS]` - IP scan with optional flags
+- `scan -hash [HASH] [FLAGS]` - Hash scan with optional flags
+- `scan -url [URL] [FLAGS]` - URL scan with optional flags
+- `scan -domain [DOMAIN] [FLAGS]` - Domain scan with optional flags
+- `status` - Show system status
+- `history` - Show command history
+- `clear` - Clear terminal output
+- `startx` - Switch to Tactical GUI mode
+
+**Features**:
+- Command history with Up/Down arrow navigation
+- Auto-scroll to latest output
+- Color-coded output (errors in red, success in green, info in gray)
+- Click-to-focus input
+- Retro terminal aesthetics with CRT-style effects
+
+### Theme System (`src/contexts/themecontext.tsx`)
+
+```typescript
+type Theme = 'tactical' | 'terminal';
+
+const ThemeContext = createContext({
+  theme: 'tactical',
+  setTheme: (theme: Theme) => void
+});
+```
+
+**Theme Persistence**:
+- Stored in `localStorage` as `ui-theme`
+- Persists across sessions
+- Synced with user profile table (`ui_theme` column)
+- Can be toggled via:
+  - Settings page (Tactical mode)
+  - `startx` command (Terminal → Tactical)
+  - `killx` command (Tactical → Terminal)
+
+**Theme-Specific Rendering** (`App.tsx`):
+```typescript
+if (theme === 'terminal') {
+  return (
+    <TerminalLayout>
+      {renderTerminalPage()}
+    </TerminalLayout>
+  );
+}
+
+return (
+  <Layout>
+    {renderTacticalPage()}
+  </Layout>
+);
+```
+
+**Visual Differences**:
+- **Tactical**: Modern cards, charts, rich colors, visual threat scores
+- **Terminal**: Monospace fonts, ASCII art, limited color palette (cyan, green, red), CLI-style output
 
 ---
 
@@ -181,12 +394,13 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 
 ### Main Navigation
 
-| Category | Page | Auth Required | Database | Edge Function | External APIs | Purpose |
-|----------|------|---------------|----------|---------------|---------------|---------|
+| Category | Page | Auth Required | Database | Edge Function | External APIs | Purpose | Terminal Support |
+|----------|------|---------------|----------|---------------|---------------|---------|------------------|
 | **Threat Intel** |
-| | IP Lookup | No | `ip_lookups` | `threat-intel/ip` | 13+ sources | Check IP reputation across multiple threat feeds |
-| | Hash Lookup | No | - | `threat-intel/hash` | ThreatFox, VT | Check file hash against malware databases |
-| | Domain Intel | No | - | `threat-intel/domain` | RDAP, VT, others | WHOIS and reputation for domains |
+| | IP Lookup | No | `ip_lookups` | `threat-intel/ip` | 13+ sources | Check IP reputation across multiple threat feeds | ✅ |
+| | Hash Lookup | No | - | `threat-intel/hash` | ThreatFox, VT | Check file hash against malware databases | ✅ |
+| | Domain Intel | No | - | `threat-intel/domain` | RDAP, VT, others | WHOIS and reputation for domains | ✅ |
+| | Extension Scanner | No | `extension_analysis` | `analyze-extension` | Various | Analyze Chrome extensions for malicious behavior | ✅ |
 | **Analysis Tools** |
 | | Smart IOC Intake | No* | `watchlist_entries`, `case_notes` | `threat-intel/ip` | 13+ sources | Extract and analyze IOCs from raw text with instant verdicts |
 | | Defang/Refang | No | - | No | No | Convert IOCs to safe/active format |
@@ -329,6 +543,51 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
   - Unicode escapes
 - **Features**: Auto-detect encoding, multi-stage decoding
 - **No Backend**: Runs in browser
+
+**Chrome Extension Scanner** (`src/pages/ExtensionScanner.tsx`)
+- **Input**: Chrome extension ID or uploaded .crx/.zip file
+- **Analysis Types**:
+  - **Static Analysis**: Code inspection without execution
+    - Manifest analysis (permissions, content scripts, background scripts)
+    - Dangerous API usage detection (webRequest, cookies, tabs, debugger)
+    - External connection detection (remote code, tracking, analytics)
+    - Obfuscation detection (minified/packed code patterns)
+    - Code injection patterns (eval, innerHTML, script creation)
+  - **Behavioral Analysis**: Pattern-based threat detection
+    - Permission abuse scoring (excessive/dangerous permissions)
+    - Data exfiltration patterns
+    - Cryptocurrency mining indicators
+    - Phishing/credential harvesting patterns
+    - Malicious redirect detection
+- **Output**:
+  - **Overall Risk Score** (0-100 scale)
+  - **Risk Level**: Low, Medium, High, Critical
+  - **Detected Issues**: Categorized findings with severity
+  - **Permission Analysis**: Required permissions with risk assessment
+  - **Code Patterns**: Suspicious code snippets with explanations
+  - **File Breakdown**: All files in extension with risk scores
+  - **IOC Extraction**: Domains, IPs, URLs found in code
+  - **Recommendations**: Actionable security advice
+- **Database**:
+  - `extension_analysis` - Stores complete analysis results
+  - `extension_files` - Individual file analysis
+  - `extension_iocs` - Extracted indicators
+  - `extension_rules` - Detection rule tracking
+- **Edge Function**: `analyze-extension` - Performs deep analysis
+- **Features**:
+  - Drag-and-drop file upload
+  - Chrome Web Store direct lookup by ID
+  - Historical analysis tracking
+  - JSON export for automation
+  - One-click IOC addition to watchlist
+  - Rule-based detection engine with scoring
+- **Security**: Sandboxed analysis, no code execution
+- **Use Cases**:
+  - Pre-installation security review
+  - Enterprise extension vetting
+  - Malicious extension investigation
+  - Incident response
+  - Security research
 
 #### Investigation Tools
 
@@ -1326,28 +1585,60 @@ Before deploying to production:
 /project
 ├── src/
 │   ├── components/       # Reusable UI components
-│   │   ├── Layout.tsx        # Main navigation and layout
-│   │   ├── SourceCard.tsx    # Threat source result display
-│   │   └── ThreatScore.tsx   # Threat score indicator
+│   │   ├── Layout.tsx            # Tactical mode navigation and layout
+│   │   ├── terminallayout.tsx    # Terminal mode layout wrapper
+│   │   ├── SourceCard.tsx        # Threat source result display
+│   │   ├── ThreatScore.tsx       # Threat score indicator
+│   │   ├── ThemeToggle.tsx       # Theme switcher
+│   │   ├── scanner/              # Scanner-specific components
+│   │   │   ├── ActionsBar.tsx        # Copy/Export/Save actions
+│   │   │   ├── KeyFacts.tsx          # Key metrics display
+│   │   │   ├── SourceStatus.tsx      # Source loading indicators
+│   │   │   ├── EvidenceCard.tsx      # Evidence display
+│   │   │   ├── VarianceCard.tsx      # Cross-source variance
+│   │   │   └── RawJsonCollapse.tsx   # Raw JSON viewer
+│   │   └── extension/            # Extension scanner components
+│   │       ├── AnalysisResults.tsx   # Extension analysis display
+│   │       └── AnalysisHistory.tsx   # Historical scans
 │   ├── contexts/         # React contexts
-│   │   ├── AuthContext.tsx   # Authentication state
-│   │   └── AlertContext.tsx  # Alert notifications
+│   │   ├── AuthContext.tsx       # Authentication state
+│   │   ├── AlertContext.tsx      # Alert notifications
+│   │   └── themecontext.tsx      # Theme state (terminal/tactical)
 │   ├── lib/              # Utility libraries
-│   │   ├── supabase.ts       # Supabase client config
-│   │   ├── threatIntel.ts    # API wrapper functions
-│   │   └── iocAnalysis.ts    # Verdict classification engine
+│   │   ├── supabase.ts           # Supabase client config
+│   │   ├── threatIntel.ts        # API wrapper functions
+│   │   ├── iocAnalysis.ts        # Verdict classification engine
+│   │   ├── cliFlags.ts           # CLI flags parser (NEW)
+│   │   └── iocDetection.ts       # IOC extraction patterns
 │   ├── pages/            # Page components
+│   │   ├── Scanner.tsx               # Unified scanner (Tactical)
+│   │   ├── terminalscanner.tsx       # Terminal interface (NEW)
 │   │   ├── IPLookup.tsx
 │   │   ├── URLScanner.tsx
-│   │   ├── [...]
+│   │   ├── ExtensionScanner.tsx      # Chrome extension analysis (NEW)
+│   │   ├── results/                  # Result pages
+│   │   │   ├── IPResult.tsx              # Tactical IP results
+│   │   │   ├── URLResult.tsx             # Tactical URL results
+│   │   │   ├── DomainResult.tsx          # Tactical domain results
+│   │   │   ├── HashResult.tsx            # Tactical hash results
+│   │   │   ├── ExtensionResult.tsx       # Tactical extension results
+│   │   │   ├── terminalipresult.tsx      # Terminal IP results (NEW)
+│   │   │   ├── TerminalURLResult.tsx     # Terminal URL results (NEW)
+│   │   │   ├── TerminalDomainResult.tsx  # Terminal domain results (NEW)
+│   │   │   └── TerminalHashResult.tsx    # Terminal hash results (NEW)
+│   │   └── [... other pages]
 │   ├── types/            # TypeScript type definitions
 │   ├── App.tsx           # Root component with routing
 │   └── main.tsx          # Entry point
 ├── supabase/
 │   ├── functions/        # Edge functions
-│   │   ├── threat-intel/     # Main TI routing
-│   │   ├── api-keys/         # Key management
-│   │   └── news-feeds/       # RSS feed aggregation
+│   │   ├── threat-intel/         # Main TI routing
+│   │   ├── api-keys/             # Key management
+│   │   ├── news-feeds/           # RSS feed aggregation
+│   │   ├── analyze-extension/    # Extension analysis (NEW)
+│   │   ├── tor-list-refresh/     # TOR exit node updates
+│   │   ├── ip2proxy-refresh/     # VPN/proxy database updates
+│   │   └── ransomware-intel/     # Ransomware tracking
 │   └── migrations/       # Database migrations
 ├── public/               # Static assets
 └── package.json
