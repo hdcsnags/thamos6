@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import Layout, { type Page } from './components/Layout';
+import TerminalLayout from './components/terminallayout';
 import Scanner from './pages/Scanner';
+import TerminalScanner from './pages/terminalscanner';
 import IPResult from './pages/results/IPResult';
 import URLResult from './pages/results/URLResult';
 import DomainResult from './pages/results/DomainResult';
 import HashResult from './pages/results/HashResult';
 import ExtensionResult from './pages/results/ExtensionResult';
+import TerminalIPResult from './pages/results/terminalipresult';
+import TerminalURLResult from './pages/results/TerminalURLResult';
+import TerminalDomainResult from './pages/results/TerminalDomainResult';
+import TerminalHashResult from './pages/results/TerminalHashResult';
 import IPLookup from './pages/IPLookup';
 import URLScanner from './pages/URLScanner';
 import BulkLookup from './pages/BulkLookup';
@@ -21,8 +27,10 @@ import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import ExtensionScanner from './pages/ExtensionScanner';
+import { useTheme } from './contexts/themecontext';
 
 function App() {
+  const { theme } = useTheme();
   const [currentPage, setCurrentPage] = useState<Page>('scanner');
   const [scanResult, setScanResult] = useState<{ type: string; value: string } | null>(null);
 
@@ -35,7 +43,26 @@ function App() {
     setCurrentPage(page);
   };
 
-  const renderPage = () => {
+  const renderTerminalPage = () => {
+    if (currentPage === 'scanner' && scanResult) {
+      switch (scanResult.type) {
+        case 'ip':
+          return <TerminalIPResult ip={scanResult.value} />;
+        case 'url':
+          return <TerminalURLResult url={scanResult.value} />;
+        case 'domain':
+          return <TerminalDomainResult domain={scanResult.value} />;
+        case 'hash':
+          return <TerminalHashResult hash={scanResult.value} />;
+        default:
+          return <TerminalScanner onScan={handleScan} />;
+      }
+    }
+
+    return <TerminalScanner onScan={handleScan} />;
+  };
+
+  const renderTacticalPage = () => {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
@@ -43,8 +70,8 @@ function App() {
         case 'url':
           return <URLResult url={scanResult.value} />;
         case 'domain':
-  return <DomainResult domain={scanResult.value} />;
-       case 'hash':
+          return <DomainResult domain={scanResult.value} />;
+        case 'hash':
           return <HashResult hash={scanResult.value} />;
         case 'extension':
           return <ExtensionResult extensionId={scanResult.value} />;
@@ -91,9 +118,17 @@ function App() {
     }
   };
 
+  if (theme === 'terminal') {
+    return (
+      <TerminalLayout currentPage={currentPage} onNavigate={handleNavigate}>
+        {renderTerminalPage()}
+      </TerminalLayout>
+    );
+  }
+
   return (
     <Layout currentPage={currentPage} onNavigate={handleNavigate} onScan={handleScan}>
-      {renderPage()}
+      {renderTacticalPage()}
     </Layout>
   );
 }

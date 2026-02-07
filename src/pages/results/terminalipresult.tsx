@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { lookupIP } from '../lib/threatIntel';
-import type { IPLookupResult } from '../types';
+import { lookupIP } from '../../lib/threatIntel';
+import type { IPLookupResult } from '../../types';
 
 interface TerminalIPResultProps {
   ip: string;

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../lib/supabase';
 
 type Theme = 'tactical' | 'terminal';
 
@@ -12,22 +13,64 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    // Load from localStorage or default to tactical
     const saved = localStorage.getItem('thamos6-theme');
     return (saved === 'terminal' ? 'terminal' : 'tactical') as Theme;
   });
 
+  const [user, setUser] = useState<any>(null);
+
   useEffect(() => {
-    // Persist theme choice
-    localStorage.setItem('thamos6-theme', theme);
-  }, [theme]);
+    async function loadUser() {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      setUser(currentUser);
+    }
+    loadUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    async function syncFromSupabase() {
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('ui_theme')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (data?.ui_theme && (data.ui_theme === 'terminal' || data.ui_theme === 'tactical')) {
+        setThemeState(data.ui_theme as Theme);
+        localStorage.setItem('thamos6-theme', data.ui_theme);
+      }
+    }
+
+    syncFromSupabase();
+  }, [user]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
+
+    localStorage.setItem('thamos6-theme', newTheme);
+
+    if (user) {
+      supabase
+        .from('profiles')
+        .update({ ui_theme: newTheme })
+        .eq('id', user.id)
+        .then();
+    }
   };
 
   const toggleTheme = () => {
-    setThemeState(prev => prev === 'tactical' ? 'terminal' : 'tactical');
+    const newTheme = theme === 'tactical' ? 'terminal' : 'tactical';
+    setTheme(newTheme);
   };
 
   return (
