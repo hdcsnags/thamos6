@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock, User, Settings as SettingsIcon } from 'lucide-react';
+import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock, User, Settings as SettingsIcon, Palette } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 
-type TabType = 'account' | 'api-keys' | 'usage';
+type TabType = 'account' | 'appearance' | 'api-keys' | 'usage';
 
 interface ApiKey {
   id: string;
@@ -34,6 +35,7 @@ const AVAILABLE_SERVICES = [
 
 export default function Settings() {
   const { user } = useAuth();
+  const { currentTheme, themes, setTheme, loading: themeLoading } = useTheme();
   const [activeTab, setActiveTab] = useState<TabType>('account');
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [usageStats, setUsageStats] = useState<UsageStat[]>([]);
@@ -275,6 +277,7 @@ export default function Settings() {
 
   const tabs = [
     { id: 'account' as TabType, name: 'Account', icon: User },
+    { id: 'appearance' as TabType, name: 'Appearance', icon: Palette },
     { id: 'api-keys' as TabType, name: 'API Keys', icon: Key },
     { id: 'usage' as TabType, name: 'Usage & Stats', icon: BarChart3 },
   ];
@@ -385,6 +388,94 @@ export default function Settings() {
                     Password must be at least 8 characters long
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'appearance' && (
+            <div className="space-y-6 max-w-4xl">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                  <Palette className="w-5 h-5 text-cyan-400" />
+                  Theme Selection
+                </h2>
+                <p className="text-sm text-slate-400 mb-6">
+                  Choose a theme that suits your style. Your preference is saved automatically.
+                </p>
+
+                {themeLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-cyan-500"></div>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {themes.map(theme => (
+                      <button
+                        key={theme.id}
+                        onClick={() => setTheme(theme.name)}
+                        className={`group relative p-6 rounded-xl border-2 transition-all text-left ${
+                          currentTheme === theme.name
+                            ? 'border-cyan-500 bg-cyan-500/10'
+                            : 'border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-white mb-1">
+                              {theme.display_name}
+                            </h3>
+                            <p className="text-sm text-slate-400">
+                              {theme.description || 'Custom theme'}
+                            </p>
+                          </div>
+                          {currentTheme === theme.name && (
+                            <div className="flex items-center gap-1 px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-md text-xs font-medium">
+                              <Check className="w-3 h-3" />
+                              Active
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <div
+                            className="w-8 h-8 rounded-lg border border-slate-600"
+                            style={{ backgroundColor: theme.config.primary }}
+                            title="Primary color"
+                          />
+                          <div
+                            className="w-8 h-8 rounded-lg border border-slate-600"
+                            style={{ backgroundColor: theme.config.background }}
+                            title="Background color"
+                          />
+                          <div
+                            className="w-8 h-8 rounded-lg border border-slate-600"
+                            style={{ backgroundColor: theme.config.surface }}
+                            title="Surface color"
+                          />
+                          <div
+                            className="w-8 h-8 rounded-lg border border-slate-600"
+                            style={{ backgroundColor: theme.config.text }}
+                            title="Text color"
+                          />
+                        </div>
+
+                        {theme.is_system && (
+                          <div className="mt-3 text-xs text-slate-500 flex items-center gap-1">
+                            <Shield className="w-3 h-3" />
+                            System theme
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                <h3 className="text-sm font-medium text-white mb-2">Coming Soon</h3>
+                <p className="text-sm text-slate-400">
+                  Custom theme builder is in development! Soon you'll be able to create and save your own themes with custom colors.
+                </p>
               </div>
             </div>
           )}

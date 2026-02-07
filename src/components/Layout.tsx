@@ -613,10 +613,11 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
             title="System Online"
           />
 
-          {/* Theme toggle (placeholder for now) */}
+          {/* Theme selector */}
           <button
+            onClick={() => onNavigate('settings')}
             className="w-10 h-10 rounded-xl flex items-center justify-center transition-all text-slate-500 hover:bg-white/5 hover:text-cyan-400"
-            title="Themes (Coming Soon)"
+            title="Themes"
           >
             <Palette className="w-5 h-5" />
           </button>
