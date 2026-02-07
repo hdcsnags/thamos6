@@ -452,24 +452,24 @@ export default function Scanner({ onScan }: ScannerProps) {
                           border: `1px solid ${borderColor}`
                         }}
                       >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider break-all truncate">
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`}></div>
+                            <h3 className="text-xs font-bold text-white uppercase tracking-wider truncate">
                               {alert.title}
                             </h3>
                           </div>
-                          <Pill 
-                            label={alert.severity || 'Medium'} 
-                            tone={severity} 
+                          <Pill
+                            label={alert.severity || 'Medium'}
+                            tone={severity}
                           />
                         </div>
                         <div className="text-xs text-slate-400 mb-3 line-clamp-2">
                           {alert.description || 'Watchlist match detected'}
                         </div>
                         {alert.watchlist_entry && (
-                          <div className="text-[10px] text-amber-400 mono mb-2">
-                            Matched: {alert.watchlist_entry.value}
+                          <div className="text-[10px] text-amber-400 mono mb-2 truncate">
+                            Matched "{alert.watchlist_entry.value}" in {alert.context}
                           </div>
                         )}
                         <div className="text-[10px] text-slate-600 mono">
