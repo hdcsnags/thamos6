@@ -258,6 +258,16 @@ export default function NewsFeed() {
     return map[severity] || 'slate';
   };
 
+  const getSeverityClasses = (severity: string) => {
+    const map: Record<string, string> = {
+      critical: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+      high: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+      medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+      low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    };
+    return map[severity] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+  };
+
   const filteredItems = items
     .filter(item => {
       if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -564,7 +574,7 @@ export default function NewsFeed() {
                         {selectedItem.watchlist_matches.map((match, idx) => (
                           <span
                             key={idx}
-                            className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider bg-${getSeverityColor(match.entry.severity)}-500/20 text-${getSeverityColor(match.entry.severity)}-400 border border-${getSeverityColor(match.entry.severity)}-500/30`}
+                            className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${getSeverityClasses(match.entry.severity)}`}
                           >
                             {match.entry.value} ({match.entry.severity})
                           </span>

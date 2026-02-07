@@ -31,9 +31,7 @@ function App() {
   };
 
   const handleNavigate = (page: Page) => {
-    if (page !== 'scanner') {
-      setScanResult(null);
-    }
+    setScanResult(null);
     setCurrentPage(page);
   };
 

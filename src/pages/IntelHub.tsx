@@ -85,7 +85,8 @@ export default function IntelHub() {
     try {
       await Promise.all([
         loadSources(),
-        loadItems()
+        loadItems(),
+        loadWatchlistCount()
       ]);
 
       if (user) {
@@ -96,6 +97,20 @@ export default function IntelHub() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadWatchlistCount = async () => {
+    if (!user) {
+      setMonitoredIOCs(0);
+      return;
+    }
+
+    const { count } = await supabase
+      .from('watchlist_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    setMonitoredIOCs(count || 0);
   };
 
   const loadSources = async () => {
@@ -164,9 +179,9 @@ export default function IntelHub() {
     return true;
   });
 
+  const [monitoredIOCs, setMonitoredIOCs] = useState(0);
   const unreadCount = items.filter(item => !item.is_read).length;
   const savedCount = items.filter(item => item.is_saved).length;
-  const monitoredIOCs = 43;
 
   const markAsRead = async (itemId: string) => {
     if (!user) return;
