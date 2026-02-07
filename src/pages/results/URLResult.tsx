@@ -4,7 +4,7 @@ import {
   Globe, AlertTriangle, Shield, Database, Link as LinkIcon, Target, FileJson, Zap, 
   Copy, Check, ExternalLink, Code, Search
 } from 'lucide-react';
-import { lookupURL } from '../../lib/threatIntel';
+import { scanURL } from '../../lib/threatIntel';
 import type { URLLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
 
@@ -37,7 +37,7 @@ export default function URLResult({ url }: URLResultProps) {
       setLoading(true);
       setError('');
       try {
-        const data = await lookupURL(url);
+        const data = await scanURL(url);
         setResult(data);
       } catch (err: any) {
         setError(err.message || 'Failed to lookup URL');

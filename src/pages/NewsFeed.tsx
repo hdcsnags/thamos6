@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Newspaper, RefreshCw, Search, Bookmark, ExternalLink, Calendar, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../contexts/AlertContext';
-import VictimIntelligence from './VictimIntelligence';
+import VictimIntelligence from '../components/VictimIntelligence';
 
 interface FeedItem {
   id: string;
