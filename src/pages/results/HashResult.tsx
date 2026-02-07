@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Shield, AlertTriangle, Database, FileText, Target, FileJson, Zap, 
+import {
+  Shield, AlertTriangle, Database, FileText, Target, FileJson, Zap,
   Copy, Check, Activity, Code, ExternalLink, Search
 } from 'lucide-react';
 import { lookupHash } from '../../lib/threatIntel';
@@ -219,7 +218,6 @@ export default function HashResult({ hash }: HashResultProps) {
 
 // Overview Section
 function OverviewSection({ result, vtData, malwareBazaarData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
-  const navigate = useNavigate();
   const threatCategory = vtData?.popular_threat_classification?.suggested_threat_label;
   const topNames = vtData?.popular_threat_classification?.popular_threat_name || [];
 
@@ -245,13 +243,6 @@ function OverviewSection({ result, vtData, malwareBazaarData, copySummary, copyJ
         >
           {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
           COPY JSON
-        </button>
-        <button
-          onClick={() => navigate('/scanner')}
-          className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-cyan-500/30 text-cyan-400 flex items-center gap-2"
-        >
-          <Search className="w-4 h-4" />
-          NEW SCAN
         </button>
       </div>
 
