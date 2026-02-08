@@ -424,6 +424,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    await storeFileContents(supabase, analysis.id, files);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -1150,4 +1152,42 @@ function generateSummary(findings: SecurityFinding[], behaviorFlags: BehaviorFla
   }
 
   return summary;
+}
+
+async function storeFileContents(supabase: any, analysisId: string, files: Map<string, Uint8Array>): Promise<void> {
+  const filesToStore: any[] = [];
+  const textFileExtensions = ['.js', '.json', '.html', '.css', '.xml', '.txt', '.md', '.yml', '.yaml'];
+
+  for (const [filePath, content] of files.entries()) {
+    const isTextFile = textFileExtensions.some(ext => filePath.toLowerCase().endsWith(ext));
+
+    if (isTextFile && content.byteLength <= MAX_INDIVIDUAL_FILE_SIZE) {
+      try {
+        const fileContent = new TextDecoder().decode(content);
+        const fileType = filePath.split('.').pop()?.toLowerCase() || 'unknown';
+
+        filesToStore.push({
+          analysis_id: analysisId,
+          file_path: filePath,
+          file_content: fileContent,
+          file_size: content.byteLength,
+          file_type: fileType
+        });
+      } catch (e) {
+        console.error(`Failed to decode ${filePath}:`, e);
+      }
+    }
+  }
+
+  if (filesToStore.length > 0) {
+    const { error } = await supabase
+      .from("extension_files")
+      .insert(filesToStore);
+
+    if (error) {
+      console.error("Error storing file contents:", error);
+    } else {
+      console.log(`Stored ${filesToStore.length} files for analysis ${analysisId}`);
+    }
+  }
 }

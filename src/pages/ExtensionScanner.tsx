@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink } from 'lucide-react';
+import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import FileExplorer from '../components/extension/FileExplorer';
+import FileViewer from '../components/extension/FileViewer';
 
 interface Analysis {
   id: string;
@@ -58,7 +60,8 @@ export default function ExtensionScanner() {
   const [error, setError] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior'>('findings');
+  const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior' | 'files'>('findings');
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   useEffect(() => {
     loadRecentAnalyses();
@@ -165,6 +168,11 @@ export default function ExtensionScanner() {
       newExpanded.add(id);
     }
     setExpandedFindings(newExpanded);
+  };
+
+  const viewFileForFinding = (filePath: string) => {
+    setSelectedFile(filePath);
+    setActiveTab('files');
   };
 
   const getRiskColor = (level: string) => {
@@ -336,6 +344,19 @@ export default function ExtensionScanner() {
                 >
                   Behavior ({currentAnalysis.behavior_flags?.length || 0})
                 </button>
+                <button
+                  onClick={() => setActiveTab('files')}
+                  className={`pb-3 px-2 font-medium transition-all border-b-2 ${
+                    activeTab === 'files'
+                      ? 'border-cyan-500 text-cyan-400'
+                      : 'border-transparent text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4" />
+                    Files
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -399,7 +420,16 @@ export default function ExtensionScanner() {
                                     <div className="text-sm text-slate-300 font-mono break-all">{finding.evidence}</div>
                                   </div>
                                   <div className="bg-slate-800 rounded p-3">
-                                    <div className="text-xs font-semibold text-slate-400 mb-1">Location</div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="text-xs font-semibold text-slate-400">Location</div>
+                                      <button
+                                        onClick={() => viewFileForFinding(finding.file_path)}
+                                        className="flex items-center gap-1 px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs rounded transition-colors"
+                                      >
+                                        <FileCode className="w-3 h-3" />
+                                        View File
+                                      </button>
+                                    </div>
                                     <div className="text-sm text-slate-300 font-mono">{finding.file_path}</div>
                                   </div>
                                 </div>
@@ -480,6 +510,41 @@ export default function ExtensionScanner() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'files' && (
+              <div className="grid grid-cols-12 gap-4 h-[700px]">
+                <div className="col-span-3 border border-slate-700 rounded-lg overflow-hidden bg-slate-800">
+                  <div className="px-4 py-3 bg-slate-800 border-b border-slate-700">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FolderOpen className="w-4 h-4" />
+                      File Explorer
+                    </h3>
+                  </div>
+                  <FileExplorer
+                    analysisId={currentAnalysis.id}
+                    onFileSelect={setSelectedFile}
+                    selectedFile={selectedFile}
+                    findings={findings}
+                  />
+                </div>
+                <div className="col-span-9 border border-slate-700 rounded-lg overflow-hidden">
+                  {selectedFile ? (
+                    <FileViewer
+                      analysisId={currentAnalysis.id}
+                      filePath={selectedFile}
+                      findings={findings}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-slate-400">
+                      <div className="text-center">
+                        <FileCode className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p>Select a file to view its contents</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
