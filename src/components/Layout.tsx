@@ -674,7 +674,11 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
 
       {/* Command Palette */}
       {isMissionControl && (
-        <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+        <CommandPalette
+          isOpen={showCommandPalette}
+          onClose={() => setShowCommandPalette(false)}
+          onNavigate={onNavigate}
+        />
       )}
     </div>
   );

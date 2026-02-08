@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Hash, Globe, FileText, Link as LinkIcon, X, Zap } from 'lucide-react';
+import { Search, Hash, Globe, FileText, Link as LinkIcon, X, Zap, Clock } from 'lucide-react';
+import type { Page } from './Layout';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
+  onNavigate: (page: Page) => void;
 }
 
 interface Command {
@@ -16,10 +17,9 @@ interface Command {
   category: string;
 }
 
-export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
+export default function CommandPalette({ isOpen, onClose, onNavigate }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const commands: Command[] = [
@@ -29,7 +29,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       description: 'Analyze an IP address for threats',
       icon: Globe,
       action: () => {
-        navigate('/ip-lookup');
+        onNavigate('ip');
         onClose();
       },
       category: 'Scanners',
@@ -40,7 +40,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       description: 'Check URL reputation and safety',
       icon: LinkIcon,
       action: () => {
-        navigate('/url-scanner');
+        onNavigate('url');
         onClose();
       },
       category: 'Scanners',
@@ -51,7 +51,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       description: 'Investigate domain intelligence',
       icon: Globe,
       action: () => {
-        navigate('/domain-intel');
+        onNavigate('domain');
         onClose();
       },
       category: 'Scanners',
@@ -62,7 +62,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       description: 'Check file hash against threat databases',
       icon: Hash,
       action: () => {
-        navigate('/hash-lookup');
+        onNavigate('hash');
         onClose();
       },
       category: 'Scanners',
@@ -71,20 +71,20 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       id: 'history',
       name: 'View History',
       description: 'See your recent scans',
-      icon: FileText,
+      icon: Clock,
       action: () => {
-        navigate('/history');
+        onNavigate('history');
         onClose();
       },
       category: 'Navigation',
     },
     {
-      id: 'intel-hub',
-      name: 'Intel Hub',
+      id: 'intel-stream',
+      name: 'Intel Stream',
       description: 'Access threat intelligence feeds',
       icon: Zap,
       action: () => {
-        navigate('/intel-hub');
+        onNavigate('news');
         onClose();
       },
       category: 'Navigation',
