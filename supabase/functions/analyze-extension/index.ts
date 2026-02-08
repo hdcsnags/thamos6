@@ -7,10 +7,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const MAX_INDIVIDUAL_FILE_SIZE = 500 * 1024;
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_INDIVIDUAL_FILE_SIZE = 2 * 1024 * 1024;
 const SCAN_TIMEOUT_MS = 250;
-const DOWNLOAD_TIMEOUT = 30000;
+const DOWNLOAD_TIMEOUT = 45000;
 
 interface AnalysisRequest {
   extensionUrl: string;
