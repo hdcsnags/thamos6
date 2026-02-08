@@ -400,10 +400,10 @@ export default function Settings() {
                   UI Mode
                 </h2>
                 <p className="text-sm text-slate-400 mb-6">
-                  Choose between Tactical (modern UI) or Terminal (command-line) interface. Your preference is saved automatically.
+                  Choose your preferred interface mode. Each theme provides a completely different experience tailored to different workflows.
                 </p>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid md:grid-cols-3 gap-4">
                   <button
                     onClick={() => setTheme('tactical')}
                     className={`group relative p-6 rounded-xl border-2 transition-all text-left ${
@@ -459,6 +459,35 @@ export default function Settings() {
                     </div>
                     <div className="text-xs text-slate-500">
                       Type commands to scan IPs, URLs, domains, and hashes
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTheme('mission-control')}
+                    className={`group relative p-6 rounded-xl border-2 transition-all text-left ${
+                      theme === 'mission-control'
+                        ? 'border-cyan-500 bg-cyan-500/10'
+                        : 'border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-white mb-1">
+                          Mission Control
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          SOC operator dashboard with multi-panel monitoring and live threat feeds
+                        </p>
+                      </div>
+                      {theme === 'mission-control' && (
+                        <div className="flex items-center gap-1 px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-md text-xs font-medium">
+                          <Check className="w-3 h-3" />
+                          Active
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Real-time situational awareness with multi-stream analysis
                     </div>
                   </button>
                 </div>

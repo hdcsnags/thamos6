@@ -7,8 +7,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
+import { useTheme } from '../contexts/themecontext';
 import { supabase } from '../lib/supabase';
 import ThemeToggle from './ThemeToggle';
+import MissionControlSidebar from './MissionControlSidebar';
+import CommandPalette from './CommandPalette';
 
 export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
 
@@ -565,10 +568,26 @@ function UserMenu({ onNavigate }: { onNavigate: (page: Page) => void }) {
 // Main Layout Component
 export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
   const { user, loading } = useAuth();
+  const { theme } = useTheme();
   const [showLogin, setShowLogin] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (theme === 'mission-control' && e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+        e.preventDefault();
+        setShowCommandPalette(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [theme]);
+
+  const isMissionControl = theme === 'mission-control';
 
   return (
-    <div className="h-screen flex bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className={`h-screen flex ${isMissionControl ? 'mission-control-active' : 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950'}`}>
       {/* Ultra-minimal left sidebar */}
       <aside className="w-16 border-r border-white/5 bg-[#01040a] flex flex-col items-center py-6 z-50">
         {/* Logo */}
@@ -642,6 +661,9 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
         </div>
       </aside>
 
+      {/* Mission Control Sidebar */}
+      {isMissionControl && <MissionControlSidebar />}
+
       {/* Main content area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
@@ -649,6 +671,11 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
 
       {/* Login modal */}
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+
+      {/* Command Palette */}
+      {isMissionControl && (
+        <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+      )}
     </div>
   );
 }

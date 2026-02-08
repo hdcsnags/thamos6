@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
-type Theme = 'tactical' | 'terminal';
+type Theme = 'tactical' | 'terminal' | 'mission-control';
 
 interface ThemeContextType {
   theme: Theme;
@@ -45,7 +45,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         .eq('id', user.id)
         .maybeSingle();
 
-      if (data?.ui_theme && (data.ui_theme === 'terminal' || data.ui_theme === 'tactical')) {
+      if (data?.ui_theme && (data.ui_theme === 'terminal' || data.ui_theme === 'tactical' || data.ui_theme === 'mission-control')) {
         setThemeState(data.ui_theme as Theme);
         localStorage.setItem('thamos6-theme', data.ui_theme);
       }
