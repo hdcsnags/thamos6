@@ -79,7 +79,7 @@ function App() {
         case 'hash':
           return <HashResult hash={scanResult.value} />;
         case 'extension':
-          return <ExtensionResult extensionId={scanResult.value} />;
+          return <ExtensionScanner />;
         default:
           return <Scanner onScan={handleScan} />;
       }
