@@ -55,7 +55,7 @@ function App() {
     setScanResult(null);
   };
 
-  // ─── Desktop Theme Renderer ───────────────────────────────
+  // ─── Desktop Theme Renderer ──────────────────────────────
   const renderDesktopPage = () => {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
