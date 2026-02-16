@@ -35,6 +35,7 @@ import NewsFeed from './pages/NewsFeed';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import ExtensionScanner from './pages/ExtensionScanner';
+import AIWorkshop from './pages/AIWorkshop';
 import { useTheme } from './contexts/themecontext';
 import type { ScanFlags } from './lib/cliFlags';
 
@@ -117,6 +118,7 @@ function App() {
 
     switch (currentPage) {
       case 'scanner': return <Scanner onScan={handleScan} />;
+      case 'aiworkshop': return <AIWorkshop />;
       case 'ip': return <IPLookup />;
       case 'url': return <URLScanner />;
       case 'bulk': return <BulkLookup />;

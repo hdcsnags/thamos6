@@ -21,6 +21,9 @@ interface UsageStat {
 }
 
 const AVAILABLE_SERVICES = [
+  { id: 'openai_key', name: 'OpenAI', description: 'GPT models for AI Workshop' },
+  { id: 'anthropic_key', name: 'Anthropic', description: 'Claude models for AI Workshop' },
+  { id: 'gemini_key', name: 'Google Gemini', description: 'Gemini models for AI Workshop' },
   { id: 'virustotal', name: 'VirusTotal', description: 'File and URL analysis' },
   { id: 'abuseipdb', name: 'AbuseIPDB', description: 'IP reputation data' },
   { id: 'shodan', name: 'Shodan', description: 'Internet device search' },

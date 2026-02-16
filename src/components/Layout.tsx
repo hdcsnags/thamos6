@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Shield, Search, Link, Layers, History, AlertTriangle, Mail, FileSearch, 
-  Hash, Globe, ShieldOff, Code, FileText, LogIn, LogOut, Settings, User, 
+  Shield, Search, Link, Layers, History, AlertTriangle, Mail, FileSearch,
+  Hash, Globe, ShieldOff, Code, FileText, LogIn, LogOut, Settings, User,
   Newspaper, Bell, ExternalLink, Check, Trash2, Puzzle, Zap, Clock, Grid3X3,
-  Palette
+  Palette, Bot
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlerts } from '../contexts/AlertContext';
@@ -13,7 +13,7 @@ import ThemeToggle from './ThemeToggle';
 import MissionControlSidebar from './MissionControlSidebar';
 import CommandPalette from './CommandPalette';
 
-export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
+export type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension' | 'aiworkshop';
 
 interface LayoutProps {
   currentPage: Page;
@@ -31,6 +31,7 @@ const sidebarItems: { id: Page; label: string; icon: React.ElementType }[] = [
 
 // Tools dropdown items
 const toolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
+  { id: 'aiworkshop', label: 'AI Workshop', icon: Bot },
   { id: 'ip', label: 'IP Lookup', icon: Globe },
   { id: 'url', label: 'URL Scanner', icon: Link },
   { id: 'hash', label: 'Hash Lookup', icon: Hash },
