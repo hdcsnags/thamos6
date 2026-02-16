@@ -5,7 +5,7 @@ interface BootSequenceProps {
 }
 
 const BOOT_MESSAGES = [
-  'ThamOS X Kernel v6.0.0 loading...',
+  'ThamOS X Kernel v7.0.0 loading...',
   'Initializing threat intelligence mesh...',
   'Loading VirusTotal integration... OK',
   'Loading AbuseIPDB integration... OK',
@@ -65,7 +65,7 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
     >
       <div className="w-full max-w-3xl px-8">
         <div className="mb-8 text-2xl font-bold" style={{ color: '#00d9ff' }}>
-          ThamOS X v6.0
+          ThamOS X v7.0
         </div>
 
         <div className="space-y-1 mb-8 h-96 overflow-hidden">

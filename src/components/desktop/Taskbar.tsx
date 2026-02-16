@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useAlerts } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { Bell } from 'lucide-react';
 
 interface TaskbarProps {
@@ -10,12 +12,32 @@ interface TaskbarProps {
 export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   const desktop = useDesktop();
   const { unreadCount } = useAlerts();
+  const { user } = useAuth();
   const [time, setTime] = useState(new Date());
+  const [agentStatus, setAgentStatus] = useState({ x: false, y: false, z: false });
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const checkAgents = async () => {
+      const { data } = await supabase
+        .from('user_api_keys')
+        .select('service')
+        .eq('user_id', user.id)
+        .in('service', ['anthropic_key', 'openai_key', 'gemini_key']);
+      const services = (data || []).map(k => k.service);
+      setAgentStatus({
+        x: services.includes('anthropic_key'),
+        y: services.includes('openai_key'),
+        z: services.includes('gemini_key'),
+      });
+    };
+    checkAgents();
+  }, [user]);
 
   const openWindows = Object.values(desktop.windows).filter(
     w => w.workspaceId === desktop.activeWorkspace || w.pinned
@@ -62,27 +84,27 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         <div className="w-px h-6" style={{ backgroundColor: '#1a1f35' }} />
 
         <div className="flex items-center gap-2 overflow-x-auto max-w-2xl">
-          {openWindows.map(window => (
+          {openWindows.map(win => (
             <button
-              key={window.id}
+              key={win.id}
               onClick={() => {
-                if (window.minimized) {
-                  desktop.restoreWindow(window.id);
+                if (win.minimized) {
+                  desktop.restoreWindow(win.id);
                 } else {
-                  desktop.focusWindow(window.id);
+                  desktop.focusWindow(win.id);
                 }
               }}
               className="flex items-center gap-2 px-3 h-8 rounded text-xs font-mono transition-all whitespace-nowrap"
               style={{
-                backgroundColor: desktop.activeWindowId === window.id ? `${window.accentColor}20` : 'transparent',
-                color: desktop.activeWindowId === window.id ? window.accentColor : '#8a8fa8',
-                border: `1px solid ${desktop.activeWindowId === window.id ? window.accentColor + '40' : 'transparent'}`,
-                opacity: window.minimized ? 0.5 : 1,
+                backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}20` : 'transparent',
+                color: desktop.activeWindowId === win.id ? win.accentColor : '#8a8fa8',
+                border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '40' : 'transparent'}`,
+                opacity: win.minimized ? 0.5 : 1,
               }}
-              aria-label={`Focus ${window.title}`}
+              aria-label={`Focus ${win.title}`}
             >
-              <span>{window.icon}</span>
-              <span className="max-w-[120px] truncate">{window.title}</span>
+              <span>{win.icon}</span>
+              <span className="max-w-[120px] truncate">{win.title}</span>
             </button>
           ))}
         </div>
@@ -90,16 +112,57 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
 
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1" title="Agent Status">
-            <div className="w-2 h-2 rounded-full bg-green-500" title="ThamOS-X: Online" />
-            <div className="w-2 h-2 rounded-full bg-orange-500" title="ThamOS-Y: Online" />
-            <div className="w-2 h-2 rounded-full bg-blue-500" title="ThamOS-Z: Online" />
+          <div className="flex items-center gap-1.5" title="Agent Status">
+            <div className="relative group">
+              <div
+                className="w-2 h-2 rounded-full transition-all"
+                style={{
+                  backgroundColor: agentStatus.x ? '#00ff9d' : '#3a3f55',
+                  boxShadow: agentStatus.x ? '0 0 6px #00ff9d60' : 'none',
+                }}
+              />
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
+                X (Claude): {agentStatus.x ? 'ONLINE' : 'NO KEY'}
+              </span>
+            </div>
+            <div className="relative group">
+              <div
+                className="w-2 h-2 rounded-full transition-all"
+                style={{
+                  backgroundColor: agentStatus.y ? '#fbbf24' : '#3a3f55',
+                  boxShadow: agentStatus.y ? '0 0 6px #fbbf2460' : 'none',
+                }}
+              />
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
+                Y (GPT): {agentStatus.y ? 'ONLINE' : 'NO KEY'}
+              </span>
+            </div>
+            <div className="relative group">
+              <div
+                className="w-2 h-2 rounded-full transition-all"
+                style={{
+                  backgroundColor: agentStatus.z ? '#00d9ff' : '#3a3f55',
+                  boxShadow: agentStatus.z ? '0 0 6px #00d9ff60' : 'none',
+                }}
+              />
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
+                Z (Gemini): {agentStatus.z ? 'ONLINE' : 'NO KEY'}
+              </span>
+            </div>
           </div>
 
           <div className="w-px h-4" style={{ backgroundColor: '#1a1f35' }} />
 
           <div className="relative">
             <button
+              onClick={() => {
+                desktop.openWindow({
+                  appId: 'intel',
+                  title: 'Intel Dashboard',
+                  icon: '\u{1F4E1}',
+                  accentColor: '#00d9ff',
+                });
+              }}
               className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-amber-500/10"
               style={{ color: '#fbbf24' }}
               aria-label="Notifications"

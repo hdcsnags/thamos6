@@ -12,7 +12,7 @@ const SNAP_THRESHOLD = 20;
 
 export function DesktopWindow({ id, children }: DesktopWindowProps) {
   const desktop = useDesktop();
-  const window = desktop.windows[id];
+  const win = desktop.windows[id];
   const windowRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -21,7 +21,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
   const [resizeDirection, setResizeDirection] = useState<string>('');
   const [snapPreview, setSnapPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
-  if (!window || window.minimized) return null;
+  if (!win || win.minimized) return null;
 
   const isActive = desktop.activeWindowId === id;
 
@@ -32,18 +32,18 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
   const handleTitleBarMouseDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
-    if (window.maximized) return;
+    if (win.maximized) return;
     e.stopPropagation();
 
     setIsDragging(true);
     setDragStart({
-      x: e.clientX - window.position.x,
-      y: e.clientY - window.position.y,
+      x: e.clientX - win.position.x,
+      y: e.clientY - win.position.y,
     });
   };
 
   const handleTitleBarDoubleClick = () => {
-    if (window.maximized) {
+    if (win.maximized) {
       desktop.restoreWindow(id);
     } else {
       desktop.maximizeWindow(id);
@@ -59,8 +59,8 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
     setResizeStart({
       x: e.clientX,
       y: e.clientY,
-      width: window.size.width,
-      height: window.size.height,
+      width: win.size.width,
+      height: win.size.height,
     });
   };
 
@@ -72,19 +72,19 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         const newX = e.clientX - dragStart.x;
         const newY = e.clientY - dragStart.y;
 
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight - 44;
+        const viewportWidth = globalThis.window.innerWidth;
+        const viewportHeight = globalThis.window.innerHeight - 44;
 
-        if (e.clientY < SNAP_THRESHOLD) {
+        if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
+          setSnapPreview({ x: 0, y: 0, width: viewportWidth / 2, height: viewportHeight / 2 });
+        } else if (e.clientX > viewportWidth - SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
+          setSnapPreview({ x: viewportWidth / 2, y: 0, width: viewportWidth / 2, height: viewportHeight / 2 });
+        } else if (e.clientY < SNAP_THRESHOLD) {
           setSnapPreview({ x: 0, y: 0, width: viewportWidth, height: viewportHeight });
         } else if (e.clientX < SNAP_THRESHOLD) {
           setSnapPreview({ x: 0, y: 0, width: viewportWidth / 2, height: viewportHeight });
         } else if (e.clientX > viewportWidth - SNAP_THRESHOLD) {
           setSnapPreview({ x: viewportWidth / 2, y: 0, width: viewportWidth / 2, height: viewportHeight });
-        } else if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
-          setSnapPreview({ x: 0, y: 0, width: viewportWidth / 2, height: viewportHeight / 2 });
-        } else if (e.clientX > viewportWidth - SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
-          setSnapPreview({ x: viewportWidth / 2, y: 0, width: viewportWidth / 2, height: viewportHeight / 2 });
         } else {
           setSnapPreview(null);
         }
@@ -96,8 +96,8 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
         let newWidth = resizeStart.width;
         let newHeight = resizeStart.height;
-        let newX = window.position.x;
-        let newY = window.position.y;
+        let newX = win.position.x;
+        let newY = win.position.y;
 
         if (resizeDirection.includes('e')) {
           newWidth = Math.max(MIN_WIDTH, resizeStart.width + deltaX);
@@ -105,7 +105,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         if (resizeDirection.includes('w')) {
           newWidth = Math.max(MIN_WIDTH, resizeStart.width - deltaX);
           if (newWidth > MIN_WIDTH) {
-            newX = window.position.x + deltaX;
+            newX = win.position.x + deltaX;
           }
         }
         if (resizeDirection.includes('s')) {
@@ -114,12 +114,12 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         if (resizeDirection.includes('n')) {
           newHeight = Math.max(MIN_HEIGHT, resizeStart.height - deltaY);
           if (newHeight > MIN_HEIGHT) {
-            newY = window.position.y + deltaY;
+            newY = win.position.y + deltaY;
           }
         }
 
         desktop.updateWindowSize(id, { width: newWidth, height: newHeight });
-        if (newX !== window.position.x || newY !== window.position.y) {
+        if (newX !== win.position.x || newY !== win.position.y) {
           desktop.updateWindowPosition(id, { x: newX, y: newY });
         }
       }
@@ -127,10 +127,16 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
     const handleMouseUp = (e: globalThis.MouseEvent) => {
       if (isDragging && snapPreview) {
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight - 44;
+        const viewportWidth = globalThis.window.innerWidth;
+        const viewportHeight = globalThis.window.innerHeight - 44;
 
-        if (e.clientY < SNAP_THRESHOLD) {
+        if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
+          desktop.updateWindowPosition(id, { x: 0, y: 0 });
+          desktop.updateWindowSize(id, { width: viewportWidth / 2, height: viewportHeight / 2 });
+        } else if (e.clientX > viewportWidth - SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
+          desktop.updateWindowPosition(id, { x: viewportWidth / 2, y: 0 });
+          desktop.updateWindowSize(id, { width: viewportWidth / 2, height: viewportHeight / 2 });
+        } else if (e.clientY < SNAP_THRESHOLD) {
           desktop.maximizeWindow(id);
         } else if (e.clientX < SNAP_THRESHOLD) {
           desktop.updateWindowPosition(id, { x: 0, y: 0 });
@@ -154,24 +160,24 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart, resizeStart, resizeDirection, window.position, window.size, id, desktop, snapPreview]);
+  }, [isDragging, isResizing, dragStart, resizeStart, resizeDirection, win.position, win.size, id, desktop, snapPreview]);
 
-  const style: React.CSSProperties = window.maximized
+  const style: React.CSSProperties = win.maximized
     ? {
         position: 'fixed',
         top: 0,
         left: 0,
         width: '100vw',
         height: 'calc(100vh - 44px)',
-        zIndex: window.zIndex,
+        zIndex: win.zIndex,
       }
     : {
         position: 'fixed',
-        top: window.position.y,
-        left: window.position.x,
-        width: window.size.width,
-        height: window.size.height,
-        zIndex: window.zIndex,
+        top: win.position.y,
+        left: win.position.x,
+        width: win.size.width,
+        height: win.size.height,
+        zIndex: win.zIndex,
       };
 
   return (
@@ -184,7 +190,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
             left: snapPreview.x,
             width: snapPreview.width,
             height: snapPreview.height,
-            borderColor: window.accentColor,
+            borderColor: win.accentColor,
             zIndex: 9999,
           }}
         />
@@ -195,9 +201,9 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         style={{
           ...style,
           backgroundColor: '#0a0e1a',
-          border: `1px solid ${window.accentColor}40`,
+          border: `1px solid ${win.accentColor}40`,
           boxShadow: isActive
-            ? `0 0 0 1px ${window.accentColor}30, 0 12px 48px rgba(0,0,0,0.6)`
+            ? `0 0 0 1px ${win.accentColor}30, 0 12px 48px rgba(0,0,0,0.6)`
             : '0 12px 48px rgba(0,0,0,0.6)',
         }}
         onMouseDown={handleMouseDown}
@@ -206,7 +212,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           className="flex items-center justify-between px-4 h-10 cursor-move select-none"
           style={{
             background: 'linear-gradient(to bottom, #0f1424, #0a0e1a)',
-            borderBottom: `1px solid ${window.accentColor}20`,
+            borderBottom: `1px solid ${win.accentColor}20`,
           }}
           onMouseDown={handleTitleBarMouseDown}
           onDoubleClick={handleTitleBarDoubleClick}
@@ -231,7 +237,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.maximized) {
+                if (win.maximized) {
                   desktop.restoreWindow(id);
                 } else {
                   desktop.maximizeWindow(id);
@@ -243,8 +249,8 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           </div>
 
           <div className="flex items-center gap-2 text-sm font-mono" style={{ color: '#c8cde0' }}>
-            <span>{window.icon}</span>
-            <span>{window.title}</span>
+            <span>{win.icon}</span>
+            <span>{win.title}</span>
           </div>
 
           <div className="w-[60px]" />
@@ -254,7 +260,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           {children}
         </div>
 
-        {!window.maximized && (
+        {!win.maximized && (
           <>
             <div
               className="absolute top-0 left-0 w-full h-1 cursor-n-resize"
