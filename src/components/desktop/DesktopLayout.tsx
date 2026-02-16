@@ -6,6 +6,7 @@ import { BootSequence } from './BootSequence';
 import { AppLauncher } from './AppLauncher';
 import { DesktopIcons } from './DesktopIcons';
 import { DesktopTerminal } from './DesktopTerminal';
+import { DesktopScanner } from './DesktopScanner';
 import { DesktopIPResult } from './DesktopIPResult';
 import { DesktopURLResult } from './DesktopURLResult';
 import { DesktopDomainResult } from './DesktopDomainResult';
@@ -117,7 +118,7 @@ function renderWindowContent(appId: string, data?: any) {
     case 'terminal':
       return <DesktopTerminal />;
     case 'scanner':
-      return <ScannerPlaceholder />;
+      return <DesktopScanner />;
     case 'browser':
       return <BrowserPlaceholder />;
     case 'workshop':
