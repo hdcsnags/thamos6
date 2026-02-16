@@ -11,6 +11,12 @@ import { DesktopIPResult } from './DesktopIPResult';
 import { DesktopURLResult } from './DesktopURLResult';
 import { DesktopDomainResult } from './DesktopDomainResult';
 import { DesktopHashResult } from './DesktopHashResult';
+import { DesktopWorkshop } from './DesktopWorkshop';
+import { DesktopSystemMonitor } from './DesktopSystemMonitor';
+import { DesktopIntelDashboard } from './DesktopIntelDashboard';
+import { DesktopCaseManager } from './DesktopCaseManager';
+import { DesktopBrowser } from './DesktopBrowser';
+import { DesktopSettings } from './DesktopSettings';
 
 export function DesktopLayout() {
   const desktop = useDesktop();
@@ -120,21 +126,21 @@ function renderWindowContent(appId: string, data?: any) {
     case 'scanner':
       return <DesktopScanner />;
     case 'browser':
-      return <BrowserPlaceholder />;
+      return <DesktopBrowser />;
     case 'workshop':
-      return <WorkshopPlaceholder />;
+      return <DesktopWorkshop />;
     case 'intel':
-      return <IntelPlaceholder />;
+      return <DesktopIntelDashboard />;
     case 'cases':
-      return <CasesPlaceholder />;
+      return <DesktopCaseManager />;
     case 'files':
       return <FilesPlaceholder />;
     case 'editor':
       return <EditorPlaceholder />;
     case 'monitor':
-      return <MonitorPlaceholder />;
+      return <DesktopSystemMonitor />;
     case 'settings':
-      return <SettingsPlaceholder />;
+      return <DesktopSettings />;
     case 'ip-result':
       return <DesktopIPResult ip={data?.value} flags={data?.flags} />;
     case 'url-result':
@@ -144,138 +150,30 @@ function renderWindowContent(appId: string, data?: any) {
     case 'hash-result':
       return <DesktopHashResult hash={data?.value} flags={data?.flags} />;
     default:
-      return <div className="p-8">Unknown app: {appId}</div>;
+      return <div className="h-full flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#8a8fa8', fontFamily: 'JetBrains Mono, monospace' }}><span className="text-xs">Unknown: {appId}</span></div>;
   }
-}
-
-function TerminalPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00ff9d' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">⌘</div>
-        <div className="text-xl mb-2">Terminal</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function ScannerPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00d9ff' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">🔍</div>
-        <div className="text-xl mb-2">Scanner</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function BrowserPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00d9ff' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">🌐</div>
-        <div className="text-xl mb-2">Browser</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function WorkshopPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00ff9d' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">🤖</div>
-        <div className="text-xl mb-2">AI Workshop</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Phase 2</div>
-      </div>
-    </div>
-  );
-}
-
-function IntelPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00d9ff' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">📡</div>
-        <div className="text-xl mb-2">Intel Dashboard</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function CasesPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00ff9d' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">📋</div>
-        <div className="text-xl mb-2">Case Manager</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
 }
 
 function FilesPlaceholder() {
   return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#b794f6' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">📁</div>
-        <div className="text-xl mb-2">File Manager</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Phase 3</div>
+    <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: '#060610', fontFamily: 'JetBrains Mono, monospace' }}>
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'rgba(183, 148, 246, 0.08)', border: '1px solid rgba(183, 148, 246, 0.2)' }}>
+        <span className="text-2xl" style={{ color: '#b794f6' }}>&#9670;</span>
       </div>
+      <span className="text-xs font-medium mb-1" style={{ color: '#c8cde0' }}>File Manager</span>
+      <span className="text-xs" style={{ color: '#3a3f55' }}>Requires GitHub OAuth (Phase 3)</span>
     </div>
   );
 }
 
 function EditorPlaceholder() {
   return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#fbbf24' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">📝</div>
-        <div className="text-xl mb-2">Code Editor</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Phase 4</div>
+    <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: '#060610', fontFamily: 'JetBrains Mono, monospace' }}>
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+        <span className="text-2xl" style={{ color: '#fbbf24' }}>&#9670;</span>
       </div>
-    </div>
-  );
-}
-
-function MonitorPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#fbbf24' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">📊</div>
-        <div className="text-xl mb-2">System Monitor</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsPlaceholder() {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#8a8fa8' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">⚙️</div>
-        <div className="text-xl mb-2">Settings</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
-    </div>
-  );
-}
-
-function ResultPlaceholder({ type, data }: { type: string; data?: any }) {
-  return (
-    <div className="h-full p-6 flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#00d9ff' }}>
-      <div className="text-center">
-        <div className="text-6xl mb-4">🔍</div>
-        <div className="text-xl mb-2">{type} Result</div>
-        <div className="text-sm" style={{ color: '#8a8fa8' }}>Coming soon...</div>
-      </div>
+      <span className="text-xs font-medium mb-1" style={{ color: '#c8cde0' }}>Code Editor</span>
+      <span className="text-xs" style={{ color: '#3a3f55' }}>Requires CodeMirror (Phase 4)</span>
     </div>
   );
 }
