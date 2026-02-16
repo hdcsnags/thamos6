@@ -5,6 +5,11 @@ import { Taskbar } from './Taskbar';
 import { BootSequence } from './BootSequence';
 import { AppLauncher } from './AppLauncher';
 import { DesktopIcons } from './DesktopIcons';
+import { DesktopTerminal } from './DesktopTerminal';
+import { DesktopIPResult } from './DesktopIPResult';
+import { DesktopURLResult } from './DesktopURLResult';
+import { DesktopDomainResult } from './DesktopDomainResult';
+import { DesktopHashResult } from './DesktopHashResult';
 
 export function DesktopLayout() {
   const desktop = useDesktop();
@@ -12,6 +17,13 @@ export function DesktopLayout() {
 
   useEffect(() => {
     if (desktop.bootComplete && Object.keys(desktop.windows).length === 0) {
+      desktop.openWindow({
+        appId: 'terminal',
+        title: 'Terminal',
+        position: { x: 100, y: 60 },
+        size: { width: 900, height: 550 },
+      });
+
       desktop.openWindow({
         appId: 'monitor',
         title: 'System Monitor',
@@ -103,7 +115,7 @@ export function DesktopLayout() {
 function renderWindowContent(appId: string, data?: any) {
   switch (appId) {
     case 'terminal':
-      return <TerminalPlaceholder />;
+      return <DesktopTerminal />;
     case 'scanner':
       return <ScannerPlaceholder />;
     case 'browser':
@@ -123,13 +135,13 @@ function renderWindowContent(appId: string, data?: any) {
     case 'settings':
       return <SettingsPlaceholder />;
     case 'ip-result':
-      return <ResultPlaceholder type="IP" data={data} />;
+      return <DesktopIPResult ip={data?.value} flags={data?.flags} />;
     case 'url-result':
-      return <ResultPlaceholder type="URL" data={data} />;
+      return <DesktopURLResult url={data?.value} flags={data?.flags} />;
     case 'domain-result':
-      return <ResultPlaceholder type="Domain" data={data} />;
+      return <DesktopDomainResult domain={data?.value} flags={data?.flags} />;
     case 'hash-result':
-      return <ResultPlaceholder type="Hash" data={data} />;
+      return <DesktopHashResult hash={data?.value} flags={data?.flags} />;
     default:
       return <div className="p-8">Unknown app: {appId}</div>;
   }
