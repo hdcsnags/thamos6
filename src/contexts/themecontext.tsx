@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
-type Theme = 'tactical' | 'terminal' | 'mission-control';
+type Theme = 'tactical' | 'terminal' | 'desktop' | 'mission-control';
 
 interface ThemeContextType {
   theme: Theme;
@@ -11,10 +11,12 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const VALID_THEMES: Theme[] = ['tactical', 'terminal', 'desktop', 'mission-control'];
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem('thamos6-theme');
-    return (saved === 'terminal' ? 'terminal' : 'tactical') as Theme;
+    return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'tactical';
   });
 
   const [user, setUser] = useState<any>(null);
@@ -45,7 +47,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         .eq('id', user.id)
         .maybeSingle();
 
-      if (data?.ui_theme && (data.ui_theme === 'terminal' || data.ui_theme === 'tactical' || data.ui_theme === 'mission-control')) {
+      if (data?.ui_theme && VALID_THEMES.includes(data.ui_theme as Theme)) {
         setThemeState(data.ui_theme as Theme);
         localStorage.setItem('thamos6-theme', data.ui_theme);
       }
@@ -56,7 +58,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-
     localStorage.setItem('thamos6-theme', newTheme);
 
     if (user) {
@@ -69,8 +70,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleTheme = () => {
-    const newTheme = theme === 'tactical' ? 'terminal' : 'tactical';
-    setTheme(newTheme);
+    const cycle: Theme[] = ['tactical', 'terminal', 'desktop'];
+    const idx = cycle.indexOf(theme);
+    const next = cycle[(idx + 1) % cycle.length];
+    setTheme(next);
   };
 
   return (
