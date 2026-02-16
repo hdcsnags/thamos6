@@ -29,7 +29,7 @@ export default function DesktopScanner({ onScan, onAgentCall }: DesktopScannerPr
     addLines([
       { text: '', type: 'info' },
       { text: '╔══════════════════════════════════════════════════════╗', type: 'header' },
-      { text: '║   ThamOS X — Desktop Threat Intelligence Terminal    ║', type: 'header' },
+      { text: '║   ThamOS — Desktop Threat Intelligence Terminal    ║', type: 'header' },
       { text: '╚══════════════════════════════════════════════════════╝', type: 'header' },
       { text: '', type: 'info' },
       { text: 'Type "help" for commands. Invoke agents: thamosx, thamosy, thamosz', type: 'dim' },
