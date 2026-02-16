@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import Layout, { type Page } from './components/Layout';
 import TerminalLayout from './components/terminallayout';
-import DesktopLayout from './components/DesktopLayout';
+import { DesktopLayout } from './components/desktop/DesktopLayout';
+import { DesktopProvider } from './contexts/DesktopContext';
 import Scanner from './pages/Scanner';
 import TerminalScanner from './pages/terminalscanner';
 import DesktopScanner from './pages/DesktopScanner';
@@ -139,9 +140,9 @@ function App() {
 
   if (theme === 'desktop') {
     return (
-      <DesktopLayout currentPage={currentPage} onNavigate={handleNavigate}>
-        {renderDesktopPage()}
-      </DesktopLayout>
+      <DesktopProvider>
+        <DesktopLayout />
+      </DesktopProvider>
     );
   }
 
