@@ -1,0 +1,601 @@
+My idea as a blurb
+Bro I'm havin a random idea ,  LOL I have the CLI version of thamos6 as you know brobert and people find it super cool, I'm like, what if I made a "Desktop" version, with a CLI tool, a fake browser that I low key already did on thamos1, but here is the actual insanity part, what if i could plug my agents into said thamos6 template so while I'm literally at work, I could switch to the theme and have access to my Agents that have access to my github etc and then I can be building HELLA shit from work while not technically being on AI websites at work (I can, I work in cyber so I low key make the rules) but I'm talking a highly advanced UI that can run all of the functionality of thamos6 for scanning IPs, hashes etc, but ALSO to allow me to speak with AI from the "browser" to also allowing me to literally be like "Hey ThamosX, the Mikaylah project, I want to add this feature?" or "ThamosY, I'm hunting a bug in fortimanager here, can you help me with this output? What am I doing wrong?" each different name I invoke will reference a different API so when I call the function it'd route it to my edge functions that would call my agents, or however it gets coded, this is low key the thamos on steroids version, its low key a machine in the browser that has a specific subset of usecases and skills, it'd be the most insane shit if doable I think with my own CLI, the UI would scream "yeah this dude a hacker for sure"
+
+This is the prompt Claude sent to you after we hashed out the idea a bit
+# ThamOS X — Desktop Environment Upgrade: Full Project Briefing
+
+## Project Context
+
+ThamOS 6 (T6) is an existing, fully functional React + TypeScript + Supabase threat intelligence web application. It currently has three UI themes: "tactical" (GUI dashboard with sidebar navigation), "terminal" (full CRT terminal with CLI commands), and "mission-control" (command palette driven). The codebase is mature with authentication, edge functions for 6+ threat intel APIs, user API key management, scan history, case notes, news feeds, watchlists, alerts, and an admin panel.
+
+**This upgrade adds a fourth theme: "desktop" — a browser-native hacker workstation OS that transforms T6 from a threat intel scanner into a complete hacker workshop environment.** The scanner becomes one app among many running inside a windowed desktop OS. New capabilities include AI agent integration (Claude, GPT, Gemini), GitHub repo browsing/editing, a multi-agent chat workshop, and a proper window management system.
+
+Think of this as adding a Kali Linux / Parrot OS desktop experience that runs in the browser. Every existing feature still works — they just render inside draggable, resizable windows instead of a fixed layout.
+
+---
+
+## Existing Architecture (DO NOT REBUILD — EXTEND)
+
+### Tech Stack
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
+- **Backend**: Supabase (Auth, Database, Edge Functions, Realtime)
+- **Auth**: Supabase Auth with Google and Microsoft OAuth, email/password
+- **State**: React Context (AuthContext, ThemeContext, AlertContext)
+
+### Existing Theme Pattern (CRITICAL — follow this exact pattern)
+The app uses a theme context that determines which Layout and component set renders:
+
+```
+App.tsx routes based on theme:
+  theme === 'tactical'  → Layout.tsx       + Scanner.tsx      + IPResult.tsx (etc)
+  theme === 'terminal'  → TerminalLayout   + TerminalScanner  + TerminalIPResult (etc)
+  theme === 'desktop'   → DesktopLayout    + DesktopScanner   + DesktopIPResult (etc)  ← NEW
+```
+
+Each theme has its own Layout wrapper, Scanner component, and Result components. They all share the same API logic (threatIntel.ts), auth context, and Supabase edge functions. The desktop theme follows this identical pattern.
+
+### Existing ThemeContext (contexts/themecontext.tsx)
+Currently supports: `'tactical' | 'terminal' | 'mission-control'`
+**Update to**: `'tactical' | 'terminal' | 'desktop' | 'mission-control'`
+Theme persists to localStorage AND Supabase profiles table (ui_theme column).
+
+### Existing Page Type
+```typescript
+type Page = 'scanner' | 'intel' | 'news' | 'ip' | 'url' | 'bulk' | 'history' | 'email' | 'ioc' | 'hash' | 'domain' | 'defang' | 'decoder' | 'cases' | 'settings' | 'admin' | 'extension';
+```
+
+### Existing Supabase Tables
+- `profiles` (id, email, ui_theme, theme, role, tier, etc.)
+- `user_api_keys` (id, user_id, service, api_key, is_active) — services include: virustotal, abuseipdb, shodan, greynoise, urlscan, alienvault, ipqualityscore, proxycheck, ip2proxy, iphub
+- `ip_lookups`, `url_lookups`, `hash_lookups`, `domain_lookups` (scan history)
+- `watchlist_entries`, `user_alerts`, `feed_items` (monitoring)
+- `case_notes` (incident management)
+
+### Existing Edge Functions
+- `/functions/v1/ip` — IP threat intel lookup (VT, AbuseIPDB, Spamhaus, OTX, ProxyCheck)
+- `/functions/v1/url` — URL scan (VT, URLhaus, URLScan)
+- `/functions/v1/hash` — Hash lookup (VT, MalwareBazaar, Hybrid Analysis)
+- `/functions/v1/domain` — Domain intel (VT, WHOIS/RDAP, OTX)
+- `/functions/v1/bulk` — Bulk IP lookup
+- `/functions/v1/api-keys` — CRUD for user API keys
+- `/functions/v1/config` — Get configured sources
+
+### Existing Scanner CLI (terminal theme)
+The TerminalScanner component supports:
+```
+scan -ip <addr>           scan -hash <hash>
+scan -url <url>           scan -domain <domain>
+Flags: -v --verbose --threats --network --vpn --geo --sources --json
+```
+Plus: help, clear, history, status, startx (switch to tactical), get -feed rss/ransomware
+
+### Color Palette (used across terminal and desktop themes)
+```
+void:        #060610     surface:     #0a0e1a     surfaceLight: #0f1424
+border:      #1a1f35     dim:         #3a3f55     text:         #8a8fa8
+textLight:   #c8cde0     cyan:        #00d9ff     green:        #00ff9d
+pink:        #ff0080     amber:       #fbbf24     purple:       #b794f6
+orange:      #ff6b35     blue:        #00b4d8
+```
+
+---
+
+## WHAT TO BUILD: Desktop Theme
+
+### 1. Window Manager System
+
+Build a reusable window manager that all desktop apps use:
+
+**Window Component** (`components/desktop/DesktopWindow.tsx`):
+- Draggable by title bar (mousedown/mousemove/mouseup)
+- Resizable from edges and corners (resize handle in bottom-right at minimum)
+- Minimize to taskbar (hides window, shows in taskbar as minimized)
+- Maximize / restore (double-click title bar or click green traffic light)
+- Close (removes window from state)
+- Z-index management — clicking a window brings it to front
+- macOS-style title bar: red/yellow/green dots on the left, title centered, accent-colored icon
+- Minimum size constraint (don't let windows collapse to nothing)
+- Window state tracked in a central store/context
+
+**Snap Zones**:
+- Drag to left edge → snap to left 50%
+- Drag to right edge → snap to right 50%
+- Drag to top → maximize
+- Drag to corners → snap to 25% quadrant
+- Show a semi-transparent preview zone when hovering near edges
+
+**Window Manager Context** (`contexts/DesktopContext.tsx`):
+```typescript
+interface WindowInstance {
+  id: string;
+  appId: string;           // which app this is (terminal, scanner, browser, etc.)
+  title: string;
+  icon: string;
+  accentColor: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  minimized: boolean;
+  maximized: boolean;
+  zIndex: number;
+  workspaceId: number;     // which workspace this window is on
+  pinned: boolean;         // visible on all workspaces
+}
+
+interface DesktopState {
+  windows: Record<string, WindowInstance>;
+  activeWindowId: string | null;
+  activeWorkspace: number;
+  workspaces: number[];    // [1, 2, 3, 4]
+}
+```
+
+Provide methods: openWindow, closeWindow, minimizeWindow, maximizeWindow, restoreWindow, focusWindow, moveToWorkspace, etc.
+
+### 2. Workspaces (Virtual Desktops)
+
+4 workspaces, switchable from:
+- Taskbar workspace indicators (numbered dots/buttons)
+- Keyboard shortcut: Ctrl+1/2/3/4
+- Terminal command: `workspace 2`
+
+Only windows assigned to the active workspace (or pinned windows) are visible. The System Monitor should default to pinned (visible on all workspaces).
+
+Default workspace assignments:
+- Workspace 1: Terminal + Scanner (Recon)
+- Workspace 2: AI Workshop + Code Editor (Dev)
+- Workspace 3: Intel Dashboard + Case Notes (Intel)
+- Workspace 4: Browser + Settings (Utils)
+
+### 3. Taskbar
+
+Fixed at the bottom of the screen. Contains (left to right):
+
+1. **Start/Menu button** — ThamOS logo. Click opens an app launcher grid showing all available apps with icons and labels.
+2. **Workspace switcher** — 4 small numbered buttons. Active workspace is highlighted. Click to switch.
+3. **Open window list** — Each open window shows as a taskbar button with icon + truncated title. Minimized windows show dimmed. Click to focus/restore. Active window is highlighted.
+4. **System tray** (right side):
+   - Agent status dots (green/orange/blue for X/Y/Z, filled = online)
+   - Network status indicator
+   - Notification bell with unread count badge (uses existing AlertContext)
+   - Clock (HH:MM:SS, updates every second)
+
+### 4. Desktop Surface
+
+The background behind all windows:
+
+- Dark textured background (subtle noise/grain texture or gradient mesh, not flat black)
+- Optional: Let users set a custom background color/gradient in Settings
+- Desktop icons for quick-launch: Terminal, Scanner, Browser, AI Workshop, Files, Settings
+- Double-click icon to open that app as a new window
+- Right-click desktop for context menu: "New Terminal", "Open Scanner", "Change Background", "Settings"
+- Subtle CRT scanlines overlay (very low opacity, ~10-15%) for the hacker aesthetic
+- Dot grid pattern at very low opacity for depth
+
+### 5. App Launcher / Spotlight (Cmd+K or Ctrl+Space)
+
+A centered overlay search bar that appears on the keyboard shortcut:
+- Fuzzy search across: app names, terminal commands, recent scans, case names
+- Results show icon + name + description
+- Press Enter to open the top result
+- Escape to close
+- This replaces/extends the existing CommandPalette component
+
+### 6. Boot Sequence
+
+When the desktop theme loads for the first time in a session:
+- Full-screen dark background with green monospace text
+- Lines appear sequentially (50-70ms per line) showing system initialization
+- Include: kernel loading, agent mesh connecting, threat feeds connecting, GitHub auth, desktop compositor
+- Progress bar at the bottom
+- After completion (roughly 1-1.5 seconds total), fade out to reveal the desktop
+- Boot only plays once per session (use sessionStorage flag)
+
+### 7. Notification System
+
+Toast notifications that slide in from the top-right corner:
+- Triggered by: scan completion, agent response ready, GitHub events, alert triggers
+- Auto-dismiss after 5 seconds, or click to dismiss
+- Click notification body to focus the relevant window
+- Notification bell in system tray shows history dropdown
+
+---
+
+## DESKTOP APPS
+
+Each app is a React component that renders inside a DesktopWindow. Apps can be opened multiple times (multiple terminal windows, for example).
+
+### App: Terminal (`apps/DesktopTerminal.tsx`)
+
+The primary power-user interface. Based on the existing TerminalScanner but expanded:
+
+**All existing commands from TerminalScanner carry over:**
+- scan -ip/-hash/-url/-domain with all flags (-v, --threats, --network, --vpn, --geo, --sources, --json)
+- help, clear, history, status, get -feed
+- Scan results render inline in the terminal OR open a new results window (user preference)
+
+**New commands for desktop environment:**
+```
+thamosx <query>          Route query to Claude (opens AI Workshop or shows inline response)
+thamosy <query>          Route to GPT
+thamosz <query>          Route to Gemini
+
+nmap <target>            Simulated port scan with realistic output
+whois <domain>           Domain WHOIS lookup (can call real edge function if domain lookup exists)
+dig <domain>             DNS lookup display
+curl <url>               HTTP response headers display
+
+workspace <1-4>          Switch workspace
+open <app>               Open an app window (terminal, scanner, browser, workshop, files, cases, news, settings)
+close                    Close this terminal window
+pin                      Pin this window to all workspaces
+
+theme tactical           Switch to tactical theme
+theme terminal           Switch to terminal theme
+
+projects                 List GitHub repos/projects
+neofetch                 System info display
+whoami                   Show current user
+uptime                   Show session duration
+date                     Current date/time
+```
+
+**Terminal features:**
+- Command history with up/down arrows
+- Tab completion for commands
+- Multiple terminal tabs within one window (like iTerm2)
+- Colored output based on message type (green=success, pink=error, cyan=headers, amber=scans, purple=git, dim=info)
+- Prompt: `thamos@desktop:~$` in green
+
+### App: Scanner (`apps/DesktopScannerGUI.tsx`)
+
+The existing tactical Scanner component, rendered inside a desktop window. This is the GUI alternative to typing scan commands:
+- Same search bar, IOC type detection, recent lookups panel
+- When a scan completes, results open in a new window (DesktopIPResult, DesktopURLResult, etc.) OR in a results panel within the scanner window (tabbed)
+- The result components follow the desktop palette/styling but show the same data as tactical results
+
+Create desktop-styled versions of all result components:
+- `DesktopIPResult.tsx` — IP scan results in desktop style
+- `DesktopURLResult.tsx` — URL scan results
+- `DesktopDomainResult.tsx` — Domain scan results
+- `DesktopHashResult.tsx` — Hash scan results
+
+These should use the same API calls (lookupIP, scanURL, lookupDomain, lookupHash from threatIntel.ts) and show the same data sections (geo, network, vpn, threats, sources) but styled with the desktop palette and monospace font. Follow the pattern of TerminalIPResult.tsx but with a windowed/panel layout instead of pure terminal text.
+
+### App: AI Workshop (`apps/AIWorkshop.tsx`) — NEW, MAJOR FEATURE
+
+A multi-agent chat interface with context sharing. This is the centerpiece new feature.
+
+**Layout:**
+- Left sidebar: Agent tabs (ThamOS-X, ThamOS-Y, ThamOS-Z) + conversation list per agent
+- Center: Chat messages area with streaming responses
+- Right sidebar (collapsible): Context panel — pinned items from other apps
+
+**Agent tabs:**
+Each tab represents a different AI provider:
+- ThamOS-X → Anthropic (Claude) — accent color: green (#00ff9d)
+- ThamOS-Y → OpenAI (GPT) — accent color: orange (#ff6b35)
+- ThamOS-Z → Google (Gemini) — accent color: blue (#00b4d8)
+
+**Chat interface per agent:**
+- Message input at bottom with send button and keyboard shortcut (Enter to send, Shift+Enter for newline)
+- Messages display with user/assistant labels, timestamps
+- Streaming response display (text appears as it streams in)
+- Code blocks with syntax highlighting and copy button
+- Markdown rendering in responses
+
+**Context panel (right sidebar):**
+Users can pin items as context that gets included in the next API call:
+- Scan results (from any scan)
+- File contents (from GitHub browser)
+- Case notes
+- Custom text snippets
+- Each pinned item shows a preview and a remove button
+- Pinned context is serialized and included in the system message or user message when calling the agent API
+
+**Multi-agent comparison mode:**
+A toggle that switches from single-agent to comparison view:
+- Type one message, send to all 3 agents simultaneously
+- Responses show in 3 columns side by side
+- Useful for getting different perspectives on the same question
+
+**Supabase requirements for AI Workshop:**
+
+New table: `agent_conversations`
+```sql
+create table agent_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  agent_id text not null,          -- 'thamosx', 'thamosy', 'thamosz'
+  title text,
+  messages jsonb default '[]',     -- array of {role, content, timestamp}
+  context_items jsonb default '[]', -- pinned context
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+```
+
+New table: `agent_profiles`
+```sql
+create table agent_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  agent_id text not null,
+  display_name text,
+  provider text not null,          -- 'anthropic', 'openai', 'google'
+  model text not null,             -- 'claude-sonnet-4-20250514', 'gpt-4o', 'gemini-pro'
+  system_prompt text,
+  created_at timestamptz default now(),
+  unique(user_id, agent_id)
+);
+```
+
+Add new service types to `user_api_keys`: `'anthropic'`, `'openai'`, `'google_ai'`
+
+New edge function: `/functions/v1/agent`
+```typescript
+// Accepts: { agent_id, message, conversation_history[], context_items[], stream: boolean }
+// Reads user's API key for the relevant provider from user_api_keys
+// Reads agent profile (system prompt, model) from agent_profiles
+// Routes to the correct provider API:
+//   anthropic → POST https://api.anthropic.com/v1/messages
+//   openai → POST https://api.openai.com/v1/chat/completions
+//   google → POST https://generativelanguage.googleapis.com/v1/models/{model}:generateContent
+// Returns streaming response via SSE or returns full response as JSON
+```
+
+**Settings integration:**
+In the Settings page, add under the API Keys tab:
+- Anthropic API Key field (for ThamOS-X / Claude)
+- OpenAI API Key field (for ThamOS-Y / GPT)
+- Google AI API Key field (for ThamOS-Z / Gemini)
+
+Also add a new "Agents" tab in Settings:
+- Per-agent system prompt editor (textarea)
+- Model selector per agent (dropdown)
+- Display name customization
+- Test connection button
+
+### App: Browser (`apps/DesktopBrowser.tsx`)
+
+A tabbed browser-like interface for navigating internal tools:
+
+**Chrome-like tab bar** at the top — add/close tabs, click to switch.
+
+**URL bar** that supports internal routing:
+- `thamos://home` — Home page with quick links
+- `thamos://scanner` — Opens scanner GUI in a browser tab
+- `thamos://news` — News/intel feed
+- `thamos://cases` — Case notes
+- `thamos://history` — Scan history
+- `thamos://settings` — Settings
+- `thamos://github` — GitHub file browser (see below)
+- `thamos://agents` — AI Workshop
+
+Each of these renders the corresponding existing component inside the browser tab content area. This means the browser is essentially an alternative window manager — instead of opening 5 separate windows, you can have 5 tabs in one browser window.
+
+**Bookmarks bar** below the URL bar — configurable quick links.
+
+**GitHub tab** (`thamos://github`):
+If GitHub OAuth is connected, show:
+- Repository list (fetched from GitHub API)
+- Click a repo to browse its file tree
+- Click a file to view its contents with syntax highlighting
+- "Open in Editor" button to open the file in the Code Editor app
+- "Send to Agent" button to pin the file as context in the AI Workshop
+
+### App: Intel Dashboard (`apps/IntelDashboard.tsx`)
+
+Your existing NewsFeed component enhanced for desktop:
+- RSS threat feeds panel
+- Ransomware intel panel
+- Watchlist alerts panel
+- Live-updating via Supabase realtime subscriptions
+- Each item is clickable — opens details in a new window or within the dashboard
+
+### App: Case Manager (`apps/CaseManager.tsx`)
+
+Your existing CaseNotes component enhanced:
+- Case list sidebar
+- Case detail view with markdown editor
+- Linked scans section (scans performed while this case was active)
+- Linked conversations (AI agent chats related to this case)
+- Timeline view of all activity on a case
+
+### App: File Manager (`apps/FileManager.tsx`) — NEW (requires GitHub OAuth)
+
+A visual file browser for GitHub repositories:
+- Left panel: repo list + file tree (collapsible folders)
+- Right panel: file preview (syntax highlighted for code, rendered for markdown)
+- Actions: Open in Editor, Send to Agent, Copy contents, View on GitHub
+- Requires GitHub OAuth token (stored in Supabase after OAuth flow)
+
+**GitHub OAuth setup:**
+Add GitHub as an auth provider in Supabase Auth settings. When a user connects GitHub, store their access token. The edge function `/functions/v1/github` uses this token to make GitHub API calls:
+- List user repos: `GET /user/repos`
+- Get repo contents: `GET /repos/{owner}/{repo}/contents/{path}`
+- Get file content: `GET /repos/{owner}/{repo}/contents/{path}` (base64 decoded)
+- Create/update files: `PUT /repos/{owner}/{repo}/contents/{path}`
+
+### App: Code Editor (`apps/CodeEditor.tsx`) — NEW
+
+A text editor with syntax highlighting for editing files:
+- Use CodeMirror 6 (available via npm, lightweight) with language extensions for common languages
+- File tabs at top (can have multiple files open)
+- Line numbers, word wrap toggle
+- "Ask Agent" button: sends current file (or selected text) to chosen agent and shows response in a side panel
+- "Save to GitHub" button: commits the file back to the repo via GitHub API
+- Supports creating new files too (for scaffolding code with AI help)
+
+### App: System Monitor (`apps/SystemMonitor.tsx`)
+
+Already prototyped. Shows:
+- Animated CPU/Memory/Network/Disk bars (simulated, with slight randomness for visual effect)
+- Agent status (online/offline based on whether API keys are configured)
+- Threat feed connection status
+- GitHub connection status
+- Session info (user, uptime, commands executed)
+- Default: pinned to all workspaces, opens on the right side
+
+### App: Settings (`apps/DesktopSettings.tsx`)
+
+The existing Settings component rendered in a desktop window, plus:
+- New "Agents" tab for AI agent configuration (system prompts, model selection, API keys)
+- New "Desktop" section under Appearance for:
+  - Desktop background color/gradient picker
+  - CRT scanlines intensity slider (0-100%)
+  - Window opacity slider
+  - Font size adjustment
+  - Boot sequence enable/disable toggle
+
+---
+
+## VISUAL DESIGN SPECIFICATIONS
+
+**Overall aesthetic**: Kali Linux / Parrot OS inspired. Dark, professional, hacker-utilitarian. NOT cartoonish or gimmicky. Clean lines, monospace typography, subtle glow effects.
+
+**Font**: JetBrains Mono everywhere (import from Google Fonts). Fallbacks: Fira Code, SF Mono, Consolas, monospace.
+
+**Window styling**:
+- Background: #0a0e1a (surface)
+- Border: 1px solid, color matches the window's accent color at ~25% opacity
+- Border radius: 10px
+- Box shadow: large soft shadow for depth (0 12px 48px rgba(0,0,0,0.6))
+- Title bar: gradient from surfaceLight to surface, with macOS traffic light dots
+
+**Desktop background**:
+- Base: radial gradient from #080c14 center to #020204 edges
+- Overlay: subtle dot grid pattern (radial-gradient dots at ~3% opacity, 48px spacing)
+- Overlay: CRT scanlines (repeating-linear-gradient, 2px gap, green tint at ~1-2% opacity)
+- Overlay: vignette (radial gradient, transparent center to dark edges)
+
+**Taskbar**:
+- Background: surface color with backdrop-filter blur
+- Border-top: 1px solid border color
+- Height: 44px
+- Items have subtle hover states with accent color tints
+
+**Colors for interactive states**:
+- Hover: element's accent color at 10% opacity background
+- Active/focused: accent color at 15% opacity background + subtle glow
+- Selected text: cyan background, void text
+
+**Accent colors per app**:
+- Terminal: green (#00ff9d)
+- Scanner/Results: cyan (#00d9ff)
+- AI Workshop: varies by active agent (green/orange/blue)
+- Browser: cyan (#00d9ff)
+- File Manager: purple (#b794f6)
+- Code Editor: amber (#fbbf24)
+- Intel Dashboard: cyan (#00d9ff)
+- Case Manager: green (#00ff9d)
+- System Monitor: amber (#fbbf24)
+- Settings: dim/neutral
+
+---
+
+## FILE STRUCTURE FOR NEW COMPONENTS
+
+```
+src/
+├── contexts/
+│   ├── themecontext.tsx              ← UPDATE: add 'desktop' to Theme type
+│   └── DesktopContext.tsx            ← NEW: window manager state
+│
+├── components/
+│   ├── Layout.tsx                    ← UNCHANGED (tactical theme)
+│   ├── terminallayout.tsx            ← UNCHANGED (terminal theme)
+│   └── desktop/
+│       ├── DesktopLayout.tsx         ← NEW: main desktop shell (background, overlays, boot)
+│       ├── DesktopWindow.tsx         ← NEW: reusable window component
+│       ├── Taskbar.tsx               ← NEW: bottom taskbar
+│       ├── AppLauncher.tsx           ← NEW: app grid launcher
+│       ├── Spotlight.tsx             ← NEW: Cmd+K search overlay
+│       ├── DesktopIcons.tsx          ← NEW: desktop shortcut icons
+│       ├── NotificationToast.tsx     ← NEW: toast notification system
+│       └── WorkspaceSwitcher.tsx     ← NEW: workspace indicators
+│
+├── apps/                             ← NEW: desktop app components
+│   ├── DesktopTerminal.tsx
+│   ├── DesktopScannerGUI.tsx
+│   ├── AIWorkshop.tsx
+│   ├── DesktopBrowser.tsx
+│   ├── IntelDashboard.tsx
+│   ├── CaseManager.tsx
+│   ├── FileManager.tsx
+│   ├── CodeEditor.tsx
+│   ├── SystemMonitor.tsx
+│   └── DesktopSettings.tsx
+│
+├── pages/results/
+│   ├── DesktopIPResult.tsx           ← NEW
+│   ├── DesktopURLResult.tsx          ← NEW
+│   ├── DesktopDomainResult.tsx       ← NEW
+│   └── DesktopHashResult.tsx         ← NEW
+│
+└── App.tsx                           ← UPDATE: add desktop theme routing
+```
+
+---
+
+## SUPABASE CHANGES SUMMARY
+
+### Tables to create:
+1. `agent_conversations` — stores chat history per agent per user
+2. `agent_profiles` — stores agent configuration (system prompt, model, display name)
+
+### Tables to update:
+1. `profiles` — ensure `ui_theme` column accepts 'desktop' value
+2. `user_api_keys` — add support for services: 'anthropic', 'openai', 'google_ai'
+
+### Edge functions to create:
+1. `/functions/v1/agent` — multi-provider AI agent proxy (Anthropic, OpenAI, Google AI)
+2. `/functions/v1/github` — GitHub API proxy using user's OAuth token
+
+### Auth providers to add:
+1. GitHub OAuth (for repo browsing, file editing, code management)
+
+### RLS policies:
+All new tables need row-level security:
+- Users can only read/write their own agent_conversations
+- Users can only read/write their own agent_profiles
+- Standard user_id = auth.uid() policies
+
+---
+
+## APP.TSX UPDATE
+
+The existing App.tsx switch on theme gets a new branch:
+
+```typescript
+if (theme === 'desktop') {
+  return (
+    <DesktopProvider>  {/* New context for window management */}
+      <DesktopLayout>
+        {/* DesktopLayout manages its own windows internally */}
+        {/* It doesn't receive children the same way — it opens apps as windows */}
+      </DesktopLayout>
+    </DesktopProvider>
+  );
+}
+```
+
+Note: The desktop theme works differently from tactical/terminal. Instead of App.tsx rendering page components as children, DesktopLayout manages its own window state and opens app components inside DesktopWindow wrappers based on user actions. The DesktopContext tracks which windows are open and their state.
+
+---
+
+## PHASE RECOMMENDATION
+
+While this is a single cohesive upgrade, here is a suggested build order where each phase is functional on its own:
+
+**Phase 1**: Desktop shell (DesktopLayout, DesktopWindow, Taskbar, workspaces, boot sequence, desktop icons, app launcher). Terminal app with all commands. Scanner GUI app rendering existing Scanner inside a window. All existing result pages rendering inside windows. System Monitor. Settings in a window. Theme switching works.
+
+**Phase 2**: AI Workshop app with multi-agent chat, streaming responses, context panel. New Supabase tables (agent_conversations, agent_profiles). New edge function (/agent). New API key fields in Settings for Anthropic/OpenAI/Google. Agent configuration in Settings.
+
+**Phase 3**: GitHub OAuth integration. File Manager app. Browser app with real internal routing and GitHub tab. New edge function (/github).
+
+**Phase 4**: Code Editor with CodeMirror, GitHub read/write, "Ask Agent" feature. Case Manager enhancements (linked scans, linked conversations). Intel Dashboard enhancements.
+
+Build Phase 1 first as it gives the desktop environment its core functionality without requiring any new backend changes. Each subsequent phase adds capabilities that build on the previous.
+
+
+
