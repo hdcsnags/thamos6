@@ -463,9 +463,9 @@ export default function Settings() {
                   </button>
 
                   <button
-                    onClick={() => setTheme('mission-control')}
+                    onClick={() => setTheme('desktop')}
                     className={`group relative p-6 rounded-xl border-2 transition-all text-left ${
-                      theme === 'mission-control'
+                      theme === 'desktop'
                         ? 'border-cyan-500 bg-cyan-500/10'
                         : 'border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800'
                     }`}
@@ -473,13 +473,13 @@ export default function Settings() {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-white mb-1">
-                          Mission Control
+                          Desktop
                         </h3>
                         <p className="text-sm text-slate-400">
                           SOC operator dashboard with multi-panel monitoring and live threat feeds
                         </p>
                       </div>
-                      {theme === 'mission-control' && (
+                      {theme === 'desktop' && (
                         <div className="flex items-center gap-1 px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-md text-xs font-medium">
                           <Check className="w-3 h-3" />
                           Active
