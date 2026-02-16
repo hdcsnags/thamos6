@@ -7,7 +7,7 @@ import type { Page } from './Layout';
    ThamOS X — Desktop Layout
    Windowed desktop environment with taskbar, system monitor,
    browser shell, and AI agent routing. Wraps scanner/result
-   children like TerminalLayout does.
+   children like TerminalLayout does
    ═══════════════════════════════════════════════════════════════ */
 
 // ─── Constants ────────────────────────────────────────────────
