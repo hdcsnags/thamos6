@@ -5,6 +5,14 @@
 @layer base {
   :root {
     transition: background-color 0.3s ease, color 0.3s ease;
+    --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --duration-fast: 150ms;
+    --duration-normal: 250ms;
+    --duration-slow: 350ms;
+    --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
   }
 
   body {
@@ -14,7 +22,6 @@
 html {
   scrollbar-gutter: stable;
 }
-
 
 @layer utilities {
   .animate-in {
@@ -31,29 +38,58 @@ html {
       transform: translateY(0);
     }
   }
+
+  .animate-window-open {
+    animation: window-open var(--duration-normal) var(--ease-spring) both;
+  }
+
+  @keyframes window-open {
+    from {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-launcher-open {
+    animation: launcher-open var(--duration-normal) var(--ease-spring) both;
+  }
+
+  @keyframes launcher-open {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-200 dark:bg-slate-800;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-400 dark:bg-slate-600;
-  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500 dark:bg-slate-500;
+  background: rgba(148, 163, 184, 0.25);
 }
 
 ::selection {
-  background: rgb(34 211 238 / 0.3);
+  background: rgb(0 217 255 / 0.2);
 }
 
 input::placeholder,

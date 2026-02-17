@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { getApp } from '../design-system/appRegistry';
 
 export type AppId =
   | 'terminal'
@@ -63,22 +64,7 @@ interface DesktopContextType {
 
 const DesktopContext = createContext<DesktopContextType | undefined>(undefined);
 
-const APP_DEFAULTS: Record<AppId, { icon: string; accentColor: string; defaultSize: { width: number; height: number } }> = {
-  terminal: { icon: '⌘', accentColor: '#00ff9d', defaultSize: { width: 800, height: 500 } },
-  scanner: { icon: '🔍', accentColor: '#00d9ff', defaultSize: { width: 900, height: 600 } },
-  browser: { icon: '🌐', accentColor: '#00d9ff', defaultSize: { width: 1000, height: 700 } },
-  workshop: { icon: '🤖', accentColor: '#00ff9d', defaultSize: { width: 1100, height: 700 } },
-  intel: { icon: '📡', accentColor: '#00d9ff', defaultSize: { width: 900, height: 650 } },
-  cases: { icon: '📋', accentColor: '#00ff9d', defaultSize: { width: 800, height: 600 } },
-  files: { icon: '📁', accentColor: '#b794f6', defaultSize: { width: 900, height: 600 } },
-  editor: { icon: '📝', accentColor: '#fbbf24', defaultSize: { width: 1000, height: 700 } },
-  monitor: { icon: '📊', accentColor: '#fbbf24', defaultSize: { width: 400, height: 500 } },
-  settings: { icon: '⚙️', accentColor: '#8a8fa8', defaultSize: { width: 800, height: 600 } },
-  'ip-result': { icon: '🔍', accentColor: '#00d9ff', defaultSize: { width: 900, height: 700 } },
-  'url-result': { icon: '🔍', accentColor: '#00d9ff', defaultSize: { width: 900, height: 700 } },
-  'domain-result': { icon: '🔍', accentColor: '#00d9ff', defaultSize: { width: 900, height: 700 } },
-  'hash-result': { icon: '🔍', accentColor: '#00d9ff', defaultSize: { width: 900, height: 700 } },
-};
+const FALLBACK_DEFAULTS = { icon: '\uD83D\uDD0D', accentColor: '#00d9ff', defaultSize: { width: 800, height: 600 } };
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DesktopState>({
@@ -91,7 +77,10 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
 
   const openWindow = useCallback((config: Partial<WindowInstance> & { appId: AppId; title: string }): string => {
     const id = config.id || `${config.appId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const defaults = APP_DEFAULTS[config.appId];
+    const registryApp = getApp(config.appId);
+    const defaults = registryApp
+      ? { icon: registryApp.icon, accentColor: registryApp.accentColor, defaultSize: registryApp.defaultSize }
+      : FALLBACK_DEFAULTS;
 
     const existingWindows = Object.values(state.windows);
     const offset = (existingWindows.length % 5) * 30;

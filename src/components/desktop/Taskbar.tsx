@@ -4,6 +4,7 @@ import { useAlerts } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Bell } from 'lucide-react';
+import { palette, typography } from '../../design-system/tokens';
 
 interface TaskbarProps {
   onOpenLauncher: () => void;
@@ -43,19 +44,28 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
     w => w.workspaceId === desktop.activeWorkspace || w.pinned
   );
 
+  const agents = [
+    { key: 'x', label: 'X (Claude)', color: palette.agentX, online: agentStatus.x },
+    { key: 'y', label: 'Y (GPT)', color: palette.agentY, online: agentStatus.y },
+    { key: 'z', label: 'Z (Gemini)', color: palette.agentZ, online: agentStatus.z },
+  ];
+
   return (
     <div
       className="fixed bottom-0 left-0 right-0 h-11 flex items-center justify-between px-3 gap-3 backdrop-blur-xl z-50"
       style={{
-        backgroundColor: '#0a0e1a99',
-        borderTop: '1px solid #1a1f35',
+        backgroundColor: `${palette.base}cc`,
+        borderTop: `1px solid ${palette.borderSubtle}`,
+        fontFamily: typography.ui,
       }}
     >
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenLauncher}
-          className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-cyan-500/10"
-          style={{ color: '#00d9ff' }}
+          className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+          style={{ color: palette.cyan }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}10`; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
           aria-label="Open App Launcher"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -68,11 +78,11 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
             <button
               key={num}
               onClick={() => desktop.switchWorkspace(num)}
-              className="flex items-center justify-center w-8 h-8 rounded text-xs font-mono transition-all"
+              className="flex items-center justify-center w-7 h-7 rounded-md text-xs font-medium transition-all"
               style={{
-                backgroundColor: desktop.activeWorkspace === num ? '#00d9ff20' : 'transparent',
-                color: desktop.activeWorkspace === num ? '#00d9ff' : '#8a8fa8',
-                border: desktop.activeWorkspace === num ? '1px solid #00d9ff40' : '1px solid transparent',
+                backgroundColor: desktop.activeWorkspace === num ? `${palette.cyan}15` : 'transparent',
+                color: desktop.activeWorkspace === num ? palette.cyan : palette.textTertiary,
+                border: desktop.activeWorkspace === num ? `1px solid ${palette.cyan}30` : '1px solid transparent',
               }}
               aria-label={`Switch to workspace ${num}`}
             >
@@ -81,9 +91,9 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
           ))}
         </div>
 
-        <div className="w-px h-6" style={{ backgroundColor: '#1a1f35' }} />
+        <div className="w-px h-5" style={{ backgroundColor: palette.borderDefault }} />
 
-        <div className="flex items-center gap-2 overflow-x-auto max-w-2xl">
+        <div className="flex items-center gap-1.5 overflow-x-auto max-w-2xl">
           {openWindows.map(win => (
             <button
               key={win.id}
@@ -94,64 +104,51 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   desktop.focusWindow(win.id);
                 }
               }}
-              className="flex items-center gap-2 px-3 h-8 rounded text-xs font-mono transition-all whitespace-nowrap"
+              className="flex items-center gap-2 px-2.5 h-7 rounded-md text-xs font-medium transition-all whitespace-nowrap"
               style={{
-                backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}20` : 'transparent',
-                color: desktop.activeWindowId === win.id ? win.accentColor : '#8a8fa8',
-                border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '40' : 'transparent'}`,
+                backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : 'transparent',
+                color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary,
+                border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '30' : 'transparent'}`,
                 opacity: win.minimized ? 0.5 : 1,
               }}
               aria-label={`Focus ${win.title}`}
             >
-              <span>{win.icon}</span>
-              <span className="max-w-[120px] truncate">{win.title}</span>
+              <span className="text-xs">{win.icon}</span>
+              <span className="max-w-[100px] truncate">{win.title}</span>
             </button>
           ))}
         </div>
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1.5" title="Agent Status">
-            <div className="relative group">
-              <div
-                className="w-2 h-2 rounded-full transition-all"
-                style={{
-                  backgroundColor: agentStatus.x ? '#00ff9d' : '#3a3f55',
-                  boxShadow: agentStatus.x ? '0 0 6px #00ff9d60' : 'none',
-                }}
-              />
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
-                X (Claude): {agentStatus.x ? 'ONLINE' : 'NO KEY'}
-              </span>
-            </div>
-            <div className="relative group">
-              <div
-                className="w-2 h-2 rounded-full transition-all"
-                style={{
-                  backgroundColor: agentStatus.y ? '#fbbf24' : '#3a3f55',
-                  boxShadow: agentStatus.y ? '0 0 6px #fbbf2460' : 'none',
-                }}
-              />
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
-                Y (GPT): {agentStatus.y ? 'ONLINE' : 'NO KEY'}
-              </span>
-            </div>
-            <div className="relative group">
-              <div
-                className="w-2 h-2 rounded-full transition-all"
-                style={{
-                  backgroundColor: agentStatus.z ? '#00d9ff' : '#3a3f55',
-                  boxShadow: agentStatus.z ? '0 0 6px #00d9ff60' : 'none',
-                }}
-              />
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', color: '#c8cde0' }}>
-                Z (Gemini): {agentStatus.z ? 'ONLINE' : 'NO KEY'}
-              </span>
-            </div>
+            {agents.map(agent => (
+              <div key={agent.key} className="relative group">
+                <div
+                  className="w-2 h-2 rounded-full transition-all"
+                  style={{
+                    backgroundColor: agent.online ? agent.color : palette.textDisabled,
+                    boxShadow: agent.online ? `0 0 6px ${agent.color}60` : 'none',
+                  }}
+                />
+                <span
+                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: typography.mono,
+                    backgroundColor: palette.elevated,
+                    border: `1px solid ${palette.borderDefault}`,
+                    color: palette.textSecondary,
+                  }}
+                >
+                  {agent.label}: {agent.online ? 'ONLINE' : 'NO KEY'}
+                </span>
+              </div>
+            ))}
           </div>
 
-          <div className="w-px h-4" style={{ backgroundColor: '#1a1f35' }} />
+          <div className="w-px h-4" style={{ backgroundColor: palette.borderDefault }} />
 
           <div className="relative">
             <button
@@ -160,18 +157,20 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   appId: 'intel',
                   title: 'Intel Dashboard',
                   icon: '\u{1F4E1}',
-                  accentColor: '#00d9ff',
+                  accentColor: palette.cyan,
                 });
               }}
-              className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-amber-500/10"
-              style={{ color: '#fbbf24' }}
+              className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
+              style={{ color: palette.amber }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.amber}10`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               aria-label="Notifications"
             >
-              <Bell className="w-4 h-4" />
+              <Bell className="w-3.5 h-3.5" />
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold"
-                  style={{ backgroundColor: '#ff0080', color: '#fff' }}
+                  style={{ backgroundColor: palette.rose, color: '#fff' }}
                 >
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
@@ -180,7 +179,15 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
           </div>
         </div>
 
-        <div className="text-xs font-mono" style={{ color: '#c8cde0' }}>
+        <div
+          className="tabular-nums"
+          style={{
+            fontSize: '12px',
+            fontFamily: typography.mono,
+            color: palette.textTertiary,
+            fontWeight: 500,
+          }}
+        >
           {time.toLocaleTimeString('en-US', { hour12: false })}
         </div>
       </div>

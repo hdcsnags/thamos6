@@ -17,6 +17,7 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
+import { palette, typography } from '../../design-system/tokens';
 
 export function DesktopLayout() {
   const desktop = useDesktop();
@@ -68,38 +69,25 @@ export function DesktopLayout() {
   const visibleWindows = desktop.getVisibleWindows();
 
   return (
-    <div className="fixed inset-0 overflow-hidden font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: typography.ui }}>
       <div
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(circle at center, #080c14 0%, #020204 100%)',
+          background: `radial-gradient(ellipse at 50% 40%, ${palette.base} 0%, ${palette.void} 100%)`,
         }}
       >
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.02]"
           style={{
-            backgroundImage: `radial-gradient(circle, #fff 1px, transparent 1px)`,
-            backgroundSize: '48px 48px',
-          }}
-        />
-
-        <div
-          className="absolute inset-0 opacity-[0.015]"
-          style={{
-            backgroundImage: `repeating-linear-gradient(
-              0deg,
-              transparent,
-              transparent 2px,
-              rgba(0, 255, 157, 0.3) 2px,
-              rgba(0, 255, 157, 0.3) 4px
-            )`,
+            backgroundImage: `radial-gradient(circle, rgba(148, 163, 184, 0.3) 1px, transparent 1px)`,
+            backgroundSize: '32px 32px',
           }}
         />
 
         <div
           className="absolute inset-0"
           style={{
-            background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.8) 100%)',
+            background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.6) 100%)',
           }}
         />
       </div>
@@ -150,30 +138,49 @@ function renderWindowContent(appId: string, data?: any) {
     case 'hash-result':
       return <DesktopHashResult hash={data?.value} flags={data?.flags} />;
     default:
-      return <div className="h-full flex items-center justify-center" style={{ backgroundColor: '#060610', color: '#8a8fa8', fontFamily: 'JetBrains Mono, monospace' }}><span className="text-xs">Unknown: {appId}</span></div>;
+      return (
+        <div
+          className="h-full flex items-center justify-center"
+          style={{ backgroundColor: palette.void, color: palette.textTertiary }}
+        >
+          <span style={{ fontSize: '12px', fontFamily: typography.mono }}>Unknown: {appId}</span>
+        </div>
+      );
   }
 }
 
 function FilesPlaceholder() {
   return (
-    <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: '#060610', fontFamily: 'JetBrains Mono, monospace' }}>
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'rgba(183, 148, 246, 0.08)', border: '1px solid rgba(183, 148, 246, 0.2)' }}>
-        <span className="text-2xl" style={{ color: '#b794f6' }}>&#9670;</span>
+    <div
+      className="h-full flex flex-col items-center justify-center"
+      style={{ backgroundColor: palette.void, fontFamily: typography.ui }}
+    >
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+        style={{ backgroundColor: `${palette.teal}0a`, border: `1px solid ${palette.teal}20` }}
+      >
+        <span className="text-2xl" style={{ color: palette.teal }}>&#9670;</span>
       </div>
-      <span className="text-xs font-medium mb-1" style={{ color: '#c8cde0' }}>File Manager</span>
-      <span className="text-xs" style={{ color: '#3a3f55' }}>Requires GitHub OAuth (Phase 3)</span>
+      <span className="text-xs font-medium mb-1" style={{ color: palette.textPrimary }}>File Manager</span>
+      <span style={{ fontSize: '11px', color: palette.textTertiary }}>Requires GitHub OAuth (Phase 3)</span>
     </div>
   );
 }
 
 function EditorPlaceholder() {
   return (
-    <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: '#060610', fontFamily: 'JetBrains Mono, monospace' }}>
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
-        <span className="text-2xl" style={{ color: '#fbbf24' }}>&#9670;</span>
+    <div
+      className="h-full flex flex-col items-center justify-center"
+      style={{ backgroundColor: palette.void, fontFamily: typography.ui }}
+    >
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+        style={{ backgroundColor: `${palette.amber}0a`, border: `1px solid ${palette.amber}20` }}
+      >
+        <span className="text-2xl" style={{ color: palette.amber }}>&#9670;</span>
       </div>
-      <span className="text-xs font-medium mb-1" style={{ color: '#c8cde0' }}>Code Editor</span>
-      <span className="text-xs" style={{ color: '#3a3f55' }}>Requires CodeMirror (Phase 4)</span>
+      <span className="text-xs font-medium mb-1" style={{ color: palette.textPrimary }}>Code Editor</span>
+      <span style={{ fontSize: '11px', color: palette.textTertiary }}>Requires CodeMirror (Phase 4)</span>
     </div>
   );
 }

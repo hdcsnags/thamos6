@@ -1,57 +1,47 @@
-import { useDesktop, AppId } from '../../contexts/DesktopContext';
-
-interface DesktopIcon {
-  id: AppId;
-  name: string;
-  icon: string;
-  accentColor: string;
-}
-
-const DESKTOP_ICONS: DesktopIcon[] = [
-  { id: 'terminal', name: 'Terminal', icon: '⌘', accentColor: '#00ff9d' },
-  { id: 'scanner', name: 'Scanner', icon: '🔍', accentColor: '#00d9ff' },
-  { id: 'browser', name: 'Browser', icon: '🌐', accentColor: '#00d9ff' },
-  { id: 'files', name: 'Files', icon: '📁', accentColor: '#b794f6' },
-  { id: 'settings', name: 'Settings', icon: '⚙️', accentColor: '#8a8fa8' },
-];
+import { useDesktop } from '../../contexts/DesktopContext';
+import { palette, typography } from '../../design-system/tokens';
+import { getDesktopIcons } from '../../design-system/appRegistry';
 
 export function DesktopIcons() {
   const desktop = useDesktop();
+  const icons = getDesktopIcons();
 
-  const handleDoubleClick = (icon: DesktopIcon) => {
+  const handleDoubleClick = (app: ReturnType<typeof getDesktopIcons>[number]) => {
     desktop.openWindow({
-      appId: icon.id,
-      title: icon.name,
-      icon: icon.icon,
-      accentColor: icon.accentColor,
+      appId: app.id,
+      title: app.name,
+      icon: app.icon,
+      accentColor: app.accentColor,
     });
   };
 
   return (
-    <div className="fixed top-4 left-4 flex flex-col gap-4 z-10 pointer-events-none">
-      {DESKTOP_ICONS.map(icon => (
+    <div className="fixed top-4 left-4 flex flex-col gap-3 z-10 pointer-events-none">
+      {icons.map(app => (
         <button
-          key={icon.id}
-          onDoubleClick={() => handleDoubleClick(icon)}
-          className="flex flex-col items-center gap-1 p-3 rounded-lg transition-all hover:bg-white/5 pointer-events-auto group"
-          style={{
-            width: '80px',
-          }}
+          key={app.id}
+          onDoubleClick={() => handleDoubleClick(app)}
+          className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all hover:bg-white/5 pointer-events-auto group"
+          style={{ width: '76px' }}
         >
           <div
-            className="text-3xl transition-transform group-hover:scale-110"
-            style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }}
+            className="text-2xl transition-transform group-hover:scale-110"
+            style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.8))' }}
           >
-            {icon.icon}
+            {app.icon}
           </div>
           <div
-            className="text-xs font-mono text-center font-semibold"
+            className="text-center leading-tight"
             style={{
-              color: icon.accentColor,
-              textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+              fontSize: '10px',
+              fontFamily: typography.ui,
+              fontWeight: 500,
+              color: palette.textSecondary,
+              textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+              letterSpacing: '-0.01em',
             }}
           >
-            {icon.name}
+            {app.name}
           </div>
         </button>
       ))}
