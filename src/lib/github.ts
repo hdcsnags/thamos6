@@ -1,27 +1,37 @@
 const GITHUB_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-proxy`;
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+import { supabase } from './supabase';
+
+async function getSessionToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+  return token;
+}
 
 async function ghFetch(token: string, path: string, accept?: string): Promise<Response> {
+  const sessionToken = await getSessionToken();
   const url = new URL(GITHUB_PROXY);
   url.searchParams.set('path', path);
   if (accept) url.searchParams.set('accept', accept);
 
   return fetch(url.toString(), {
     headers: {
-      'Authorization': `Bearer ${ANON_KEY}`,
+      'Authorization': `Bearer ${sessionToken}`,
       'X-GitHub-Token': token,
     },
   });
 }
 
 async function ghPut(token: string, path: string, body: unknown): Promise<Response> {
+  const sessionToken = await getSessionToken();
   const url = new URL(GITHUB_PROXY);
   url.searchParams.set('path', path);
 
   return fetch(url.toString(), {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${ANON_KEY}`,
+      'Authorization': `Bearer ${sessionToken}`,
       'X-GitHub-Token': token,
       'Content-Type': 'application/json',
     },

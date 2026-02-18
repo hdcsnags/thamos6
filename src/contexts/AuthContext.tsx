@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [providerToken, setProviderToken] = useState<string | null>(null);
+  const primarySessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     const hashError = parseHashError();
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      primarySessionRef.current = session;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -66,14 +68,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        const primary = primarySessionRef.current;
+        if (primary && primary.user.id !== session.user.id) {
+          if (session.provider_token) {
+            setProviderToken(session.provider_token);
+            localStorage.setItem('thamos6-gh-token', session.provider_token);
+          }
+          supabase.auth.setSession({
+            access_token: primary.access_token,
+            refresh_token: primary.refresh_token,
+          });
+          return;
+        }
+        primarySessionRef.current = session;
+        setSession(session);
+        setUser(session.user);
+        setLoading(false);
+        if (session.provider_token) {
+          setProviderToken(session.provider_token);
+          localStorage.setItem('thamos6-gh-token', session.provider_token);
+        }
+        return;
+      }
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      if (event === 'SIGNED_IN' && session?.provider_token) {
-        setProviderToken(session.provider_token);
-        localStorage.setItem('thamos6-gh-token', session.provider_token);
-      }
       if (event === 'SIGNED_OUT') {
+        primarySessionRef.current = null;
         setProviderToken(null);
         localStorage.removeItem('thamos6-gh-token');
       }
