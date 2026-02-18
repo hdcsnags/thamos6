@@ -50,6 +50,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (data?.ui_theme && VALID_THEMES.includes(data.ui_theme as Theme)) {
         setThemeState(data.ui_theme as Theme);
         localStorage.setItem('thamos6-theme', data.ui_theme);
+      } else {
+        const localTheme = localStorage.getItem('thamos6-theme') as Theme | null;
+        if (localTheme && VALID_THEMES.includes(localTheme) && user) {
+          supabase.from('profiles').update({ ui_theme: localTheme }).eq('id', user.id).then();
+        }
       }
     }
 
@@ -60,13 +65,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(newTheme);
     localStorage.setItem('thamos6-theme', newTheme);
 
-    if (user) {
-      supabase
-        .from('profiles')
-        .update({ ui_theme: newTheme })
-        .eq('id', user.id)
-        .then();
-    }
+    const persist = async () => {
+      const uid = user?.id ?? (await supabase.auth.getUser()).data.user?.id;
+      if (uid) {
+        supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', uid).then();
+      }
+    };
+    persist();
   };
 
   const toggleTheme = () => {

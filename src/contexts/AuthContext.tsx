@@ -56,6 +56,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      if (session?.provider_token) {
+        setProviderToken(session.provider_token);
+        localStorage.setItem('thamos6-gh-token', session.provider_token);
+      } else {
+        const stored = localStorage.getItem('thamos6-gh-token');
+        if (stored) setProviderToken(stored);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -64,9 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       if (event === 'SIGNED_IN' && session?.provider_token) {
         setProviderToken(session.provider_token);
+        localStorage.setItem('thamos6-gh-token', session.provider_token);
       }
       if (event === 'SIGNED_OUT') {
         setProviderToken(null);
+        localStorage.removeItem('thamos6-gh-token');
       }
     });
 
