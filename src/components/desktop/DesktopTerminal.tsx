@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { parseFlags, type ScanFlags } from '../../lib/cliFlags';
+import { palette, typography } from '../../design-system/tokens';
 
 const COMMANDS = [
   'help', 'clear', 'history', 'status', 'scan', 'get', 'neofetch', 'nmap', 'whois', 'dig',
@@ -8,9 +9,9 @@ const COMMANDS = [
 ];
 
 const AGENTS = {
-  thamosx: { name: 'ThamOS-X', model: 'Claude Opus 4.6', color: '#00ff9d', icon: '◆' },
-  thamosy: { name: 'ThamOS-Y', model: 'GPT-5', color: '#ff6b35', icon: '◇' },
-  thamosz: { name: 'ThamOS-Z', model: 'Gemini Ultra', color: '#00b4d8', icon: '○' },
+  thamosx: { name: 'ThamOS-X', model: 'Claude Opus 4.6', color: palette.agentX, icon: '\u25C6' },
+  thamosy: { name: 'ThamOS-Y', model: 'GPT-5', color: palette.agentY, icon: '\u25C7' },
+  thamosz: { name: 'ThamOS-Z', model: 'Gemini Ultra', color: palette.agentZ, icon: '\u25CB' },
 };
 
 interface OutputLine {
@@ -32,7 +33,7 @@ export function DesktopTerminal() {
 
   useEffect(() => {
     addOutput('ThamOS X Terminal v7.0', 'success');
-    addOutput('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
+    addOutput('\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501', 'success');
     addOutput('', 'info');
     addOutput('Type "help" for available commands', 'info');
     addOutput('Type "help scan" for scanning options', 'info');
@@ -156,9 +157,9 @@ export function DesktopTerminal() {
 
   const showHelp = () => {
     addOutput('', 'info');
-    addOutput('━━━ AVAILABLE COMMANDS ━━━', 'success');
+    addOutput('\u2501\u2501\u2501 AVAILABLE COMMANDS \u2501\u2501\u2501', 'success');
     addOutput('', 'info');
-    addOutput('SCANNING & INTELLIGENCE:', 'success', '#00d9ff');
+    addOutput('SCANNING & INTELLIGENCE:', 'success', palette.cyan);
     addOutput('  scan -ip [IP]          Scan IP address', 'info');
     addOutput('  scan -hash [HASH]      Scan file hash (MD5/SHA256)', 'info');
     addOutput('  scan -url [URL]        Scan URL for threats', 'info');
@@ -166,22 +167,22 @@ export function DesktopTerminal() {
     addOutput('  get -feed rss          Fetch RSS threat feed', 'info');
     addOutput('  get -feed ransomware   Fetch ransomware intel', 'info');
     addOutput('', 'info');
-    addOutput('AI AGENT ROUTING:', 'success', '#00ff9d');
+    addOutput('AI AGENT ROUTING:', 'success', palette.green);
     addOutput('  thamosx [query]        Route to Claude (deep analysis)', 'info');
     addOutput('  thamosy [query]        Route to GPT (code generation)', 'info');
     addOutput('  thamosz [query]        Route to Gemini (research)', 'info');
     addOutput('', 'info');
-    addOutput('DESKTOP & WINDOWS:', 'success', '#b794f6');
+    addOutput('DESKTOP & WINDOWS:', 'success', palette.teal);
     addOutput('  open [app]             Launch application window', 'info');
     addOutput('  workspace [1-4]        Switch to workspace', 'info');
     addOutput('  ls                     List available apps', 'info');
     addOutput('', 'info');
-    addOutput('NETWORK TOOLS:', 'success', '#fbbf24');
+    addOutput('NETWORK TOOLS:', 'success', palette.amber);
     addOutput('  nmap [target]          Port scan simulation', 'info');
     addOutput('  whois [domain]         Domain lookup', 'info');
     addOutput('  dig [domain]           DNS query', 'info');
     addOutput('', 'info');
-    addOutput('SYSTEM:', 'success', '#8a8fa8');
+    addOutput('SYSTEM:', 'success', palette.textSecondary);
     addOutput('  neofetch               System information', 'info');
     addOutput('  projects               List GitHub projects', 'info');
     addOutput('  git status             Git repository status', 'info');
@@ -196,20 +197,20 @@ export function DesktopTerminal() {
 
   const showScanHelp = () => {
     addOutput('', 'info');
-    addOutput('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
+    addOutput('\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501', 'success');
     addOutput('              SCAN COMMAND REFERENCE              ', 'success');
-    addOutput('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
+    addOutput('\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501', 'success');
     addOutput('', 'info');
-    addOutput('USAGE:', 'success', '#00d9ff');
+    addOutput('USAGE:', 'success', palette.cyan);
     addOutput('  scan [TYPE] [VALUE] [FLAGS]', 'info');
     addOutput('', 'info');
-    addOutput('SCAN TYPES:', 'success', '#00d9ff');
+    addOutput('SCAN TYPES:', 'success', palette.cyan);
     addOutput('  -ip [IP]               Scan IP address', 'info');
     addOutput('  -hash [HASH]           Scan file hash', 'info');
     addOutput('  -url [URL]             Scan URL', 'info');
     addOutput('  -domain [DOMAIN]       Scan domain', 'info');
     addOutput('', 'info');
-    addOutput('FLAGS:', 'success', '#00d9ff');
+    addOutput('FLAGS:', 'success', palette.cyan);
     addOutput('  -v, --verbose          Show all sections', 'info');
     addOutput('  --threats              Threat intel only', 'info');
     addOutput('  --network              Network info only', 'info');
@@ -218,7 +219,7 @@ export function DesktopTerminal() {
     addOutput('  --sources              Show raw source data', 'info');
     addOutput('  --json                 Raw JSON output', 'info');
     addOutput('', 'info');
-    addOutput('EXAMPLES:', 'success', '#00d9ff');
+    addOutput('EXAMPLES:', 'success', palette.cyan);
     addOutput('  scan -ip 8.8.8.8', 'info');
     addOutput('  scan -ip 8.8.8.8 -v', 'info');
     addOutput('  scan -hash abc123... --threats', 'info');
@@ -228,7 +229,7 @@ export function DesktopTerminal() {
 
   const showHistory = () => {
     addOutput('', 'info');
-    addOutput('━━━ COMMAND HISTORY ━━━', 'success');
+    addOutput('\u2501\u2501\u2501 COMMAND HISTORY \u2501\u2501\u2501', 'success');
     if (commandHistory.length === 0) {
       addOutput('  No commands in history', 'info');
     } else {
@@ -241,7 +242,7 @@ export function DesktopTerminal() {
 
   const showStatus = () => {
     addOutput('', 'info');
-    addOutput('━━━ SYSTEM STATUS ━━━', 'success');
+    addOutput('\u2501\u2501\u2501 SYSTEM STATUS \u2501\u2501\u2501', 'success');
     addOutput('', 'info');
     addOutput('  Workspace:        ' + desktop.activeWorkspace, 'info');
     addOutput('  Open Windows:     ' + Object.keys(desktop.windows).length, 'info');
@@ -249,8 +250,8 @@ export function DesktopTerminal() {
     addOutput('  Database:         CONNECTED', 'success');
     addOutput('  Threat Feeds:     ACTIVE', 'success');
     addOutput('', 'info');
-    addOutput('AGENTS:', 'success', '#00ff9d');
-    Object.entries(AGENTS).forEach(([id, agent]) => {
+    addOutput('AGENTS:', 'success', palette.green);
+    Object.entries(AGENTS).forEach(([, agent]) => {
       addOutput(`  ${agent.icon} ${agent.name.padEnd(12)} ONLINE  ${agent.model}`, 'info', agent.color);
     });
     addOutput('', 'info');
@@ -304,8 +305,8 @@ export function DesktopTerminal() {
     addOutput('[*] Opening result window...', 'info');
     addOutput('', 'info');
 
-    const windowId = desktop.openWindow({
-      appId: `${scanType}-result`,
+    desktop.openWindow({
+      appId: `${scanType}-result` as any,
       title: `${scanType.toUpperCase()}: ${value}`,
       data: { value, flags },
     });
@@ -338,16 +339,16 @@ export function DesktopTerminal() {
 
   const showNeofetch = () => {
     addOutput('', 'info');
-    addOutput('         ▄▄▄▄▄▄▄▄       operator@thamos-x', 'success', '#00d9ff');
-    addOutput('      ▄▄█████████▄▄    ─────────────────', 'success', '#00d9ff');
-    addOutput('    ▄███████████████   OS: ThamOS X v7.0', 'success', '#00d9ff');
-    addOutput('   ████████████████▌   Kernel: Neural-Link 6.0', 'info');
-    addOutput('  ▐████████████████    Uptime: ' + Math.floor(performance.now() / 1000) + ' seconds', 'info');
-    addOutput('  █████████████████    Shell: tsh 5.0', 'info');
-    addOutput('  █████████████████    Terminal: ThamOS Terminal', 'info');
-    addOutput('  ████████▌▐███████    Workspace: ' + desktop.activeWorkspace + '/4', 'info');
-    addOutput('   ▀██████  ██████▀    Windows: ' + Object.keys(desktop.windows).length, 'info');
-    addOutput('      ▀▀▀    ▀▀▀       Theme: Kali Dark', 'info');
+    addOutput('         \u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584       operator@thamos-x', 'success', palette.cyan);
+    addOutput('      \u2584\u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2584\u2584    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', 'success', palette.cyan);
+    addOutput('    \u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588   OS: ThamOS X v7.0', 'success', palette.cyan);
+    addOutput('   \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258C   Kernel: Neural-Link 6.0', 'info');
+    addOutput('  \u2590\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588    Uptime: ' + Math.floor(performance.now() / 1000) + ' seconds', 'info');
+    addOutput('  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588    Shell: tsh 5.0', 'info');
+    addOutput('  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588    Terminal: ThamOS Terminal', 'info');
+    addOutput('  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258C\u2590\u2588\u2588\u2588\u2588\u2588\u2588\u2588    Workspace: ' + desktop.activeWorkspace + '/4', 'info');
+    addOutput('   \u2580\u2588\u2588\u2588\u2588\u2588\u2588  \u2588\u2588\u2588\u2588\u2588\u2588\u2580    Windows: ' + Object.keys(desktop.windows).length, 'info');
+    addOutput('      \u2580\u2580\u2580    \u2580\u2580\u2580       Theme: Kali Dark', 'info');
     addOutput('', 'info');
   };
 
@@ -366,7 +367,7 @@ export function DesktopTerminal() {
     addOutput('22/tcp   open     ssh', 'success');
     addOutput('80/tcp   open     http', 'success');
     addOutput('443/tcp  open     https', 'success');
-    addOutput('3306/tcp filtered mysql', 'info', '#fbbf24');
+    addOutput('3306/tcp filtered mysql', 'info', palette.amber);
     addOutput('8080/tcp open     http-proxy', 'success');
     addOutput('', 'info');
     addOutput('Nmap done: 1 IP address scanned in 2.43 seconds', 'info');
@@ -484,7 +485,7 @@ export function DesktopTerminal() {
 
   const showProjects = () => {
     addOutput('', 'info');
-    addOutput('━━━ GITHUB PROJECTS ━━━', 'success');
+    addOutput('\u2501\u2501\u2501 GITHUB PROJECTS \u2501\u2501\u2501', 'success');
     addOutput('', 'info');
     addOutput('  thamos-x/threat-intel-platform     Main TI platform', 'info');
     addOutput('  thamos-x/extension-scanner         Chrome extension analyzer', 'info');
@@ -513,9 +514,9 @@ export function DesktopTerminal() {
     addOutput('', 'info');
     addOutput('Available applications:', 'success');
     addOutput('', 'info');
-    addOutput('  terminal     scanner      browser      workshop', 'info', '#00d9ff');
-    addOutput('  intel        cases        files        editor', 'info', '#00d9ff');
-    addOutput('  monitor      settings', 'info', '#00d9ff');
+    addOutput('  terminal     scanner      browser      workshop', 'info', palette.cyan);
+    addOutput('  intel        cases        files        editor', 'info', palette.cyan);
+    addOutput('  monitor      settings', 'info', palette.cyan);
     addOutput('', 'info');
     addOutput('Use "open [app]" to launch', 'info');
     addOutput('', 'info');
@@ -577,29 +578,40 @@ export function DesktopTerminal() {
     if (customColor) return customColor;
     switch (type) {
       case 'command': return '#a5d8ff';
-      case 'success': return '#00ff9d';
-      case 'error': return '#ff0080';
-      case 'agent': return '#00d9ff';
-      default: return '#c8cde0';
+      case 'success': return palette.green;
+      case 'error': return palette.rose;
+      case 'agent': return palette.cyan;
+      default: return palette.textPrimary;
     }
   };
 
   return (
-    <div className="h-full flex flex-col p-4" style={{ backgroundColor: '#060610', fontFamily: 'JetBrains Mono, monospace' }}>
+    <div
+      className="h-full flex flex-col"
+      style={{ backgroundColor: palette.void }}
+      onClick={() => inputRef.current?.focus()}
+    >
       <div
         ref={outputRef}
-        className="flex-1 overflow-y-auto pb-4 text-sm leading-relaxed"
-        style={{ scrollbarWidth: 'thin', scrollbarColor: '#1a1f35 transparent' }}
+        className="flex-1 overflow-y-auto px-5 pt-4 pb-2 text-sm leading-relaxed"
+        style={{ fontFamily: typography.mono }}
       >
         {output.map((line, i) => (
-          <div key={i} className="mb-1" style={{ color: getTextColor(line.type, line.color) }}>
-            {line.text}
+          <div key={i} className="mb-0.5" style={{ color: getTextColor(line.type, line.color) }}>
+            {line.text || '\u00A0'}
           </div>
         ))}
       </div>
 
-      <div className="flex items-center gap-2 pt-2" style={{ borderTop: '1px solid #1a1f35' }}>
-        <span className="text-sm" style={{ color: '#00d9ff' }}>$</span>
+      <div
+        className="flex items-center gap-2 px-5 py-3"
+        style={{
+          borderTop: `1px solid ${palette.borderSubtle}`,
+          fontFamily: typography.mono,
+        }}
+      >
+        <span className="text-sm font-bold" style={{ color: palette.green }}>\u279C</span>
+        <span className="text-sm" style={{ color: palette.cyan }}>~</span>
         <input
           ref={inputRef}
           type="text"
@@ -607,11 +619,38 @@ export function DesktopTerminal() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           className="flex-1 bg-transparent border-none outline-none text-sm"
-          style={{ color: '#c8cde0', caretColor: '#00d9ff', fontFamily: 'JetBrains Mono, monospace' }}
+          style={{
+            color: palette.textPrimary,
+            caretColor: palette.cyan,
+            fontFamily: typography.mono,
+          }}
           autoFocus
           spellCheck={false}
           autoComplete="off"
         />
+        <span
+          className="w-2 h-4 animate-pulse"
+          style={{ backgroundColor: `${palette.cyan}80` }}
+        />
+      </div>
+
+      <div
+        className="flex items-center justify-between px-5 py-1.5"
+        style={{
+          backgroundColor: palette.elevated,
+          borderTop: `1px solid ${palette.borderSubtle}`,
+          fontFamily: typography.ui,
+        }}
+      >
+        <div className="flex items-center gap-4" style={{ fontSize: '10px', color: palette.textDisabled }}>
+          <span>tsh</span>
+          <span>UTF-8</span>
+          <span>workspace {desktop.activeWorkspace}</span>
+        </div>
+        <div className="flex items-center gap-4" style={{ fontSize: '10px', color: palette.textDisabled }}>
+          <span>{commandHistory.length} cmds</span>
+          <span>{Object.keys(desktop.windows).length} windows</span>
+        </div>
       </div>
     </div>
   );
