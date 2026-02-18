@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useGitHub, type ContextFile } from '../../contexts/GitHubContext';
+import { commitFile, fetchFileMeta } from '../../lib/github';
 
 interface Agent {
   id: string;
@@ -53,7 +55,99 @@ const P = {
   textLight: '#c8cde0',
 };
 
-function renderMarkdown(text: string): React.ReactNode {
+function CodeBlock({
+  code,
+  lang,
+  contextFiles,
+  onCommit,
+}: {
+  code: string;
+  lang: string;
+  contextFiles: ContextFile[];
+  onCommit: (code: string, file: ContextFile) => void;
+}) {
+  const [targetPath, setTargetPath] = useState('');
+  const [showSelect, setShowSelect] = useState(false);
+
+  const matchedFile = contextFiles.find(f => {
+    const ext = f.path.split('.').pop() || '';
+    const langMap: Record<string, string[]> = {
+      typescript: ['ts', 'tsx'], javascript: ['js', 'jsx'],
+      python: ['py'], ruby: ['rb'], rust: ['rs'], go: ['go'],
+      java: ['java'], sql: ['sql'], bash: ['sh', 'bash'],
+      yaml: ['yml', 'yaml'], json: ['json'], css: ['css'],
+      scss: ['scss'], html: ['html'], markdown: ['md'],
+    };
+    const exts = langMap[lang.toLowerCase()] || [];
+    return exts.includes(ext);
+  });
+
+  const canCommit = contextFiles.length > 0;
+  const selectedFile = contextFiles.find(f => f.path === targetPath) || matchedFile;
+
+  return (
+    <div style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', borderRadius: '6px', margin: '6px 0', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', borderBottom: '1px solid #1a1f3540' }}>
+        <span style={{ color: '#3a3f55', fontSize: '0.65rem' }}>{lang || 'code'}</span>
+        {canCommit && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {contextFiles.length > 1 && (
+              <button
+                onClick={() => setShowSelect(!showSelect)}
+                style={{ color: '#3a3f55', fontSize: '0.6rem', border: '1px solid #1a1f35', borderRadius: '3px', padding: '1px 6px', backgroundColor: 'transparent', cursor: 'pointer' }}
+              >
+                {selectedFile ? selectedFile.path.split('/').pop() : 'SELECT FILE'}
+              </button>
+            )}
+            <button
+              onClick={() => selectedFile && onCommit(code, selectedFile)}
+              disabled={!selectedFile}
+              style={{
+                color: selectedFile ? '#00ff9d' : '#3a3f55',
+                fontSize: '0.6rem',
+                border: `1px solid ${selectedFile ? '#00ff9d30' : '#1a1f35'}`,
+                borderRadius: '3px',
+                padding: '1px 6px',
+                backgroundColor: selectedFile ? '#00ff9d08' : 'transparent',
+                cursor: selectedFile ? 'pointer' : 'default',
+              }}
+            >
+              COMMIT{selectedFile ? ` → ${selectedFile.path.split('/').pop()}` : ''}
+            </button>
+          </div>
+        )}
+      </div>
+      {showSelect && contextFiles.length > 1 && (
+        <div style={{ padding: '4px 12px', borderBottom: '1px solid #1a1f3540', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          {contextFiles.map(f => (
+            <button
+              key={f.path}
+              onClick={() => { setTargetPath(f.path); setShowSelect(false); }}
+              style={{
+                color: targetPath === f.path ? '#00ff9d' : '#8a8fa8',
+                fontSize: '0.6rem',
+                border: `1px solid ${targetPath === f.path ? '#00ff9d30' : '#1a1f35'}`,
+                borderRadius: '3px',
+                padding: '1px 6px',
+                backgroundColor: 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              {f.path}
+            </button>
+          ))}
+        </div>
+      )}
+      <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', color: '#00ff9d', margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{code}</pre>
+    </div>
+  );
+}
+
+function renderMarkdown(
+  text: string,
+  contextFiles: ContextFile[],
+  onCommit: (code: string, file: ContextFile) => void
+): React.ReactNode {
   const parts: React.ReactNode[] = [];
   const lines = text.split('\n');
   let inCodeBlock = false;
@@ -87,11 +181,10 @@ function renderMarkdown(text: string): React.ReactNode {
     const line = lines[i];
     if (line.startsWith('```')) {
       if (inCodeBlock) {
+        const capturedCode = codeBuffer.join('\n');
+        const capturedLang = codeLang;
         parts.push(
-          <div key={key++} style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', borderRadius: '6px', padding: '8px 12px', margin: '6px 0', overflowX: 'auto' }}>
-            {codeLang && <div style={{ color: '#3a3f55', fontSize: '0.65rem', marginBottom: '4px' }}>{codeLang}</div>}
-            <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', color: '#00ff9d', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{codeBuffer.join('\n')}</pre>
-          </div>
+          <CodeBlock key={key++} code={capturedCode} lang={capturedLang} contextFiles={contextFiles} onCommit={onCommit} />
         );
         codeBuffer = [];
         codeLang = '';
@@ -125,10 +218,10 @@ function renderMarkdown(text: string): React.ReactNode {
   }
 
   if (inCodeBlock && codeBuffer.length > 0) {
+    const capturedCode = codeBuffer.join('\n');
+    const capturedLang = codeLang;
     parts.push(
-      <div key={key++} style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', borderRadius: '6px', padding: '8px 12px', margin: '6px 0' }}>
-        <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', color: '#00ff9d', margin: 0, whiteSpace: 'pre-wrap' }}>{codeBuffer.join('\n')}</pre>
-      </div>
+      <CodeBlock key={key++} code={capturedCode} lang={capturedLang} contextFiles={contextFiles} onCommit={onCommit} />
     );
   }
 
@@ -137,6 +230,7 @@ function renderMarkdown(text: string): React.ReactNode {
 
 export function DesktopWorkshop() {
   const { user } = useAuth();
+  const { contextFiles, unpinFile, activeProject, ghToken } = useGitHub();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -146,6 +240,7 @@ export function DesktopWorkshop() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [commitStatus, setCommitStatus] = useState<{ status: 'success' | 'error'; message: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -240,6 +335,48 @@ export function DesktopWorkshop() {
     loadConversations();
   };
 
+  const buildSystemPrompt = useCallback((basePrompt: string): string => {
+    if (!activeProject && contextFiles.length === 0) return basePrompt;
+    const lines = [basePrompt, ''];
+    if (activeProject) {
+      lines.push(`## Active Project`);
+      lines.push(`Repo: ${activeProject.repoFullName}`);
+      lines.push(`Branch: ${activeProject.branch}`);
+      lines.push('');
+    }
+    if (contextFiles.length > 0) {
+      lines.push(`## Pinned Files (${contextFiles.length})`);
+      for (const f of contextFiles) {
+        lines.push(`### ${f.path}`);
+        lines.push('```');
+        lines.push(f.content.length > 6000 ? f.content.slice(0, 6000) + '\n... (truncated)' : f.content);
+        lines.push('```');
+        lines.push('');
+      }
+      lines.push('When proposing changes to these files, use code blocks with the same file extension so commits can be targeted correctly.');
+    }
+    return lines.join('\n');
+  }, [activeProject, contextFiles]);
+
+  const handleCommit = useCallback(async (code: string, file: ContextFile) => {
+    if (!ghToken) {
+      setCommitStatus({ status: 'error', message: 'No GitHub token available. Connect GitHub first.' });
+      setTimeout(() => setCommitStatus(null), 4000);
+      return;
+    }
+    setCommitStatus(null);
+    try {
+      const meta = await fetchFileMeta(ghToken, file.owner, file.repo, file.path);
+      const commitMsg = `Update ${file.path.split('/').pop()} via ThamOS Workshop`;
+      await commitFile(ghToken, file.owner, file.repo, file.path, code, meta.sha, commitMsg, file.branch);
+      setCommitStatus({ status: 'success', message: `Committed to ${file.path}` });
+      setTimeout(() => setCommitStatus(null), 4000);
+    } catch (err) {
+      setCommitStatus({ status: 'error', message: err instanceof Error ? err.message : 'Commit failed' });
+      setTimeout(() => setCommitStatus(null), 6000);
+    }
+  }, [ghToken]);
+
   const sendMessage = async () => {
     if (!input.trim() || !selectedAgent || !selectedConversation || isSending) return;
 
@@ -278,7 +415,7 @@ export function DesktopWorkshop() {
           provider: selectedAgent.provider,
           model: selectedAgent.model,
           messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content }],
-          system_prompt: selectedAgent.system_prompt,
+          system_prompt: buildSystemPrompt(selectedAgent.system_prompt),
           temperature: selectedAgent.temperature,
           max_tokens: selectedAgent.max_tokens,
         }),
@@ -437,12 +574,51 @@ export function DesktopWorkshop() {
               </div>
             )}
           </div>
-          {selectedConversation && (
-            <span className="text-xs" style={{ color: P.dim }}>
-              {selectedConversation.total_tokens || 0} tokens
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {activeProject && (
+              <span className="text-xs" style={{ color: P.dim, fontFamily: 'JetBrains Mono, monospace' }}>
+                <span style={{ color: '#3a3f55' }}>repo:</span> {activeProject.repoFullName}
+              </span>
+            )}
+            {selectedConversation && (
+              <span className="text-xs" style={{ color: P.dim }}>
+                {selectedConversation.total_tokens || 0} tokens
+              </span>
+            )}
+          </div>
         </div>
+
+        {contextFiles.length > 0 && (
+          <div className="px-4 py-1.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: `${P.surface}` }}>
+            <span className="text-xs" style={{ color: P.dim, fontFamily: 'JetBrains Mono, monospace' }}>context:</span>
+            {contextFiles.map(f => (
+              <div key={f.path} className="flex items-center gap-1 px-2 py-0.5 rounded" style={{ backgroundColor: `${agentColor}08`, border: `1px solid ${agentColor}20` }}>
+                <span className="text-xs" style={{ color: agentColor, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.65rem' }}>
+                  {f.path.split('/').pop()}
+                </span>
+                <button
+                  onClick={() => unpinFile(f.path)}
+                  className="ml-1 transition-opacity hover:opacity-100 opacity-50"
+                  style={{ color: P.dim, fontSize: '0.6rem', lineHeight: 1 }}
+                  title="Unpin file"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {commitStatus && (
+          <div className="px-4 py-1.5" style={{
+            borderBottom: `1px solid ${commitStatus.status === 'success' ? '#00ff9d30' : 'rgba(255,0,128,0.2)'}`,
+            backgroundColor: commitStatus.status === 'success' ? '#00ff9d08' : 'rgba(255,0,128,0.08)',
+          }}>
+            <span className="text-xs" style={{ color: commitStatus.status === 'success' ? '#00ff9d' : '#ff0080', fontFamily: 'JetBrains Mono, monospace' }}>
+              [{commitStatus.status.toUpperCase()}] {commitStatus.message}
+            </span>
+          </div>
+        )}
 
         {!selectedConversation ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8">
@@ -484,7 +660,7 @@ export function DesktopWorkshop() {
                     }}
                   >
                     <div className="text-xs leading-relaxed break-words" style={{ fontFamily: 'JetBrains Mono, monospace', color: P.textLight }}>
-                      {msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
+                      {msg.role === 'assistant' ? renderMarkdown(msg.content, contextFiles, handleCommit) : msg.content}
                     </div>
                     {msg.tokens_used > 0 && (
                       <div className="mt-2 text-xs" style={{ color: P.dim }}>

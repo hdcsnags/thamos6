@@ -14,6 +14,21 @@ async function ghFetch(token: string, path: string, accept?: string): Promise<Re
   });
 }
 
+async function ghPut(token: string, path: string, body: unknown): Promise<Response> {
+  const url = new URL(GITHUB_PROXY);
+  url.searchParams.set('path', path);
+
+  return fetch(url.toString(), {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${ANON_KEY}`,
+      'X-GitHub-Token': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 export interface GitHubUser {
   login: string;
   avatar_url: string;
@@ -107,6 +122,57 @@ export async function searchRepos(
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const data = await res.json();
   return data.items || [];
+}
+
+export interface CommitResult {
+  sha: string;
+  html_url: string;
+}
+
+export async function fetchFileMeta(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string
+): Promise<{ sha: string }> {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await ghFetch(token, `/repos/${owner}/${repo}/contents/${encodedPath}`);
+  if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+  const data = await res.json();
+  if (Array.isArray(data)) throw new Error('Path is a directory, not a file');
+  return { sha: data.sha };
+}
+
+export async function commitFile(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  sha: string,
+  message: string,
+  branch: string
+): Promise<CommitResult> {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const encoded = btoa(unescape(encodeURIComponent(content)));
+
+  const res = await ghPut(token, `/repos/${owner}/${repo}/contents/${encodedPath}`, {
+    message,
+    content: encoded,
+    sha,
+    branch,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return {
+    sha: data.content?.sha || '',
+    html_url: data.content?.html_url || '',
+  };
 }
 
 const EXT_LANGS: Record<string, string> = {

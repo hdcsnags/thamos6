@@ -7,6 +7,7 @@ import {
   type GitHubUser, type GitHubRepo, type GitHubContent,
 } from '../../lib/github';
 import { GitHubFileViewer } from './GitHubFileViewer';
+import { useGitHub } from '../../contexts/GitHubContext';
 
 type View = 'connect' | 'repos' | 'files' | 'file';
 
@@ -27,7 +28,7 @@ const P = {
 
 export function DesktopGitHub() {
   const { session, signInWithGitHub, providerToken } = useAuth();
-  const [ghToken, setGhToken] = useState<string | null>(null);
+  const { ghToken, setGhToken, pinFile, setActiveProject } = useGitHub();
   const [ghUser, setGhUser] = useState<GitHubUser | null>(null);
   const [view, setView] = useState<View>('connect');
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
@@ -37,11 +38,13 @@ export function DesktopGitHub() {
   const [pathHistory, setPathHistory] = useState<string[]>([]);
   const [fileContent, setFileContent] = useState('');
   const [currentFile, setCurrentFile] = useState('');
+  const [currentFileSha, setCurrentFileSha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filteredRepos, setFilteredRepos] = useState<GitHubRepo[]>([]);
   const [manualToken, setManualToken] = useState('');
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     if (providerToken) {
@@ -104,6 +107,13 @@ export function DesktopGitHub() {
     setSelectedRepo(repo);
     setCurrentPath('');
     setPathHistory([]);
+    setActiveProject({
+      repoFullName: repo.full_name,
+      owner: repo.owner.login,
+      repo: repo.name,
+      branch: repo.default_branch,
+      defaultBranch: repo.default_branch,
+    });
     try {
       const data = await fetchContents(ghToken, repo.owner.login, repo.name);
       setContents(sortContents(data));
@@ -113,7 +123,7 @@ export function DesktopGitHub() {
     } finally {
       setLoading(false);
     }
-  }, [ghToken]);
+  }, [ghToken, setActiveProject]);
 
   const navigateDir = useCallback(async (path: string) => {
     if (!ghToken || !selectedRepo) return;
@@ -139,10 +149,12 @@ export function DesktopGitHub() {
     }
     setLoading(true);
     setError(null);
+    setPinned(false);
     try {
       const content = await fetchFileContent(ghToken, selectedRepo.owner.login, selectedRepo.name, item.path);
       setFileContent(content);
       setCurrentFile(item.path);
+      setCurrentFileSha(item.sha);
       setView('file');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load file');
@@ -195,7 +207,23 @@ export function DesktopGitHub() {
     setContents([]);
     setView('connect');
     setManualToken('');
-  }, []);
+    setActiveProject(null);
+  }, [setGhToken, setActiveProject]);
+
+  const handleSendToAgent = useCallback(() => {
+    if (!selectedRepo || !currentFile || !fileContent) return;
+    pinFile({
+      repoFullName: selectedRepo.full_name,
+      owner: selectedRepo.owner.login,
+      repo: selectedRepo.name,
+      branch: selectedRepo.default_branch,
+      path: currentFile,
+      sha: currentFileSha,
+      content: fileContent,
+      pinnedAt: Date.now(),
+    });
+    setPinned(true);
+  }, [selectedRepo, currentFile, currentFileSha, fileContent, pinFile]);
 
   if (view === 'connect') {
     return <ConnectView
@@ -225,6 +253,8 @@ export function DesktopGitHub() {
           filename={currentFile.split('/').pop() || ''}
           language={detectLanguage(currentFile)}
           htmlUrl={`${selectedRepo.html_url}/blob/${selectedRepo.default_branch}/${currentFile}`}
+          onSendToAgent={handleSendToAgent}
+          pinned={pinned}
         />
       </div>
     );

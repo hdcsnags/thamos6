@@ -18,9 +18,11 @@ interface Props {
   filename: string;
   language: string;
   htmlUrl: string;
+  onSendToAgent?: () => void;
+  pinned?: boolean;
 }
 
-export function GitHubFileViewer({ content, filename, language, htmlUrl }: Props) {
+export function GitHubFileViewer({ content, filename, language, htmlUrl, onSendToAgent, pinned }: Props) {
   const [copied, setCopied] = useState(false);
   const lines = content.split('\n');
   const lineCount = lines.length;
@@ -52,6 +54,20 @@ export function GitHubFileViewer({ content, filename, language, htmlUrl }: Props
           </span>
         </div>
         <div className="flex items-center gap-1.5">
+          {onSendToAgent && (
+            <button
+              onClick={onSendToAgent}
+              className="px-2 py-1 text-xs rounded transition-all"
+              style={{
+                color: pinned ? P.teal : P.dim,
+                border: `1px solid ${pinned ? `${P.teal}40` : P.border}`,
+                backgroundColor: pinned ? `${P.teal}10` : 'transparent',
+              }}
+              title={pinned ? 'Pinned to Workshop' : 'Send to AI Workshop'}
+            >
+              {pinned ? 'PINNED' : 'SEND TO AGENT'}
+            </button>
+          )}
           <button
             onClick={copyToClipboard}
             className="px-2 py-1 text-xs rounded transition-all"
