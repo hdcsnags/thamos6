@@ -1,17 +1,17 @@
-const GITHUB_API = 'https://api.github.com';
+const GITHUB_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-proxy`;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-interface GHHeaders {
-  Authorization: string;
-  Accept: string;
-  'X-GitHub-Api-Version': string;
-}
+async function ghFetch(token: string, path: string, accept?: string): Promise<Response> {
+  const url = new URL(GITHUB_PROXY);
+  url.searchParams.set('path', path);
+  if (accept) url.searchParams.set('accept', accept);
 
-function headers(token: string): GHHeaders {
-  return {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
+  return fetch(url.toString(), {
+    headers: {
+      'Authorization': `Bearer ${ANON_KEY}`,
+      'X-GitHub-Token': token,
+    },
+  });
 }
 
 export interface GitHubUser {
@@ -50,7 +50,7 @@ export interface GitHubContent {
 }
 
 export async function fetchUser(token: string): Promise<GitHubUser> {
-  const res = await fetch(`${GITHUB_API}/user`, { headers: headers(token) });
+  const res = await ghFetch(token, '/user');
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   return res.json();
 }
@@ -60,9 +60,9 @@ export async function fetchRepos(
   page = 1,
   sort: 'updated' | 'pushed' | 'full_name' = 'updated'
 ): Promise<GitHubRepo[]> {
-  const res = await fetch(
-    `${GITHUB_API}/user/repos?per_page=50&page=${page}&sort=${sort}&affiliation=owner,collaborator,organization_member`,
-    { headers: headers(token) }
+  const res = await ghFetch(
+    token,
+    `/user/repos?per_page=50&page=${page}&sort=${sort}&affiliation=owner,collaborator,organization_member`
   );
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   return res.json();
@@ -75,10 +75,7 @@ export async function fetchContents(
   path = ''
 ): Promise<GitHubContent[]> {
   const encodedPath = path ? `/${path.split('/').map(encodeURIComponent).join('/')}` : '';
-  const res = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/contents${encodedPath}`,
-    { headers: headers(token) }
-  );
+  const res = await ghFetch(token, `/repos/${owner}/${repo}/contents${encodedPath}`);
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const data = await res.json();
   return Array.isArray(data) ? data : [data];
@@ -90,14 +87,10 @@ export async function fetchFileContent(
   repo: string,
   path: string
 ): Promise<string> {
-  const res = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
-    {
-      headers: {
-        ...headers(token),
-        Accept: 'application/vnd.github.raw+json',
-      },
-    }
+  const res = await ghFetch(
+    token,
+    `/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
+    'application/vnd.github.raw+json'
   );
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   return res.text();
@@ -107,9 +100,9 @@ export async function searchRepos(
   token: string,
   query: string
 ): Promise<GitHubRepo[]> {
-  const res = await fetch(
-    `${GITHUB_API}/search/repositories?q=${encodeURIComponent(query)}+in:name&per_page=20&sort=updated`,
-    { headers: headers(token) }
+  const res = await ghFetch(
+    token,
+    `/search/repositories?q=${encodeURIComponent(query)}+in:name&per_page=20&sort=updated`
   );
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const data = await res.json();
