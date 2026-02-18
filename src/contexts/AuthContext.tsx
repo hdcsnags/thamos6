@@ -10,11 +10,13 @@ interface AuthContextType {
   clearAuthError: () => void;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
+  signInWithGitHub: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
+  providerToken: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [providerToken, setProviderToken] = useState<string | null>(null);
 
   useEffect(() => {
     const hashError = parseHashError();
@@ -55,10 +58,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      if (event === 'SIGNED_IN' && session?.provider_token) {
+        setProviderToken(session.provider_token);
+      }
+      if (event === 'SIGNED_OUT') {
+        setProviderToken(null);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -84,6 +93,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       options: {
         redirectTo: window.location.origin,
         scopes: 'email profile openid',
+      },
+    });
+    if (error) throw error;
+  }, []);
+
+  const signInWithGitHub = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: window.location.origin,
+        scopes: 'repo read:user',
       },
     });
     if (error) throw error;
@@ -136,11 +156,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearAuthError,
       signInWithGoogle,
       signInWithMicrosoft,
+      signInWithGitHub,
       signInWithPassword,
       signUpWithPassword,
       resetPassword,
       updatePassword,
       signOut,
+      providerToken,
     }}>
       {children}
     </AuthContext.Provider>

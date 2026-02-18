@@ -17,6 +17,7 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
+import { DesktopGitHub } from './DesktopGitHub';
 import { palette, typography } from '../../design-system/tokens';
 
 export function DesktopLayout() {
@@ -122,7 +123,7 @@ function renderWindowContent(appId: string, data?: any) {
     case 'cases':
       return <DesktopCaseManager />;
     case 'files':
-      return <FilesPlaceholder />;
+      return <DesktopGitHub />;
     case 'editor':
       return <EditorPlaceholder />;
     case 'monitor':
@@ -147,24 +148,6 @@ function renderWindowContent(appId: string, data?: any) {
         </div>
       );
   }
-}
-
-function FilesPlaceholder() {
-  return (
-    <div
-      className="h-full flex flex-col items-center justify-center"
-      style={{ backgroundColor: palette.void, fontFamily: typography.ui }}
-    >
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-        style={{ backgroundColor: `${palette.teal}0a`, border: `1px solid ${palette.teal}20` }}
-      >
-        <span className="text-2xl" style={{ color: palette.teal }}>&#9670;</span>
-      </div>
-      <span className="text-xs font-medium mb-1" style={{ color: palette.textPrimary }}>File Manager</span>
-      <span style={{ fontSize: '11px', color: palette.textTertiary }}>Requires GitHub OAuth (Phase 3)</span>
-    </div>
-  );
 }
 
 function EditorPlaceholder() {

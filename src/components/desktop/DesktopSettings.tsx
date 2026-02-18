@@ -17,7 +17,7 @@ const P = {
   pink: '#ff0080',
 };
 
-type TabType = 'account' | 'api-keys' | 'appearance';
+type TabType = 'account' | 'api-keys' | 'connections' | 'appearance';
 
 interface ApiKey {
   id: string;
@@ -140,8 +140,12 @@ export function DesktopSettings() {
     );
   }
 
+  const isGitHubConnected = user?.app_metadata?.provider === 'github' ||
+    user?.identities?.some(i => i.provider === 'github');
+
   const tabs: { id: TabType; label: string }[] = [
     { id: 'api-keys', label: 'API KEYS' },
+    { id: 'connections', label: 'CONNECTIONS' },
     { id: 'account', label: 'ACCOUNT' },
     { id: 'appearance', label: 'THEME' },
   ];
@@ -256,6 +260,56 @@ export function DesktopSettings() {
                 <span className="text-xs" style={{ color: P.green }}>AES-256-GCM ENCRYPTION</span>
               </div>
               <span className="text-xs" style={{ color: P.dim }}>All keys encrypted at rest</span>
+            </div>
+          </div>
+        )}
+
+        {tab === 'connections' && (
+          <div className="space-y-4 max-w-md">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-3 rounded-sm" style={{ backgroundColor: P.cyan }} />
+              <span className="text-xs font-medium tracking-wider" style={{ color: P.cyan }}>CONNECTED ACCOUNTS</span>
+            </div>
+
+            <div className="p-3 rounded" style={{
+              backgroundColor: isGitHubConnected ? `${P.green}06` : P.surface,
+              border: `1px solid ${isGitHubConnected ? `${P.green}20` : P.border}`,
+            }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full" style={{
+                    backgroundColor: isGitHubConnected ? P.green : P.dim,
+                    boxShadow: isGitHubConnected ? `0 0 6px ${P.green}40` : 'none',
+                  }} />
+                  <div>
+                    <span className="text-xs font-medium" style={{ color: isGitHubConnected ? P.green : P.text }}>GitHub</span>
+                    <span className="text-xs ml-2" style={{ color: P.dim }}>
+                      {isGitHubConnected ? 'Connected via OAuth' : 'Not connected'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded" style={{
+                  backgroundColor: isGitHubConnected ? `${P.green}15` : `${P.dim}15`,
+                  color: isGitHubConnected ? P.green : P.dim,
+                  border: `1px solid ${isGitHubConnected ? `${P.green}30` : `${P.dim}30`}`,
+                }}>
+                  {isGitHubConnected ? 'ACTIVE' : 'INACTIVE'}
+                </span>
+              </div>
+              {isGitHubConnected && user?.user_metadata?.user_name && (
+                <div className="mt-2 ml-5">
+                  <span className="text-xs" style={{ color: P.dim }}>
+                    @{user.user_metadata.user_name}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+              <span className="text-xs" style={{ color: P.dim, lineHeight: '1.6' }}>
+                GitHub access enables the File Manager app to browse your repositories.
+                You can also connect by pasting a personal access token directly in the File Manager.
+              </span>
             </div>
           </div>
         )}
