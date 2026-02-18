@@ -3,15 +3,28 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const GITHUB_API = "https://api.github.com";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-GitHub-Token",
-};
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://t6.thamos.ca",
+]);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allowed = ALLOWED_ORIGINS.has(origin);
+  return {
+    ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-GitHub-Token",
+    "Vary": "Origin",
+  };
+}
 
 Deno.serve(async (req: Request) => {
+  const cors = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 200, headers: cors });
   }
 
   try {
@@ -19,7 +32,7 @@ Deno.serve(async (req: Request) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -33,7 +46,7 @@ Deno.serve(async (req: Request) => {
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -44,7 +57,7 @@ Deno.serve(async (req: Request) => {
     if (!ghPath) {
       return new Response(JSON.stringify({ error: "Missing path parameter" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -52,7 +65,7 @@ Deno.serve(async (req: Request) => {
     if (!token) {
       return new Response(JSON.stringify({ error: "Missing GitHub token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -70,14 +83,14 @@ Deno.serve(async (req: Request) => {
     return new Response(body, {
       status: ghRes.status,
       headers: {
-        ...corsHeaders,
+        ...cors,
         "Content-Type": ghRes.headers.get("Content-Type") || "application/json",
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });
