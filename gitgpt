@@ -1,0 +1,71 @@
+Yeah—this is exactly the kind of “it works but did we accidentally do something dumb?” moment you should sanity-check. Good catch sending it over.
+
+1) The localStorage change: is it a security downgrade?
+
+Yes (small), and also unnecessary.
+
+Storing provider_token (GitHub token) in localStorage increases your exposure surface because any XSS = token theft. Supabase’s default browser auth often uses web storage for Supabase session tokens, but that doesn’t automatically mean it’s a good idea to also stash third-party provider tokens there. Supabase themselves advise extracting provider_token and storing it in a “secure storage medium” if you need it.
+
+So: if Bolt added provider_token → localStorage, I would roll that back and do one of these instead:
+
+Best: store GitHub token server-side (encrypted) after login, then only call GitHub via Edge Functions
+
+Good: keep provider_token in memory / sessionStorage only (short lived)
+
+Okay: localStorage (but you should aim to remove it)
+
+2) The real bug: “Missing authorization header” + anon key misuse
+
+That 401 is classic: an Edge Function (or your supabase.auth.getUser()) needs a real user JWT, but you passed the anon key (or no Authorization header). Supabase explicitly calls out this pitfall.
+
+So Bolt’s diagnosis is correct:
+
+Authorization: Bearer <ANON_KEY> is not a user session
+
+You must send Authorization: Bearer <session.access_token>
+
+✅ Fix: make your github.ts functions accept an accessToken param (or retrieve it from auth context) and pass that to the proxy.
+
+3) The other bug you noticed: GitHub login “takes over” your app session
+
+This is the bigger architectural point.
+
+If you use Supabase signInWithOAuth({ provider: 'github' }), you’re not “connecting GitHub,” you’re signing in as GitHub. That means the app session can legitimately switch users depending on which GitHub account you authorize.
+
+And your situation (GitHub account is accessed via Google SSO) makes it feel like “Google vs website account,” but the reality is: you’re picking a different GitHub identity, so Supabase correctly creates a new session for that identity.
+
+The “works and GOOD” solution (no security hacks, no token in localStorage):
+
+Use a separate Supabase client instance only for GitHub connect, so it doesn’t overwrite your main ThamOS session.
+
+Pattern:
+
+Main app uses supabaseMain (normal storage key)
+
+GitHub connect uses supabaseGitHub = createClient(..., { auth: { storageKey: 'sb-github-connect', ... }})
+
+Run OAuth on supabaseGitHub
+
+Extract provider_token from supabaseGitHub session
+
+Send it once to an Edge Function to store encrypted (or keep it ephemeral)
+
+Keep your main app session untouched
+
+This avoids the “I came back and I’m signed in as my GitHub identity” problem entirely.
+
+4) About skipBrowserRedirect: true / popup flow
+
+Your popup approach is fine. But don’t “fix” it by persisting provider_token in localStorage. Use the two-client approach above.
+
+5) What I’d do right now (very specific)
+
+Undo provider_token → localStorage (unless you intentionally want it there)
+
+Ensure proxy calls include Authorization: Bearer ${session.access_token}
+
+Implement separate Supabase client for GitHub connect (separate storageKey)
+
+Keep GitHub proxy whitelisted endpoints only (no generic relay)
+
+Optional: store token server-side encrypted once you’re ready (Phase 3 hardening)
