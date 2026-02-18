@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseGitHub } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -44,7 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [providerToken, setProviderToken] = useState<string | null>(null);
-  const primarySessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     const hashError = parseHashError();
@@ -54,54 +53,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      primarySessionRef.current = session;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      if (session?.provider_token) {
-        setProviderToken(session.provider_token);
-        localStorage.setItem('thamos6-gh-token', session.provider_token);
-      } else {
-        const stored = localStorage.getItem('thamos6-gh-token');
-        if (stored) setProviderToken(stored);
-      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        const primary = primarySessionRef.current;
-        if (primary && primary.user.id !== session.user.id) {
-          if (session.provider_token) {
-            setProviderToken(session.provider_token);
-            localStorage.setItem('thamos6-gh-token', session.provider_token);
-          }
-          supabase.auth.setSession({
-            access_token: primary.access_token,
-            refresh_token: primary.refresh_token,
-          });
-          return;
-        }
-        primarySessionRef.current = session;
-        setSession(session);
-        setUser(session.user);
-        setLoading(false);
-        if (session.provider_token) {
-          setProviderToken(session.provider_token);
-          localStorage.setItem('thamos6-gh-token', session.provider_token);
-        }
-        return;
-      }
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
       if (event === 'SIGNED_OUT') {
-        primarySessionRef.current = null;
         setProviderToken(null);
-        localStorage.removeItem('thamos6-gh-token');
       }
     });
 
-    return () => subscription.unsubscribe();
+    const { data: { subscription: ghSubscription } } = supabaseGitHub.auth.onAuthStateChange((event, ghSession) => {
+      if (event === 'SIGNED_IN' && ghSession?.provider_token) {
+        setProviderToken(ghSession.provider_token);
+        supabaseGitHub.auth.signOut();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      ghSubscription.unsubscribe();
+    };
   }, []);
 
   const clearAuthError = useCallback(() => {
@@ -130,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGitHub = useCallback(async () => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabaseGitHub.auth.signInWithOAuth({
       provider: 'github',
       options: {
         redirectTo: window.location.origin,

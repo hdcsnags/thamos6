@@ -5,4 +5,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+export const supabaseGitHub = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey: 'sb-github-connect',
+    persistSession: false,
+  },
+});
+
 export const EDGE_FUNCTION_URL = `${supabaseUrl}/functions/v1/threat-intel`;
