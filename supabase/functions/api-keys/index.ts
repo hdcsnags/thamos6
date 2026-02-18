@@ -1,11 +1,22 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://t6.thamos.ca",
+]);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allowed = ALLOWED_ORIGINS.has(origin);
+  return {
+    ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+    "Vary": "Origin",
+  };
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -89,8 +100,10 @@ const VALID_SERVICES = [
 ];
 
 Deno.serve(async (req: Request) => {
+  const cors = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 200, headers: cors });
   }
 
   try {
@@ -99,7 +112,7 @@ Deno.serve(async (req: Request) => {
     if (!user) {
       return new Response(
         JSON.stringify({ error: "Authentication required" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 401, headers: { ...cors, "Content-Type": "application/json" } }
       );
     }
 
@@ -115,13 +128,13 @@ Deno.serve(async (req: Request) => {
       if (error) {
         return new Response(
           JSON.stringify({ error: error.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
       return new Response(
         JSON.stringify({ keys: data }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...cors, "Content-Type": "application/json" } }
       );
     }
 
@@ -132,14 +145,14 @@ Deno.serve(async (req: Request) => {
       if (!service || !apiKey) {
         return new Response(
           JSON.stringify({ error: "Service and apiKey are required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 400, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
       if (!VALID_SERVICES.includes(service)) {
         return new Response(
           JSON.stringify({ error: `Invalid service. Must be one of: ${VALID_SERVICES.join(", ")}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 400, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
@@ -166,13 +179,13 @@ Deno.serve(async (req: Request) => {
         if (error) {
           return new Response(
             JSON.stringify({ error: error.message }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
           );
         }
 
         return new Response(
           JSON.stringify({ success: true, message: `Updated ${service} API key` }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
@@ -189,13 +202,13 @@ Deno.serve(async (req: Request) => {
       if (error) {
         return new Response(
           JSON.stringify({ error: error.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
       return new Response(
         JSON.stringify({ success: true, message: `Added ${service} API key` }),
-        { status: 201, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 201, headers: { ...cors, "Content-Type": "application/json" } }
       );
     }
 
@@ -205,7 +218,7 @@ Deno.serve(async (req: Request) => {
       if (!serviceToDelete || !VALID_SERVICES.includes(serviceToDelete)) {
         return new Response(
           JSON.stringify({ error: "Invalid service" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 400, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
@@ -218,24 +231,24 @@ Deno.serve(async (req: Request) => {
       if (error) {
         return new Response(
           JSON.stringify({ error: error.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
 
       return new Response(
         JSON.stringify({ success: true, message: `Deleted ${serviceToDelete} API key` }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...cors, "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
       JSON.stringify({ error: "Not found" }),
-      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 404, headers: { ...cors, "Content-Type": "application/json" } }
     );
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: String(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Internal server error" }),
+      { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
     );
   }
 });
