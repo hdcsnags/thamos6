@@ -99,14 +99,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGitHub = useCallback(async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
         redirectTo: window.location.origin,
         scopes: 'repo read:user',
+        skipBrowserRedirect: true,
       },
     });
     if (error) throw error;
+    if (data?.url) {
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    }
   }, []);
 
   const signInWithPassword = useCallback(async (email: string, password: string) => {
