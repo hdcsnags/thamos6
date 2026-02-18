@@ -9,6 +9,7 @@ export const supabaseGitHub = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storageKey: 'sb-github-connect',
     persistSession: false,
+    autoRefreshToken: false,
   },
 });
 

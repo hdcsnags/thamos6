@@ -67,16 +67,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    const { data: { subscription: ghSubscription } } = supabaseGitHub.auth.onAuthStateChange((event, ghSession) => {
-      if (event === 'SIGNED_IN' && ghSession?.provider_token) {
-        setProviderToken(ghSession.provider_token);
-        supabaseGitHub.auth.signOut();
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'GITHUB_TOKEN' && event.data?.token) {
+        setProviderToken(event.data.token);
       }
-    });
+    };
+    window.addEventListener('message', handleMessage);
 
     return () => {
       subscription.unsubscribe();
-      ghSubscription.unsubscribe();
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
 

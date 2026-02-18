@@ -1,12 +1,22 @@
-const GITHUB_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-proxy`;
-
 import { supabase } from './supabase';
+
+const GITHUB_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-proxy`;
 
 async function getSessionToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error('Not authenticated');
-  return token;
+  let session = data.session;
+
+  if (session) {
+    const expiresAt = session.expires_at ?? 0;
+    const nowSecs = Math.floor(Date.now() / 1000);
+    if (expiresAt - nowSecs < 60) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed.session) session = refreshed.session;
+    }
+  }
+
+  if (!session?.access_token) throw new Error('Not authenticated');
+  return session.access_token;
 }
 
 async function ghFetch(token: string, path: string, accept?: string): Promise<Response> {
