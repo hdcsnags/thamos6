@@ -71,9 +71,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'GITHUB_TOKEN' && event.data?.token) {
         setProviderToken(event.data.token);
+        localStorage.removeItem('gh-provider-token');
       }
     };
     window.addEventListener('message', handleMessage);
+
+    const storedGhToken = localStorage.getItem('gh-provider-token');
+    if (storedGhToken) {
+      setProviderToken(storedGhToken);
+      localStorage.removeItem('gh-provider-token');
+    }
 
     return () => {
       subscription.unsubscribe();
@@ -117,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) throw error;
     if (data?.url) {
-      window.open(data.url, '_blank', 'noopener,noreferrer');
+      window.open(data.url, 'github-oauth', 'popup,width=600,height=700');
     }
   }, []);
 
