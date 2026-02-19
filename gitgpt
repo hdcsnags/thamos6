@@ -1,71 +1,136 @@
-Yeah—this is exactly the kind of “it works but did we accidentally do something dumb?” moment you should sanity-check. Good catch sending it over.
+Yep — I can sanity check these, and I already see one big mismatch plus a couple “this will bite later” items. I’ll keep it practical.
 
-1) The localStorage change: is it a security downgrade?
+✅ What looks solid (good design choices)
+supabase/functions/github-proxy/index.ts (your uploaded index.ts)
 
-Yes (small), and also unnecessary.
+✅ JWT is required (Authorization: Bearer <user session token>)
 
-Storing provider_token (GitHub token) in localStorage increases your exposure surface because any XSS = token theft. Supabase’s default browser auth often uses web storage for Supabase session tokens, but that doesn’t automatically mean it’s a good idea to also stash third-party provider tokens there. Supabase themselves advise extracting provider_token and storing it in a “secure storage medium” if you need it.
+✅ Endpoint allowlist is in place (great: prevents “generic GitHub relay”)
 
-So: if Bolt added provider_token → localStorage, I would roll that back and do one of these instead:
+✅ Origin allowlist is in place (CORS is not *)
 
-Best: store GitHub token server-side (encrypted) after login, then only call GitHub via Edge Functions
+✅ Path sanitization exists (.., \0, //, must start with /)
 
-Good: keep provider_token in memory / sessionStorage only (short lived)
+✅ Requires X-GitHub-Token (so GitHub token never gets stored server-side)
 
-Okay: localStorage (but you should aim to remove it)
+This is the right shape.
 
-2) The real bug: “Missing authorization header” + anon key misuse
+src/lib/github.ts
 
-That 401 is classic: an Edge Function (or your supabase.auth.getUser()) needs a real user JWT, but you passed the anon key (or no Authorization header). Supabase explicitly calls out this pitfall.
+✅ Sends real Supabase user JWT: Authorization: Bearer ${sessionToken} (from supabase.auth.getSession())
 
-So Bolt’s diagnosis is correct:
+✅ Sends X-GitHub-Token header for GitHub API
 
-Authorization: Bearer <ANON_KEY> is not a user session
+✅ Has both GET + PUT plumbing
 
-You must send Authorization: Bearer <session.access_token>
+So the earlier “anon key in Authorization header” issue appears fixed in this version.
 
-✅ Fix: make your github.ts functions accept an accessToken param (or retrieve it from auth context) and pass that to the proxy.
+src/main.tsx
 
-3) The other bug you noticed: GitHub login “takes over” your app session
+✅ Popup detection logic is reasonable:
 
-This is the bigger architectural point.
+checks hash contains access_token + provider_token
 
-If you use Supabase signInWithOAuth({ provider: 'github' }), you’re not “connecting GitHub,” you’re signing in as GitHub. That means the app session can legitimately switch users depending on which GitHub account you authorize.
+uses window.opener.postMessage({ type: 'GITHUB_TOKEN', token }, window.location.origin)
 
-And your situation (GitHub account is accessed via Google SSO) makes it feel like “Google vs website account,” but the reality is: you’re picking a different GitHub identity, so Supabase correctly creates a new session for that identity.
+closes popup
 
-The “works and GOOD” solution (no security hacks, no token in localStorage):
+This is a good “popup connect” pattern.
 
-Use a separate Supabase client instance only for GitHub connect, so it doesn’t overwrite your main ThamOS session.
+🚨 The biggest problem: DesktopGitHub expects AuthContext fields that don’t exist
 
-Pattern:
+In DesktopGitHub.tsx, you have:
 
-Main app uses supabaseMain (normal storage key)
+const { session, signInWithGitHub, providerToken } = useAuth();
 
-GitHub connect uses supabaseGitHub = createClient(..., { auth: { storageKey: 'sb-github-connect', ... }})
 
-Run OAuth on supabaseGitHub
+But in the uploaded AuthContext.tsx:
 
-Extract provider_token from supabaseGitHub session
+❌ there is no signInWithGitHub
 
-Send it once to an Edge Function to store encrypted (or keep it ephemeral)
+❌ there is no providerToken
 
-Keep your main app session untouched
+So either:
 
-This avoids the “I came back and I’m signed in as my GitHub identity” problem entirely.
+the uploaded AuthContext.tsx is not the one you’re actually running, or
 
-4) About skipBrowserRedirect: true / popup flow
+your build should be erroring / behavior will be inconsistent.
 
-Your popup approach is fine. But don’t “fix” it by persisting provider_token in localStorage. Use the two-client approach above.
+What you should do (cleanest architecture)
 
-5) What I’d do right now (very specific)
+GitHub connect shouldn’t live in AuthContext at all — because GitHub connect is not “auth to your app”, it’s a “connected integration.”
 
-Undo provider_token → localStorage (unless you intentionally want it there)
+✅ Put the popup listener + token storage in GitHubContext.tsx.
 
-Ensure proxy calls include Authorization: Bearer ${session.access_token}
+AuthContext stays purely “who am I in ThamOS?”
 
-Implement separate Supabase client for GitHub connect (separate storageKey)
+GitHubContext becomes “is GitHub connected, what repo is active, pinned files, etc.”
 
-Keep GitHub proxy whitelisted endpoints only (no generic relay)
+⚠️ supabaseGitHub config: one tweak I strongly recommend
 
-Optional: store token server-side encrypted once you’re ready (Phase 3 hardening)
+Your supabaseGitHub is:
+
+export const supabaseGitHub = createClient(url, anon, {
+  auth: {
+    storageKey: 'sb-github-connect',
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+
+persistSession: false can work, but it also makes popup session retrieval more fragile because it relies purely on in-memory parsing of the hash.
+
+✅ Recommended change:
+
+set persistSession: true (but keep the unique storageKey)
+
+keep autoRefreshToken: false (fine)
+
+This won’t override your main ThamOS session because the storage key is separate — it just makes the popup flow more reliable.
+
+🔍 About the “401 Missing authorization header”
+
+Your edge function returns { error: "Unauthorized" } when auth header is missing — not “Missing authorization header.”
+So that exact text is probably coming from your frontend wrapper, not the edge function.
+
+Given your current github.ts, the only ways you still see that 401 are:
+
+A call path still exists that hits the proxy without using github.ts (e.g., direct fetch() elsewhere)
+
+getSessionToken() throws and the request never gets built, but your UI still tries to fetch
+
+Requests are coming from an origin not in ALLOWED_ORIGINS (then browser may block/strip, and it looks like auth failed)
+
+✅ What I need from you to finish the sanity check properly
+
+Right now, the one missing link is: where do you actually receive the postMessage and store the GitHub token?
+
+Because:
+
+main.tsx posts { type: 'GITHUB_TOKEN' }
+
+but in the uploaded files, nothing listens for that message (AuthContext doesn’t, GitHubContext doesn’t, DesktopGitHub doesn’t)
+
+So either:
+
+there’s another file not uploaded that contains the listener, or
+
+the running code differs from these files.
+
+Quick win
+
+Upload one more file if it exists:
+
+src/contexts/AuthContext.tsx (the actual one in your repo right now) OR
+
+wherever window.addEventListener('message', ...) is implemented
+
+If you don’t have it, tell me and I’ll give you the exact listener code to drop into GitHubContext.tsx (clean + safe origin check) so the whole chain becomes consistent.
+
+If you want, I can also tell you exactly where to move signInWithGitHub() (out of AuthContext into GitHubContext), so DesktopGitHub becomes:
+
+const { ghToken, connectGitHub } = useGitHub();
+
+
+…and the app stops mixing “login session” with “connected integrations.”
