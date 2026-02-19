@@ -9,13 +9,18 @@ async function getSessionToken(): Promise<string> {
   if (session) {
     const expiresAt = session.expires_at ?? 0;
     const nowSecs = Math.floor(Date.now() / 1000);
-    if (expiresAt - nowSecs < 60) {
-      const { data: refreshed } = await supabase.auth.refreshSession();
+    if (expiresAt - nowSecs < 120) {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (error) {
+        throw new Error('Session expired. Please sign in again.');
+      }
       if (refreshed.session) session = refreshed.session;
     }
   }
 
-  if (!session?.access_token) throw new Error('Not authenticated');
+  if (!session?.access_token) {
+    throw new Error('Not authenticated with Supabase. Please sign in first.');
+  }
   return session.access_token;
 }
 

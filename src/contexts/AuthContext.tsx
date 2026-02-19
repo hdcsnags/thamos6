@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase, supabaseGitHub } from '../lib/supabase';
 
@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [providerToken, setProviderToken] = useState<string | null>(null);
+  const githubPopupRef = useRef<Window | null>(null);
 
   useEffect(() => {
     const hashError = parseHashError();
@@ -69,17 +70,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'GITHUB_TOKEN' && event.data?.token) {
-        setProviderToken(event.data.token);
-        localStorage.removeItem('gh-provider-token');
-      }
+      if (event.data?.type !== 'GITHUB_TOKEN' || !event.data?.token) return;
+      if (githubPopupRef.current && event.source !== githubPopupRef.current) return;
+      setProviderToken(event.data.token);
+      githubPopupRef.current = null;
     };
     window.addEventListener('message', handleMessage);
 
-    const storedGhToken = localStorage.getItem('gh-provider-token');
-    if (storedGhToken) {
-      setProviderToken(storedGhToken);
-      localStorage.removeItem('gh-provider-token');
+    const storedGhToken = sessionStorage.getItem('gh-provider-token');
+    const storedTs = sessionStorage.getItem('gh-provider-token-ts');
+    if (storedGhToken && storedTs) {
+      const age = Date.now() - parseInt(storedTs, 10);
+      if (age < 60_000) {
+        setProviderToken(storedGhToken);
+      }
+      sessionStorage.removeItem('gh-provider-token');
+      sessionStorage.removeItem('gh-provider-token-ts');
     }
 
     return () => {
@@ -124,7 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) throw error;
     if (data?.url) {
-      window.open(data.url, 'github-oauth', 'popup,width=600,height=700');
+      const popup = window.open(data.url, 'github-oauth', 'popup,width=600,height=700');
+      githubPopupRef.current = popup;
     }
   }, []);
 

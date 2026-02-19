@@ -25,12 +25,13 @@ if (isOAuthCallback && hasOpener) {
   }
   window.close();
 } else if (isOAuthCallback && !hasOpener) {
-  supabaseGitHub.auth.getSession().then(({ data: { session } }) => {
-    if (session?.provider_token) {
-      localStorage.setItem('gh-provider-token', session.provider_token);
-    }
-    window.location.replace(window.location.origin);
-  });
+  const fallbackParams = new URLSearchParams(hash.substring(1));
+  const fallbackToken = fallbackParams.get('provider_token');
+  if (fallbackToken) {
+    sessionStorage.setItem('gh-provider-token', fallbackToken);
+    sessionStorage.setItem('gh-provider-token-ts', Date.now().toString());
+  }
+  window.location.replace(window.location.origin);
 } else {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
