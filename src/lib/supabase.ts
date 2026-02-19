@@ -8,7 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseGitHub = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storageKey: 'sb-github-connect',
-    persistSession: false,
+    persistSession: true,
     autoRefreshToken: false,
   },
 });
