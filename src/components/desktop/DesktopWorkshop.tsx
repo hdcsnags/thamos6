@@ -3,6 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useGitHub, type ContextFile } from '../../contexts/GitHubContext';
 import { commitFile, fetchFileMeta } from '../../lib/github';
+import CircuitMode from '../workshop/CircuitMode';
+
+type WorkshopMode = 'single' | 'circuit';
 
 interface Agent {
   id: string;
@@ -240,6 +243,8 @@ export function DesktopWorkshop() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mode, setMode] = useState<WorkshopMode>('single');
+  const [leadAgentId, setLeadAgentId] = useState<string | null>(null);
   const [commitStatus, setCommitStatus] = useState<{ status: 'success' | 'error'; message: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -478,7 +483,7 @@ export function DesktopWorkshop() {
 
   return (
     <div className="h-full flex" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
-      {sidebarOpen && (
+      {mode === 'single' && sidebarOpen && (
         <div className="w-56 flex flex-col flex-shrink-0" style={{ backgroundColor: P.surface, borderRight: `1px solid ${P.border}` }}>
           <div className="p-3" style={{ borderBottom: `1px solid ${P.border}` }}>
             <div className="flex items-center gap-2 mb-3">
@@ -559,14 +564,41 @@ export function DesktopWorkshop() {
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-xs px-2 py-1 rounded transition-all"
-              style={{ color: P.text, border: `1px solid ${P.border}` }}
-            >
-              {sidebarOpen ? '<<' : '>>'}
-            </button>
-            {selectedAgent && (
+            {mode === 'single' && (
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="text-xs px-2 py-1 rounded transition-all"
+                style={{ color: P.text, border: `1px solid ${P.border}` }}
+              >
+                {sidebarOpen ? '<<' : '>>'}
+              </button>
+            )}
+            <div className="flex items-center rounded overflow-hidden" style={{ border: `1px solid ${P.border}` }}>
+              <button
+                onClick={() => setMode('single')}
+                className="px-2.5 py-1 text-xs transition-all"
+                style={{
+                  backgroundColor: mode === 'single' ? `${agentColor}15` : 'transparent',
+                  color: mode === 'single' ? agentColor : P.dim,
+                  fontSize: '0.65rem',
+                }}
+              >
+                SINGLE
+              </button>
+              <button
+                onClick={() => setMode('circuit')}
+                className="px-2.5 py-1 text-xs transition-all"
+                style={{
+                  backgroundColor: mode === 'circuit' ? '#fbbf2415' : 'transparent',
+                  color: mode === 'circuit' ? '#fbbf24' : P.dim,
+                  borderLeft: `1px solid ${P.border}`,
+                  fontSize: '0.65rem',
+                }}
+              >
+                CIRCUIT
+              </button>
+            </div>
+            {mode === 'single' && selectedAgent && (
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: agentColor, boxShadow: `0 0 6px ${agentColor}60` }} />
                 <span className="text-xs font-medium" style={{ color: agentColor }}>{selectedAgent.name}</span>
@@ -580,13 +612,22 @@ export function DesktopWorkshop() {
                 <span style={{ color: '#3a3f55' }}>repo:</span> {activeProject.repoFullName}
               </span>
             )}
-            {selectedConversation && (
+            {mode === 'single' && selectedConversation && (
               <span className="text-xs" style={{ color: P.dim }}>
                 {selectedConversation.total_tokens || 0} tokens
               </span>
             )}
           </div>
         </div>
+
+        {mode === 'circuit' ? (
+          <CircuitMode
+            agents={agents}
+            leadAgentId={leadAgentId || agents[0]?.id || null}
+            onSetLead={setLeadAgentId}
+          />
+        ) : (
+        <>
 
         {contextFiles.length > 0 && (
           <div className="px-4 py-1.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: `${P.surface}` }}>
@@ -735,6 +776,8 @@ export function DesktopWorkshop() {
               </div>
             </div>
           </>
+        )}
+        </>
         )}
       </div>
     </div>
