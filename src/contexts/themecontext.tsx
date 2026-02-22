@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
 type Theme = 'tactical' | 'terminal' | 'desktop' | 'mission-control';
@@ -19,32 +19,50 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'tactical';
   });
 
-  const [user, setUser] = useState<any>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const hasSyncedRef = useRef(false);
+  const pendingWriteRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     async function loadUser() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      setUser(currentUser);
+      if (mounted) setUserId(currentUser?.id ?? null);
     }
     loadUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (mounted) {
+        const newId = session?.user?.id ?? null;
+        setUserId(prev => {
+          if (prev !== newId) {
+            hasSyncedRef.current = false;
+          }
+          return newId;
+        });
+      }
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
+    if (!userId || hasSyncedRef.current) return;
+    hasSyncedRef.current = true;
+
     async function syncFromSupabase() {
-      if (!user) return;
+      if (pendingWriteRef.current) {
+        await pendingWriteRef.current;
+        return;
+      }
 
       const { data } = await supabase
         .from('profiles')
         .select('ui_theme')
-        .eq('id', user.id)
+        .eq('id', userId!)
         .maybeSingle();
 
       if (data?.ui_theme && VALID_THEMES.includes(data.ui_theme as Theme)) {
@@ -52,26 +70,32 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('thamos6-theme', data.ui_theme);
       } else {
         const localTheme = localStorage.getItem('thamos6-theme') as Theme | null;
-        if (localTheme && VALID_THEMES.includes(localTheme) && user) {
-          supabase.from('profiles').update({ ui_theme: localTheme }).eq('id', user.id).then();
+        if (localTheme && VALID_THEMES.includes(localTheme)) {
+          supabase.from('profiles').update({ ui_theme: localTheme }).eq('id', userId!).then();
         }
       }
     }
 
     syncFromSupabase();
-  }, [user]);
+  }, [userId]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
     localStorage.setItem('thamos6-theme', newTheme);
 
-    const persist = async () => {
-      const uid = user?.id ?? (await supabase.auth.getUser()).data.user?.id;
+    const writePromise = (async () => {
+      const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
       if (uid) {
-        supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', uid).then();
+        await supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', uid);
       }
-    };
-    persist();
+    })();
+
+    pendingWriteRef.current = writePromise;
+    writePromise.finally(() => {
+      if (pendingWriteRef.current === writePromise) {
+        pendingWriteRef.current = null;
+      }
+    });
   };
 
   const toggleTheme = () => {
