@@ -12,90 +12,59 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const VALID_THEMES: Theme[] = ['tactical', 'terminal', 'desktop', 'mission-control'];
+const STORAGE_KEY = 'thamos6-theme';
+
+function readLocal(): Theme {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'tactical';
+}
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem('thamos6-theme');
-    return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'tactical';
-  });
-
-  const [userId, setUserId] = useState<string | null>(null);
-  const hasSyncedRef = useRef(false);
-  const pendingWriteRef = useRef<Promise<void> | null>(null);
+  const [theme, setThemeState] = useState<Theme>(readLocal);
+  const didInitialSync = useRef(false);
 
   useEffect(() => {
-    let mounted = true;
-    async function loadUser() {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (mounted) setUserId(currentUser?.id ?? null);
-    }
-    loadUser();
+    if (didInitialSync.current) return;
+    didInitialSync.current = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) {
-        const newId = session?.user?.id ?? null;
-        setUserId(prev => {
-          if (prev !== newId) {
-            hasSyncedRef.current = false;
-          }
-          return newId;
-        });
-      }
-    });
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+        const { data } = await supabase
+          .from('profiles')
+          .select('ui_theme')
+          .eq('id', user.id)
+          .maybeSingle();
 
-  useEffect(() => {
-    if (!userId || hasSyncedRef.current) return;
-    hasSyncedRef.current = true;
-
-    async function syncFromSupabase() {
-      if (pendingWriteRef.current) {
-        await pendingWriteRef.current;
-        return;
-      }
-
-      const { data } = await supabase
-        .from('profiles')
-        .select('ui_theme')
-        .eq('id', userId!)
-        .maybeSingle();
-
-      if (data?.ui_theme && VALID_THEMES.includes(data.ui_theme as Theme)) {
-        setThemeState(data.ui_theme as Theme);
-        localStorage.setItem('thamos6-theme', data.ui_theme);
-      } else {
-        const localTheme = localStorage.getItem('thamos6-theme') as Theme | null;
-        if (localTheme && VALID_THEMES.includes(localTheme)) {
-          supabase.from('profiles').update({ ui_theme: localTheme }).eq('id', userId!).then();
+        if (data?.ui_theme && VALID_THEMES.includes(data.ui_theme as Theme)) {
+          setThemeState(data.ui_theme as Theme);
+          localStorage.setItem(STORAGE_KEY, data.ui_theme);
+        } else {
+          const local = readLocal();
+          await supabase.from('profiles').update({ ui_theme: local }).eq('id', user.id);
         }
+      } catch {
+        // offline or not logged in -- localStorage value is already set
       }
-    }
-
-    syncFromSupabase();
-  }, [userId]);
+    })();
+  }, []);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem('thamos6-theme', newTheme);
+    localStorage.setItem(STORAGE_KEY, newTheme);
 
-    const writePromise = (async () => {
-      const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
-      if (uid) {
-        await supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', uid);
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', user.id);
+        }
+      } catch {
+        // persist failed -- localStorage still has the right value
       }
     })();
-
-    pendingWriteRef.current = writePromise;
-    writePromise.finally(() => {
-      if (pendingWriteRef.current === writePromise) {
-        pendingWriteRef.current = null;
-      }
-    });
   };
 
   const toggleTheme = () => {
