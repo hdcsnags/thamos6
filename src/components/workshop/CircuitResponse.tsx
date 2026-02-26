@@ -34,12 +34,92 @@ interface Props {
   onShareTo: (agentId: string, targetAgentName: string) => void;
   allAgentNames: string[];
   isLead: boolean;
+  compact?: boolean;
 }
 
-export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgentNames, isLead }: Props) {
-  const [expanded, setExpanded] = useState(true);
+export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgentNames, isLead, compact }: Props) {
+  const [copied, setCopied] = useState(false);
   const color = PROVIDER_COLORS[result.provider] || '#00d9ff';
   const otherAgents = allAgentNames.filter(n => n !== result.agentName);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(result.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  if (compact) {
+    return (
+      <div
+        className="rounded-lg overflow-hidden transition-all"
+        style={{
+          backgroundColor: P.surface,
+          border: `1px solid ${result.flagged ? `${color}50` : P.border}`,
+          boxShadow: result.flagged ? `0 0 8px ${color}10` : 'none',
+        }}
+      >
+        <div
+          className="px-3 py-2 text-xs leading-relaxed overflow-y-auto"
+          style={{
+            color: P.textLight,
+            fontFamily: 'JetBrains Mono, monospace',
+            maxHeight: '200px',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {result.status === 'streaming' && !result.content && (
+            <span className="animate-pulse" style={{ color }}>Thinking...</span>
+          )}
+          {result.status === 'error' && (
+            <span style={{ color: '#ff0080' }}>{result.error || 'Request failed'}</span>
+          )}
+          {result.status === 'pending' && (
+            <span style={{ color: P.dim }}>Waiting...</span>
+          )}
+          {(result.status === 'done' || (result.status === 'streaming' && result.content)) && (
+            result.content || <span style={{ color: P.dim }}>No response</span>
+          )}
+        </div>
+        {result.status === 'done' && (
+          <div
+            className="flex items-center gap-1 px-3 py-1.5 flex-wrap"
+            style={{ borderTop: `1px solid ${P.border}` }}
+          >
+            <button
+              onClick={() => onFlag(result.agentId)}
+              className="px-1.5 py-0.5 rounded transition-all"
+              style={{
+                backgroundColor: result.flagged ? `${color}15` : 'transparent',
+                border: `1px solid ${result.flagged ? `${color}40` : P.border}`,
+                color: result.flagged ? color : P.dim,
+                fontSize: '0.6rem',
+              }}
+            >
+              {result.flagged ? 'FLAGGED' : 'FLAG'}
+            </button>
+            {otherAgents.map(name => (
+              <button
+                key={name}
+                onClick={() => onShareTo(result.agentId, name)}
+                className="px-1.5 py-0.5 rounded transition-all"
+                style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.6rem' }}
+              >
+                {'\u2192'} {name.replace('ThamOS-', '')}
+              </button>
+            ))}
+            <button
+              onClick={handleCopy}
+              className="px-1.5 py-0.5 rounded transition-all ml-auto"
+              style={{ border: `1px solid ${P.border}`, color: copied ? color : P.dim, fontSize: '0.6rem' }}
+            >
+              {copied ? 'COPIED' : 'COPY'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -51,9 +131,8 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-2 cursor-pointer"
+        className="flex items-center justify-between px-3 py-2"
         style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: `${color}06` }}
-        onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2">
           <div
@@ -85,79 +164,60 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
           {result.status === 'error' && (
             <span className="text-xs" style={{ color: '#ff0080' }}>FAILED</span>
           )}
-          <span className="text-xs" style={{ color: P.dim }}>{expanded ? '\u25B2' : '\u25BC'}</span>
         </div>
       </div>
 
-      {expanded && (
-        <div className="flex flex-col">
-          <div
-            className="px-3 py-3 text-xs leading-relaxed overflow-y-auto"
+      <div
+        className="px-3 py-3 text-xs leading-relaxed overflow-y-auto"
+        style={{
+          color: P.textLight,
+          fontFamily: 'JetBrains Mono, monospace',
+          maxHeight: '300px',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {result.status === 'pending' && <span style={{ color: P.dim }}>Waiting...</span>}
+        {result.status === 'error' && <span style={{ color: '#ff0080' }}>{result.error || 'Request failed'}</span>}
+        {(result.status === 'done' || result.status === 'streaming') && (
+          result.content || <span style={{ color: P.dim }}>No response</span>
+        )}
+      </div>
+
+      {result.status === 'done' && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-2 flex-wrap"
+          style={{ borderTop: `1px solid ${P.border}` }}
+        >
+          <button
+            onClick={() => onFlag(result.agentId)}
+            className="px-2 py-1 text-xs rounded transition-all"
             style={{
-              color: P.textLight,
-              fontFamily: 'JetBrains Mono, monospace',
-              maxHeight: '300px',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
+              backgroundColor: result.flagged ? `${color}20` : 'transparent',
+              border: `1px solid ${result.flagged ? `${color}50` : P.border}`,
+              color: result.flagged ? color : P.dim,
+              fontSize: '0.65rem',
             }}
           >
-            {result.status === 'pending' && (
-              <span style={{ color: P.dim }}>Waiting...</span>
-            )}
-            {result.status === 'error' && (
-              <span style={{ color: '#ff0080' }}>{result.error || 'Request failed'}</span>
-            )}
-            {(result.status === 'done' || result.status === 'streaming') && (
-              result.content || <span style={{ color: P.dim }}>No response</span>
-            )}
-          </div>
-
-          {result.status === 'done' && (
-            <div
-              className="flex items-center gap-1.5 px-3 py-2 flex-wrap"
-              style={{ borderTop: `1px solid ${P.border}` }}
+            {result.flagged ? 'FLAGGED' : 'FLAG'}
+          </button>
+          {otherAgents.map(name => (
+            <button
+              key={name}
+              onClick={() => onShareTo(result.agentId, name)}
+              className="px-2 py-1 text-xs rounded transition-all"
+              style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.65rem' }}
             >
-              <button
-                onClick={() => onFlag(result.agentId)}
-                className="px-2 py-1 text-xs rounded transition-all"
-                style={{
-                  backgroundColor: result.flagged ? `${color}20` : 'transparent',
-                  border: `1px solid ${result.flagged ? `${color}50` : P.border}`,
-                  color: result.flagged ? color : P.dim,
-                  fontSize: '0.65rem',
-                }}
-              >
-                {result.flagged ? 'FLAGGED' : 'FLAG'}
-              </button>
-              {otherAgents.map(name => (
-                <button
-                  key={name}
-                  onClick={() => onShareTo(result.agentId, name)}
-                  className="px-2 py-1 text-xs rounded transition-all"
-                  style={{
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${P.border}`,
-                    color: P.dim,
-                    fontSize: '0.65rem',
-                  }}
-                >
-                  SHARE {'\u2192'} {name.replace('ThamOS-', '')}
-                </button>
-              ))}
-              <button
-                onClick={() => navigator.clipboard.writeText(result.content)}
-                className="px-2 py-1 text-xs rounded transition-all ml-auto"
-                style={{
-                  backgroundColor: 'transparent',
-                  border: `1px solid ${P.border}`,
-                  color: P.dim,
-                  fontSize: '0.65rem',
-                }}
-              >
-                COPY
-              </button>
-            </div>
-          )}
+              SHARE {'\u2192'} {name.replace('ThamOS-', '')}
+            </button>
+          ))}
+          <button
+            onClick={handleCopy}
+            className="px-2 py-1 text-xs rounded transition-all ml-auto"
+            style={{ border: `1px solid ${P.border}`, color: copied ? color : P.dim, fontSize: '0.65rem' }}
+          >
+            {copied ? 'COPIED' : 'COPY'}
+          </button>
         </div>
       )}
     </div>
