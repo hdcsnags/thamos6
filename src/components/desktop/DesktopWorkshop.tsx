@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDesktop } from '../../contexts/DesktopContext';
 import { supabase } from '../../lib/supabase';
 import { useGitHub, type ContextFile } from '../../contexts/GitHubContext';
 import { commitFile, fetchFileMeta } from '../../lib/github';
+import { createArtifactFile } from '../editor/editorStore';
 import CircuitMode from '../workshop/CircuitMode';
 
 type WorkshopMode = 'single' | 'circuit';
@@ -63,14 +65,21 @@ function CodeBlock({
   lang,
   contextFiles,
   onCommit,
+  onOpenInEditor,
+  onDownload,
+  onCopy,
 }: {
   code: string;
   lang: string;
   contextFiles: ContextFile[];
   onCommit: (code: string, file: ContextFile) => void;
+  onOpenInEditor: (code: string, lang: string) => void;
+  onDownload: (code: string, lang: string) => void;
+  onCopy: (code: string) => void;
 }) {
   const [targetPath, setTargetPath] = useState('');
   const [showSelect, setShowSelect] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const matchedFile = contextFiles.find(f => {
     const ext = f.path.split('.').pop() || '';
@@ -88,37 +97,56 @@ function CodeBlock({
   const canCommit = contextFiles.length > 0;
   const selectedFile = contextFiles.find(f => f.path === targetPath) || matchedFile;
 
+  const handleCopy = () => {
+    onCopy(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const btnStyle = (color: string, active = true): React.CSSProperties => ({
+    color: active ? color : '#3a3f55',
+    fontSize: '0.6rem',
+    border: `1px solid ${active ? color + '30' : '#1a1f35'}`,
+    borderRadius: '3px',
+    padding: '1px 6px',
+    backgroundColor: active ? color + '08' : 'transparent',
+    cursor: active ? 'pointer' : 'default',
+  });
+
   return (
     <div style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', borderRadius: '6px', margin: '6px 0', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', borderBottom: '1px solid #1a1f3540' }}>
         <span style={{ color: '#3a3f55', fontSize: '0.65rem' }}>{lang || 'code'}</span>
-        {canCommit && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {contextFiles.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button onClick={handleCopy} style={btnStyle('#8a8fa8')}>
+            {copied ? 'COPIED' : 'COPY'}
+          </button>
+          <button onClick={() => onDownload(code, lang)} style={btnStyle('#00d9ff')}>
+            DOWNLOAD
+          </button>
+          <button onClick={() => onOpenInEditor(code, lang)} style={btnStyle('#fbbf24')}>
+            OPEN IN EDITOR
+          </button>
+          {canCommit && (
+            <>
+              {contextFiles.length > 1 && (
+                <button
+                  onClick={() => setShowSelect(!showSelect)}
+                  style={{ color: '#3a3f55', fontSize: '0.6rem', border: '1px solid #1a1f35', borderRadius: '3px', padding: '1px 6px', backgroundColor: 'transparent', cursor: 'pointer' }}
+                >
+                  {selectedFile ? selectedFile.path.split('/').pop() : 'SELECT'}
+                </button>
+              )}
               <button
-                onClick={() => setShowSelect(!showSelect)}
-                style={{ color: '#3a3f55', fontSize: '0.6rem', border: '1px solid #1a1f35', borderRadius: '3px', padding: '1px 6px', backgroundColor: 'transparent', cursor: 'pointer' }}
+                onClick={() => selectedFile && onCommit(code, selectedFile)}
+                disabled={!selectedFile}
+                style={btnStyle('#00ff9d', !!selectedFile)}
               >
-                {selectedFile ? selectedFile.path.split('/').pop() : 'SELECT FILE'}
+                COMMIT{selectedFile ? ` > ${selectedFile.path.split('/').pop()}` : ''}
               </button>
-            )}
-            <button
-              onClick={() => selectedFile && onCommit(code, selectedFile)}
-              disabled={!selectedFile}
-              style={{
-                color: selectedFile ? '#00ff9d' : '#3a3f55',
-                fontSize: '0.6rem',
-                border: `1px solid ${selectedFile ? '#00ff9d30' : '#1a1f35'}`,
-                borderRadius: '3px',
-                padding: '1px 6px',
-                backgroundColor: selectedFile ? '#00ff9d08' : 'transparent',
-                cursor: selectedFile ? 'pointer' : 'default',
-              }}
-            >
-              COMMIT{selectedFile ? ` → ${selectedFile.path.split('/').pop()}` : ''}
-            </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
       {showSelect && contextFiles.length > 1 && (
         <div style={{ padding: '4px 12px', borderBottom: '1px solid #1a1f3540', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -149,7 +177,10 @@ function CodeBlock({
 function renderMarkdown(
   text: string,
   contextFiles: ContextFile[],
-  onCommit: (code: string, file: ContextFile) => void
+  onCommit: (code: string, file: ContextFile) => void,
+  onOpenInEditor: (code: string, lang: string) => void,
+  onDownload: (code: string, lang: string) => void,
+  onCopy: (code: string) => void
 ): React.ReactNode {
   const parts: React.ReactNode[] = [];
   const lines = text.split('\n');
@@ -187,7 +218,7 @@ function renderMarkdown(
         const capturedCode = codeBuffer.join('\n');
         const capturedLang = codeLang;
         parts.push(
-          <CodeBlock key={key++} code={capturedCode} lang={capturedLang} contextFiles={contextFiles} onCommit={onCommit} />
+          <CodeBlock key={key++} code={capturedCode} lang={capturedLang} contextFiles={contextFiles} onCommit={onCommit} onOpenInEditor={onOpenInEditor} onDownload={onDownload} onCopy={onCopy} />
         );
         codeBuffer = [];
         codeLang = '';
@@ -233,6 +264,7 @@ function renderMarkdown(
 
 export function DesktopWorkshop() {
   const { user } = useAuth();
+  const desktop = useDesktop();
   const { contextFiles, unpinFile, activeProject, ghToken } = useGitHub();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -246,8 +278,10 @@ export function DesktopWorkshop() {
   const [mode, setMode] = useState<WorkshopMode>('single');
   const [leadAgentId, setLeadAgentId] = useState<string | null>(null);
   const [commitStatus, setCommitStatus] = useState<{ status: 'success' | 'error'; message: string } | null>(null);
+  const [attachedImages, setAttachedImages] = useState<{ data: string; name: string }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -382,13 +416,94 @@ export function DesktopWorkshop() {
     }
   }, [ghToken]);
 
+  const LANG_EXT: Record<string, string> = {
+    typescript: 'ts', tsx: 'tsx', javascript: 'js', jsx: 'jsx',
+    python: 'py', ruby: 'rb', rust: 'rs', go: 'go',
+    java: 'java', sql: 'sql', bash: 'sh', shell: 'sh',
+    yaml: 'yml', json: 'json', css: 'css', scss: 'scss',
+    html: 'html', xml: 'xml', markdown: 'md', c: 'c', cpp: 'cpp',
+  };
+
+  const handleOpenInEditor = useCallback((code: string, lang: string) => {
+    const ext = LANG_EXT[lang.toLowerCase()] || lang.toLowerCase() || 'txt';
+    const filename = `artifact.${ext}`;
+    const file = createArtifactFile(filename, code);
+    desktop.openWindow({
+      appId: 'editor',
+      title: `Editor - ${filename}`,
+      data: { initialFile: file },
+    });
+  }, [desktop]);
+
+  const handleDownloadArtifact = useCallback((code: string, lang: string) => {
+    const ext = LANG_EXT[lang.toLowerCase()] || lang.toLowerCase() || 'txt';
+    const filename = `artifact.${ext}`;
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleCopyCode = useCallback(async (code: string) => {
+    await navigator.clipboard.writeText(code);
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const data = reader.result as string;
+          setAttachedImages(prev => [...prev, { data, name: file.name || 'screenshot.png' }]);
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = reader.result as string;
+        setAttachedImages(prev => [...prev, { data, name: file.name }]);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  }, []);
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== idx));
+  }, []);
+
   const sendMessage = async () => {
-    if (!input.trim() || !selectedAgent || !selectedConversation || isSending) return;
+    if ((!input.trim() && attachedImages.length === 0) || !selectedAgent || !selectedConversation || isSending) return;
 
     setIsSending(true);
     setError(null);
-    const content = input.trim();
+    const textContent = input.trim();
+    const images = [...attachedImages];
     setInput('');
+    setAttachedImages([]);
+
+    let content = textContent;
+    if (images.length > 0) {
+      content = textContent + (textContent ? '\n\n' : '') + images.map(img => `[Attached image: ${img.name}]`).join('\n');
+    }
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -701,7 +816,7 @@ export function DesktopWorkshop() {
                     }}
                   >
                     <div className="text-xs leading-relaxed break-words" style={{ fontFamily: 'JetBrains Mono, monospace', color: P.textLight }}>
-                      {msg.role === 'assistant' ? renderMarkdown(msg.content, contextFiles, handleCommit) : msg.content}
+                      {msg.role === 'assistant' ? renderMarkdown(msg.content, contextFiles, handleCommit, handleOpenInEditor, handleDownloadArtifact, handleCopyCode) : msg.content}
                     </div>
                     {msg.tokens_used > 0 && (
                       <div className="mt-2 text-xs" style={{ color: P.dim }}>
@@ -743,13 +858,56 @@ export function DesktopWorkshop() {
             )}
 
             <div className="p-3" style={{ borderTop: `1px solid ${P.border}`, backgroundColor: P.surface }}>
+              {attachedImages.length > 0 && (
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  {attachedImages.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={img.data}
+                        alt={img.name}
+                        className="rounded"
+                        style={{ height: '48px', width: '48px', objectFit: 'cover', border: `1px solid ${P.border}` }}
+                      />
+                      <button
+                        onClick={() => removeImage(idx)}
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ backgroundColor: P.surface, border: `1px solid ${P.border}`, color: P.text, fontSize: '8px', lineHeight: 1 }}
+                      >
+                        x
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 px-1 rounded-b" style={{ backgroundColor: 'rgba(0,0,0,0.7)', fontSize: '7px', color: P.dim, textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                        {img.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-2 items-end">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2 py-2 text-xs rounded transition-colors flex-shrink-0"
+                  style={{ color: P.dim, border: `1px solid ${P.border}`, backgroundColor: 'transparent' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = P.surfaceLight; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  title="Attach image (or paste screenshot)"
+                >
+                  IMG
+                </button>
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  placeholder={`Message ${selectedAgent?.name || 'agent'}...`}
+                  onPaste={handlePaste}
+                  placeholder={`Message ${selectedAgent?.name || 'agent'}... (paste images here)`}
                   disabled={isSending}
                   rows={1}
                   className="flex-1 px-3 py-2 text-xs rounded resize-none focus:outline-none"
@@ -762,13 +920,13 @@ export function DesktopWorkshop() {
                 />
                 <button
                   onClick={sendMessage}
-                  disabled={!input.trim() || isSending}
+                  disabled={(!input.trim() && attachedImages.length === 0) || isSending}
                   className="px-4 py-2 text-xs font-medium rounded transition-all flex-shrink-0"
                   style={{
-                    backgroundColor: input.trim() && !isSending ? `${agentColor}20` : P.surfaceLight,
-                    border: `1px solid ${input.trim() && !isSending ? `${agentColor}40` : P.border}`,
-                    color: input.trim() && !isSending ? agentColor : P.dim,
-                    cursor: input.trim() && !isSending ? 'pointer' : 'default',
+                    backgroundColor: (input.trim() || attachedImages.length > 0) && !isSending ? `${agentColor}20` : P.surfaceLight,
+                    border: `1px solid ${(input.trim() || attachedImages.length > 0) && !isSending ? `${agentColor}40` : P.border}`,
+                    color: (input.trim() || attachedImages.length > 0) && !isSending ? agentColor : P.dim,
+                    cursor: (input.trim() || attachedImages.length > 0) && !isSending ? 'pointer' : 'default',
                   }}
                 >
                   SEND

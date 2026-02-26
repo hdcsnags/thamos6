@@ -95,8 +95,9 @@ export const appRegistry: Record<string, AppDefinition> = {
     description: 'Code editing workspace',
     accentColor: palette.amber,
     category: 'tools',
-    keywords: ['editor', 'code', 'edit', 'write'],
+    keywords: ['editor', 'code', 'edit', 'write', 'artifact', 'vscode'],
     defaultSize: { width: 1000, height: 700 },
+    showOnDesktop: true,
   },
   monitor: {
     id: 'monitor',

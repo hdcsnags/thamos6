@@ -18,6 +18,7 @@ import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
 import { DesktopGitHub } from './DesktopGitHub';
+import { DesktopCodeEditor } from '../editor/DesktopCodeEditor';
 import { palette, typography } from '../../design-system/tokens';
 
 export function DesktopLayout() {
@@ -125,7 +126,7 @@ function renderWindowContent(appId: string, data?: any) {
     case 'files':
       return <DesktopGitHub />;
     case 'editor':
-      return <EditorPlaceholder />;
+      return <DesktopCodeEditor initialFile={data?.initialFile} />;
     case 'monitor':
       return <DesktopSystemMonitor />;
     case 'settings':
@@ -150,20 +151,3 @@ function renderWindowContent(appId: string, data?: any) {
   }
 }
 
-function EditorPlaceholder() {
-  return (
-    <div
-      className="h-full flex flex-col items-center justify-center"
-      style={{ backgroundColor: palette.void, fontFamily: typography.ui }}
-    >
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-        style={{ backgroundColor: `${palette.amber}0a`, border: `1px solid ${palette.amber}20` }}
-      >
-        <span className="text-2xl" style={{ color: palette.amber }}>&#9670;</span>
-      </div>
-      <span className="text-xs font-medium mb-1" style={{ color: palette.textPrimary }}>Code Editor</span>
-      <span style={{ fontSize: '11px', color: palette.textTertiary }}>Requires CodeMirror (Phase 4)</span>
-    </div>
-  );
-}
