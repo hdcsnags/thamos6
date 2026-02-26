@@ -7,10 +7,10 @@ import { AppLauncher } from './AppLauncher';
 import { DesktopIcons } from './DesktopIcons';
 import { DesktopTerminal } from './DesktopTerminal';
 import { DesktopScanner } from './DesktopScanner';
-import { DesktopIPResult } from './DesktopIPResult';
-import { DesktopURLResult } from './DesktopURLResult';
-import { DesktopDomainResult } from './DesktopDomainResult';
-import { DesktopHashResult } from './DesktopHashResult';
+import IPResult from '../../pages/results/IPResult';
+import URLResult from '../../pages/results/URLResult';
+import DomainResult from '../../pages/results/DomainResult';
+import HashResult from '../../pages/results/HashResult';
 import { DesktopWorkshop } from './DesktopWorkshop';
 import { DesktopSystemMonitor } from './DesktopSystemMonitor';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
@@ -132,13 +132,13 @@ function renderWindowContent(appId: string, data?: any) {
     case 'settings':
       return <DesktopSettings />;
     case 'ip-result':
-      return <DesktopIPResult ip={data?.value} flags={data?.flags} />;
+      return <IPResult ip={data?.value} />;
     case 'url-result':
-      return <DesktopURLResult url={data?.value} flags={data?.flags} />;
+      return <URLResult url={data?.value} />;
     case 'domain-result':
-      return <DesktopDomainResult domain={data?.value} flags={data?.flags} />;
+      return <DomainResult domain={data?.value} />;
     case 'hash-result':
-      return <DesktopHashResult hash={data?.value} flags={data?.flags} />;
+      return <HashResult hash={data?.value} />;
     default:
       return (
         <div

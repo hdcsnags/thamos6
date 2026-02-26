@@ -1,33 +1,22 @@
 import { useState, useCallback } from 'react';
 import Scanner from '../../pages/Scanner';
-import { DesktopIPResult } from './DesktopIPResult';
-import { DesktopURLResult } from './DesktopURLResult';
-import { DesktopDomainResult } from './DesktopDomainResult';
-import { DesktopHashResult } from './DesktopHashResult';
+import IPResult from '../../pages/results/IPResult';
+import URLResult from '../../pages/results/URLResult';
+import DomainResult from '../../pages/results/DomainResult';
+import HashResult from '../../pages/results/HashResult';
 import { palette, typography } from '../../design-system/tokens';
-import type { ScanFlags } from '../../lib/cliFlags';
 import { ArrowLeft } from 'lucide-react';
 
 interface ScanState {
   type: string;
   value: string;
-  flags: ScanFlags;
 }
 
 export function DesktopScanner() {
   const [scanState, setScanState] = useState<ScanState | null>(null);
 
   const handleScan = useCallback((type: string, value: string) => {
-    const flags: ScanFlags = {
-      verbose: true,
-      threats: true,
-      network: true,
-      vpn: true,
-      geo: true,
-      sources: true,
-      json: false,
-    };
-    setScanState({ type, value, flags });
+    setScanState({ type, value });
   }, []);
 
   const handleBack = useCallback(() => {
@@ -72,16 +61,16 @@ export function DesktopScanner() {
 
       <div className="flex-1 overflow-auto">
         {scanState.type === 'ip' && (
-          <DesktopIPResult ip={scanState.value} flags={scanState.flags} />
+          <IPResult ip={scanState.value} />
         )}
         {scanState.type === 'url' && (
-          <DesktopURLResult url={scanState.value} flags={scanState.flags} />
+          <URLResult url={scanState.value} />
         )}
         {scanState.type === 'domain' && (
-          <DesktopDomainResult domain={scanState.value} flags={scanState.flags} />
+          <DomainResult domain={scanState.value} />
         )}
         {scanState.type === 'hash' && (
-          <DesktopHashResult hash={scanState.value} flags={scanState.flags} />
+          <HashResult hash={scanState.value} />
         )}
       </div>
     </div>
