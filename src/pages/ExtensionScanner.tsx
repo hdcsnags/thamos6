@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import FileExplorer from '../components/extension/FileExplorer';
 import FileViewer from '../components/extension/FileViewer';
 import VaultList from '../components/extension/VaultList';
+import IOCEnrichment from '../components/extension/IOCEnrichment';
 
 interface Analysis {
   id: string;
@@ -596,38 +597,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
             )}
 
             {activeTab === 'iocs' && (
-              <div>
-                {iocs.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
-                    No indicators of compromise detected
-                  </div>
-                ) : (
-                  <div className="border border-slate-700 rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-slate-800">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase">Value</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase">Source</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-700">
-                        {iocs.map((ioc) => (
-                          <tr key={ioc.id} className="hover:bg-slate-800/50">
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-1 bg-slate-700 text-slate-300 text-xs rounded font-medium">
-                                {ioc.ioc_type}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-300 font-mono break-all">{ioc.ioc_value}</td>
-                            <td className="px-4 py-3 text-sm text-slate-400">{ioc.source_file}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <IOCEnrichment iocs={iocs} />
             )}
 
             {activeTab === 'behavior' && (
