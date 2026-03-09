@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen } from 'lucide-react';
+import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import FileExplorer from '../components/extension/FileExplorer';
 import FileViewer from '../components/extension/FileViewer';
+import VaultList from '../components/extension/VaultList';
 
 interface Analysis {
   id: string;
@@ -60,8 +61,9 @@ export default function ExtensionScanner() {
   const [error, setError] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior' | 'files'>('findings');
+  const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior' | 'files' | 'vault'>('findings');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<'none' | 'adding' | 'added'>('none');
 
   useEffect(() => {
     loadRecentAnalyses();
@@ -70,6 +72,7 @@ export default function ExtensionScanner() {
   useEffect(() => {
     if (currentAnalysis) {
       loadAnalysisData(currentAnalysis.id);
+      checkVaultStatus(currentAnalysis.extension_id);
     }
   }, [currentAnalysis]);
 
@@ -108,17 +111,66 @@ export default function ExtensionScanner() {
     }
   };
 
-  const analyzeExtension = async () => {
-    if (!extensionUrl.trim()) {
+  const checkVaultStatus = async (extensionId: string) => {
+    const { data } = await supabase
+      .from('extension_vault')
+      .select('id')
+      .eq('extension_id', extensionId)
+      .maybeSingle();
+
+    setVaultStatus(data ? 'added' : 'none');
+  };
+
+  const addToVault = async () => {
+    if (!currentAnalysis) return;
+    setVaultStatus('adding');
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setVaultStatus('none');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('extension_vault')
+      .insert({
+        user_id: user.id,
+        extension_id: currentAnalysis.extension_id,
+        extension_name: currentAnalysis.extension_name,
+        baseline_analysis_id: currentAnalysis.id,
+        latest_analysis_id: currentAnalysis.id,
+        last_scanned_at: new Date().toISOString(),
+      });
+
+    if (!error) {
+      setVaultStatus('added');
+    } else {
+      if (error.code === '23505') {
+        setVaultStatus('added');
+      } else {
+        setVaultStatus('none');
+      }
+    }
+  };
+
+  const analyzeExtension = async (urlOrId?: string) => {
+    const target = urlOrId || extensionUrl.trim();
+    if (!target) {
       setError('Please enter a Chrome Web Store URL');
       return;
     }
+
+    const isDirectId = /^[a-z]{32}$/i.test(target);
+    const finalUrl = isDirectId
+      ? `https://chromewebstore.google.com/detail/extension/${target}`
+      : target;
 
     setIsAnalyzing(true);
     setError('');
     setCurrentAnalysis(null);
     setFindings([]);
     setIocs([]);
+    setVaultStatus('none');
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-extension`;
@@ -128,7 +180,7 @@ export default function ExtensionScanner() {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ extensionUrl }),
+        body: JSON.stringify({ extensionUrl: finalUrl }),
       });
 
       const result = await response.json();
@@ -145,6 +197,7 @@ export default function ExtensionScanner() {
 
       if (analysis) {
         setCurrentAnalysis(analysis);
+        setActiveTab('findings');
         loadRecentAnalyses();
       }
     } catch (err: any) {
@@ -211,6 +264,10 @@ export default function ExtensionScanner() {
     return acc;
   }, {} as Record<string, SecurityFinding[]>);
 
+  const behaviorFlags = currentAnalysis?.behavior_flags || [];
+  const vaultDeltaFlags = behaviorFlags.filter(f => f.flag_type === 'vault_delta_detected');
+  const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected');
+
   return (
     <div className="space-y-6">
       <div>
@@ -244,9 +301,9 @@ export default function ExtensionScanner() {
               </div>
             )}
           </div>
-          <div className="pt-7">
+          <div className="pt-7 flex gap-2">
             <button
-              onClick={analyzeExtension}
+              onClick={() => analyzeExtension()}
               disabled={isAnalyzing}
               className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all flex items-center gap-2"
             >
@@ -262,16 +319,63 @@ export default function ExtensionScanner() {
                 </>
               )}
             </button>
+            <button
+              onClick={() => { setCurrentAnalysis(null); setActiveTab('vault'); }}
+              className={`px-4 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                activeTab === 'vault' && !currentAnalysis
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+              }`}
+            >
+              <Archive className="w-5 h-5" />
+              Vault
+            </button>
           </div>
         </div>
       </div>
+
+      {activeTab === 'vault' && !currentAnalysis && (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5 text-amber-400" />
+            Extension Vault
+          </h2>
+          <VaultList
+            onRescan={(extId) => analyzeExtension(extId)}
+            isScanning={isAnalyzing}
+          />
+        </div>
+      )}
 
       {currentAnalysis && (
         <div className="space-y-6">
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-white mb-2">{currentAnalysis.extension_name}</h2>
+                <div className="flex items-center gap-3 mb-2">
+                  <h2 className="text-2xl font-bold text-white">{currentAnalysis.extension_name}</h2>
+                  {vaultStatus === 'none' && (
+                    <button
+                      onClick={addToVault}
+                      className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-medium rounded transition-colors flex items-center gap-1.5 border border-amber-500/30"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add to Vault
+                    </button>
+                  )}
+                  {vaultStatus === 'adding' && (
+                    <span className="px-3 py-1 bg-slate-700 text-slate-400 text-xs rounded flex items-center gap-1.5">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Adding...
+                    </span>
+                  )}
+                  {vaultStatus === 'added' && (
+                    <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded flex items-center gap-1.5 border border-green-500/30">
+                      <Check className="w-3 h-3" />
+                      In Vault
+                    </span>
+                  )}
+                </div>
                 <p className="text-slate-400">Version {currentAnalysis.extension_version}</p>
                 {currentAnalysis.scan_duration_ms && (
                   <p className="text-sm text-slate-500 mt-1">
@@ -293,6 +397,27 @@ export default function ExtensionScanner() {
               </div>
             </div>
 
+            {vaultDeltaFlags.length > 0 && (
+              <div className="mb-6 border-2 border-amber-500/30 bg-amber-500/10 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-amber-300 mb-1">Changed Since Last Vault Scan</h4>
+                    {vaultDeltaFlags.map((flag, idx) => (
+                      <div key={idx}>
+                        <p className="text-sm text-amber-200/80 mb-2">{flag.description}</p>
+                        <ul className="space-y-1">
+                          {flag.evidence.filter(e => !e.startsWith('baseline_analysis_id')).map((ev, i) => (
+                            <li key={i} className="text-xs text-amber-300/70 font-mono">{ev}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-4 gap-4 mb-6">
               <div className="bg-slate-800 rounded-lg p-4">
                 <div className="text-2xl font-bold text-white">{findings.length}</div>
@@ -303,7 +428,7 @@ export default function ExtensionScanner() {
                 <div className="text-sm text-slate-400">IOCs</div>
               </div>
               <div className="bg-slate-800 rounded-lg p-4">
-                <div className="text-2xl font-bold text-white">{currentAnalysis.behavior_flags?.length || 0}</div>
+                <div className="text-2xl font-bold text-white">{behaviorFlags.length}</div>
                 <div className="text-sm text-slate-400">Behavior Flags</div>
               </div>
               <div className="bg-slate-800 rounded-lg p-4">
@@ -342,7 +467,7 @@ export default function ExtensionScanner() {
                       : 'border-transparent text-slate-400 hover:text-white'
                   }`}
                 >
-                  Behavior ({currentAnalysis.behavior_flags?.length || 0})
+                  Behavior ({behaviorFlags.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('files')}
@@ -355,6 +480,19 @@ export default function ExtensionScanner() {
                   <div className="flex items-center gap-2">
                     <FolderOpen className="w-4 h-4" />
                     Files
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveTab('vault')}
+                  className={`pb-3 px-2 font-medium transition-all border-b-2 ${
+                    activeTab === 'vault'
+                      ? 'border-amber-500 text-amber-400'
+                      : 'border-transparent text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Archive className="w-4 h-4" />
+                    Vault
                   </div>
                 </button>
               </div>
@@ -481,13 +619,34 @@ export default function ExtensionScanner() {
 
             {activeTab === 'behavior' && (
               <div>
-                {!currentAnalysis.behavior_flags || currentAnalysis.behavior_flags.length === 0 ? (
+                {behaviorFlags.length === 0 ? (
                   <div className="text-center py-8 text-slate-400">
                     No behavior patterns detected
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {currentAnalysis.behavior_flags.map((flag, idx) => (
+                    {vaultDeltaFlags.map((flag, idx) => (
+                      <div key={`delta-${idx}`} className="border-2 border-amber-500/30 rounded-lg p-4 bg-amber-500/10">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-400" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400">
+                                {flag.severity}
+                              </span>
+                              <span className="font-semibold text-amber-300">
+                                Changed Since Last Vault Scan
+                              </span>
+                            </div>
+                            <p className="text-sm text-amber-200/80 mb-2">{flag.description}</p>
+                            <div className="text-xs text-amber-300/70">
+                              {flag.evidence.filter(e => !e.startsWith('baseline_analysis_id')).join(', ')}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {otherBehaviorFlags.map((flag, idx) => (
                       <div key={idx} className="border border-slate-700 rounded-lg p-4 bg-slate-800">
                         <div className="flex items-start gap-3">
                           <AlertTriangle className={`w-5 h-5 flex-shrink-0 text-${getSeverityColor(flag.severity)}-400`} />
@@ -547,6 +706,13 @@ export default function ExtensionScanner() {
                 </div>
               </div>
             )}
+
+            {activeTab === 'vault' && (
+              <VaultList
+                onRescan={(extId) => analyzeExtension(extId)}
+                isScanning={isAnalyzing}
+              />
+            )}
           </div>
         </div>
       )}
@@ -576,7 +742,10 @@ export default function ExtensionScanner() {
               {recentAnalyses.map((analysis) => (
                 <button
                   key={analysis.id}
-                  onClick={() => setCurrentAnalysis(analysis)}
+                  onClick={() => {
+                    setCurrentAnalysis(analysis);
+                    setActiveTab('findings');
+                  }}
                   className="w-full px-6 py-4 hover:bg-slate-800 transition-colors text-left"
                 >
                   <div className="flex items-center justify-between">

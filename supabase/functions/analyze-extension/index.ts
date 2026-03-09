@@ -9,7 +9,9 @@ const corsHeaders = {
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const MAX_INDIVIDUAL_FILE_SIZE = 2 * 1024 * 1024;
-const SCAN_TIMEOUT_MS = 250;
+const SCAN_TIMEOUT_MS_SMALL = 250;
+const SCAN_TIMEOUT_MS_LARGE = 1000;
+const LARGE_FILE_THRESHOLD = 100 * 1024;
 const DOWNLOAD_TIMEOUT = 45000;
 
 interface AnalysisRequest {
@@ -209,6 +211,126 @@ const RULE_DEFINITIONS: Record<string, Rule> = {
     title: "Broad Externally Connectable",
     description: "Extension allows broad external communication via externally_connectable"
   },
+  "MAN-3": {
+    id: "MAN-3",
+    severity: "critical",
+    confidence: "high",
+    category: "manifest",
+    title: "MAIN World Content Script Injection",
+    description: "Extension injects content scripts into the page's MAIN JavaScript world, enabling direct prototype poisoning of fetch, XMLHttpRequest, and form APIs"
+  },
+  "MAN-4": {
+    id: "MAN-4",
+    severity: "high",
+    confidence: "high",
+    category: "manifest",
+    title: "Offscreen Document Declared",
+    description: "Extension uses the MV3 offscreen document API, which can restore persistent background page capabilities and enable hidden iframe scripting or DOM scraping"
+  },
+  "DNR-1": {
+    id: "DNR-1",
+    severity: "critical",
+    confidence: "high",
+    category: "manifest",
+    title: "Security Header Stripping via declarativeNetRequest",
+    description: "Extension removes security response headers (CSP, X-Frame-Options, etc.) from visited pages using declarativeNetRequest rules"
+  },
+  "C2-1": {
+    id: "C2-1",
+    severity: "critical",
+    confidence: "high",
+    category: "network",
+    title: "C2 Callback Pattern Detected",
+    description: "Extension polls a remote server for executable JavaScript tasks — a command-and-control pattern used by ShotBird and QuickLens malware campaigns"
+  },
+  "C2-2": {
+    id: "C2-2",
+    severity: "critical",
+    confidence: "medium",
+    category: "network",
+    title: "Bot Registration Pattern",
+    description: "Extension generates or stores a UUID and sends it to a remote server during setup — consistent with bot registration in known C2 infrastructure"
+  },
+  "INJ-1": {
+    id: "INJ-1",
+    severity: "critical",
+    confidence: "medium",
+    category: "code_patterns",
+    title: "Remote HTML Template Injection",
+    description: "Extension fetches remote HTML content and injects it directly into visited pages — used to display fake Chrome update lures (ShotBird, CrashFix campaigns)"
+  },
+  "INJ-2": {
+    id: "INJ-2",
+    severity: "critical",
+    confidence: "high",
+    category: "code_patterns",
+    title: "Native API Prototype Hijacking",
+    description: "Extension overrides window.fetch, XMLHttpRequest.prototype, or form submission methods to intercept all network requests — used to steal AI chat data and credentials"
+  },
+  "INJ-3": {
+    id: "INJ-3",
+    severity: "high",
+    confidence: "high",
+    category: "code_patterns",
+    title: "DOM Event Handler Code Execution",
+    description: "Extension executes code via DOM event handler attribute injection (setAttribute + dispatchEvent) — an eval() bypass technique used to evade dynamic code detection"
+  },
+  "GRAB-1": {
+    id: "GRAB-1",
+    severity: "critical",
+    confidence: "high",
+    category: "code_patterns",
+    title: "Financial Data Form Grabber",
+    description: "Extension hooks input/textarea/select events and filters for financial and identity keywords (card numbers, CVV, IBAN, SSN, tokens) — consistent with the ShotBird superior-grabber payload"
+  },
+  "ANTI-4": {
+    id: "ANTI-4",
+    severity: "high",
+    confidence: "high",
+    category: "anti-analysis",
+    title: "Console Method Silencing",
+    description: "Extension reassigns console methods to empty functions — a near-universal technique in modern extension malware to suppress debug output and evade DevTools inspection"
+  },
+  "ANTI-5": {
+    id: "ANTI-5",
+    severity: "high",
+    confidence: "medium",
+    category: "anti-analysis",
+    title: "Probabilistic Activation Guard",
+    description: "Extension uses Math.random() as a conditional gate before executing network calls or script injection — used by DarkSpectre to activate on only ~10% of page loads, defeating automated scanners"
+  },
+  "ANTI-6": {
+    id: "ANTI-6",
+    severity: "high",
+    confidence: "high",
+    category: "anti-analysis",
+    title: "Time-Delayed Activation",
+    description: "Extension checks elapsed time since installation before activating malicious behavior — documented delays range from 10 minutes to 3 days across real campaigns, designed to outlast review windows"
+  },
+  "NET-3": {
+    id: "NET-3",
+    severity: "critical",
+    confidence: "high",
+    category: "network",
+    title: "WebSocket C2 Channel",
+    description: "Extension establishes a WebSocket connection to an external domain — used for real-time C2 command delivery, session replay for ad fraud, and persistent data exfiltration"
+  },
+  "NET-4": {
+    id: "NET-4",
+    severity: "high",
+    confidence: "medium",
+    category: "network",
+    title: "Cloud Database Exfiltration Endpoint",
+    description: "Extension communicates with Firebase Realtime Database or similar cloud storage APIs — used by DarkSpectre's Zoom Stealer to stage exfiltrated meeting data"
+  },
+  "NET-5": {
+    id: "NET-5",
+    severity: "high",
+    confidence: "medium",
+    category: "network",
+    title: "Geolocation Fingerprinting",
+    description: "Extension queries Cloudflare's trace endpoint (1.1.1.1/cdn-cgi/trace) or similar IP geolocation services to determine victim location before activating payloads — used for country-targeted attack activation"
+  },
   "PERF-1": {
     id: "PERF-1",
     severity: "low",
@@ -223,7 +345,10 @@ const SUSPICIOUS_TLDS = ['.xyz', '.top', '.tk', '.ml', '.ga', '.cf', '.gq', '.pw
 const WHITELISTED_DOMAINS = [
   'google-analytics.com', 'googleapis.com', 'gstatic.com',
   'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com',
-  'github.com', 'githubusercontent.com'
+  'github.com', 'githubusercontent.com',
+  'analytics.google.com', 'www.google-analytics.com',
+  'firebaseinstallations.googleapis.com',
+  'sentry.io', 'mixpanel.com', 'segment.com',
 ];
 
 Deno.serve(async (req: Request) => {
@@ -426,6 +551,55 @@ Deno.serve(async (req: Request) => {
 
     await storeFileContents(supabase, analysis.id, files);
 
+    // Vault delta computation
+    const { data: vaultEntry } = await supabase
+      .from('extension_vault')
+      .select('*')
+      .eq('extension_id', extensionId)
+      .maybeSingle();
+
+    if (vaultEntry && vaultEntry.baseline_analysis_id) {
+      const compareId = vaultEntry.latest_analysis_id || vaultEntry.baseline_analysis_id;
+
+      const [prevFindings, prevIocs] = await Promise.all([
+        supabase.from('security_findings').select('rule_id, category, severity').eq('analysis_id', compareId),
+        supabase.from('extension_iocs').select('ioc_value, ioc_type').eq('analysis_id', compareId)
+      ]);
+
+      const prevRuleIds = new Set((prevFindings.data || []).map((f: any) => f.rule_id).filter(Boolean));
+      const newRuleIds = findings.map(f => f.rule_id).filter(Boolean).filter(id => id && !prevRuleIds.has(id));
+
+      const prevDomains = new Set((prevIocs.data || []).filter((i: any) => i.ioc_type === 'domain').map((i: any) => i.ioc_value));
+      const newDomains = iocs.filter(i => i.ioc_type === 'domain' && !prevDomains.has(i.ioc_value)).map(i => i.ioc_value);
+
+      if (newRuleIds.length > 0 || newDomains.length > 0) {
+        behaviorFlags.push({
+          flag_type: "vault_delta_detected",
+          severity: newRuleIds.some(id => {
+            const rule = RULE_DEFINITIONS[id!];
+            return rule?.severity === 'critical';
+          }) ? "critical" : "high",
+          description: `This extension changed since its last vault scan. New findings and/or new external domains were detected.`,
+          evidence: [
+            `baseline_analysis_id: ${compareId}`,
+            ...(newRuleIds.length > 0 ? [`New rules triggered: ${newRuleIds.join(', ')}`] : []),
+            ...(newDomains.length > 0 ? [`New domains: ${newDomains.slice(0, 5).join(', ')}`] : []),
+          ]
+        });
+
+        await supabase
+          .from('extension_analyses')
+          .update({ behavior_flags: behaviorFlags })
+          .eq('id', analysis.id);
+      }
+
+      await supabase.from('extension_vault').update({
+        latest_analysis_id: analysis.id,
+        last_scanned_at: new Date().toISOString(),
+        extension_name: manifest.name,
+      }).eq('extension_id', extensionId);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -537,7 +711,7 @@ async function extractFiles(zipData: Uint8Array): Promise<Map<string, Uint8Array
 }
 
 function analyzePermissions(manifest: any, findings: SecurityFinding[]): void {
-  const dangerousPermissions = {
+  const dangerousPermissions: Record<string, string> = {
     "cookies": "PERM-1",
     "management": "PERM-2",
     "debugger": "PERM-3",
@@ -586,6 +760,22 @@ function analyzePermissions(manifest: any, findings: SecurityFinding[]): void {
   }
 }
 
+function getTimeoutForFile(size: number): number {
+  if (size >= LARGE_FILE_THRESHOLD) {
+    return SCAN_TIMEOUT_MS_LARGE;
+  }
+  return SCAN_TIMEOUT_MS_SMALL;
+}
+
+function analyzeWithTimeout(fn: () => void, timeoutMs: number): Promise<void> {
+  return Promise.race([
+    Promise.resolve().then(fn),
+    new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), timeoutMs)
+    )
+  ]);
+}
+
 async function analyzeAllFiles(
   files: Map<string, Uint8Array>,
   manifest: any,
@@ -631,14 +821,23 @@ async function analyzeAllFiles(
 
       try {
         const text = new TextDecoder().decode(content);
+        const timeoutMs = getTimeoutForFile(content.byteLength);
 
-        if (isScript) {
-          analyzeJavaScript(filename, text, findings, iocs, allExtensionIds);
-        } else if (isHtml) {
-          analyzeHTML(filename, text, findings, iocs);
-        } else if (isJson && filename !== "manifest.json") {
-          analyzeJSON(filename, text, iocs);
-        }
+        await analyzeWithTimeout(() => {
+          if (isScript) {
+            analyzeJavaScript(filename, text, findings, iocs, allExtensionIds);
+          } else if (isHtml) {
+            analyzeHTML(filename, text, findings, iocs);
+          } else if (isJson && filename !== "manifest.json") {
+            analyzeJSON(filename, text, iocs, findings, manifest);
+          }
+        }, timeoutMs).catch(() => {
+          skippedFiles.push({
+            file: filename,
+            reason: "analysis_timeout",
+            size: content.byteLength
+          });
+        });
       } catch (e) {
         console.error(`Error analyzing ${filename}:`, e);
         skippedFiles.push({
@@ -784,6 +983,208 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
     }
   }
 
+  // C2-1: Callback polling pattern (setup/callback/finish endpoint family)
+  if (/\/extensions\/(setup|callback|finish)\b/.test(code) ||
+      /\/(setup|callback|finish)\?.*uuid/.test(code) ||
+      (/setInterval|setTimeout/.test(code) && /callback/.test(code) && hasNetworkCall)) {
+    const rule = RULE_DEFINITIONS["C2-1"];
+    const match = code.match(/\/extensions\/(setup|callback|finish)[^\s'"`]{0,60}/);
+    findings.push({
+      rule_id: "C2-1",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "setup/callback/finish endpoint pattern",
+      file_path: filename,
+    });
+  }
+
+  // C2-2: UUID bot registration (with domain whitelist check)
+  if (/crypto\.randomUUID\(\)|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}/.test(code) &&
+      /chrome\.storage\.(local|sync)\.(set|get)/.test(code) &&
+      hasNetworkCall) {
+    const fetchUrls = code.match(/fetch\s*\(\s*['"`]([^'"`]+)['"`]/g) || [];
+    const hasNonWhitelistedDomain = fetchUrls.some(u => {
+      const urlMatch = u.match(/fetch\s*\(\s*['"`]([^'"`]+)['"`]/);
+      if (!urlMatch) return false;
+      try {
+        const url = new URL(urlMatch[1]);
+        return !WHITELISTED_DOMAINS.some(d => url.hostname.includes(d));
+      } catch {
+        return true;
+      }
+    });
+
+    if (hasNonWhitelistedDomain) {
+      const rule = RULE_DEFINITIONS["C2-2"];
+      findings.push({
+        rule_id: "C2-2",
+        category: rule.category, severity: rule.severity, confidence: rule.confidence,
+        title: rule.title, description: rule.description,
+        evidence: "UUID generation + storage + network call to non-whitelisted domain",
+        file_path: filename,
+      });
+    }
+  }
+
+  // INJ-1: Remote HTML template injection (tightened: require no DOMPurify and co-location)
+  if (/innerHTML\s*=|insertAdjacentHTML|document\.body\.appendChild/.test(code) &&
+      hasNetworkCall &&
+      /text\(\)|\.html\b|response\.text/.test(code) &&
+      !/DOMPurify|dompurify|sanitize/i.test(code)) {
+    const rule = RULE_DEFINITIONS["INJ-1"];
+    const match = code.match(/innerHTML\s*=\s*[^;\n]{0,60}/);
+    findings.push({
+      rule_id: "INJ-1",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "remote HTML fetched and injected into DOM",
+      file_path: filename,
+    });
+  }
+
+  // INJ-2: Native API prototype hijacking
+  if (/window\.fetch\s*=|XMLHttpRequest\.prototype\.(open|send)\s*=|HTMLFormElement\.prototype\.submit\s*=|JSON\.parse\s*=/.test(code)) {
+    const rule = RULE_DEFINITIONS["INJ-2"];
+    const match = code.match(/(window\.fetch|XMLHttpRequest\.prototype\.\w+|HTMLFormElement\.prototype\.\w+)\s*=[^;\n]{0,60}/);
+    findings.push({
+      rule_id: "INJ-2",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "native API override detected",
+      file_path: filename,
+    });
+  }
+
+  // INJ-3: DOM event handler attribute code execution (eval bypass)
+  if (/setAttribute\s*\(\s*['"`]on\w+['"`]/.test(code) &&
+      /dispatchEvent|CustomEvent/.test(code)) {
+    const rule = RULE_DEFINITIONS["INJ-3"];
+    const match = code.match(/setAttribute\s*\([^)]{0,80}/);
+    findings.push({
+      rule_id: "INJ-3",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "setAttribute(on*) + dispatchEvent pattern",
+      file_path: filename,
+    });
+  }
+
+  // GRAB-1: Financial data form grabber
+  const FINANCIAL_KEYWORDS = [
+    'cardnumber', 'card.number', 'card_number', 'creditcard',
+    'cvv', 'cvc', 'ccv', 'securitycode',
+    'iban', 'bic', 'swift', 'routingnumber',
+    'ssn', 'socialsecurity', 'taxid', 'ein',
+    'pin', 'passcode', 'otp', 'verificationcode',
+    'accountnumber', 'bankaccount'
+  ];
+  const financialPattern = new RegExp(FINANCIAL_KEYWORDS.join('|'), 'i');
+  if (financialPattern.test(code) &&
+      /addEventListener.*input|addEventListener.*change|addEventListener.*keyup/.test(code) &&
+      hasNetworkCall) {
+    const rule = RULE_DEFINITIONS["GRAB-1"];
+    findings.push({
+      rule_id: "GRAB-1",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: "Financial keyword list + input event hooks + network exfiltration",
+      file_path: filename,
+    });
+  }
+
+  // ANTI-4: Console method silencing
+  if (/console\s*\[\s*['"`](log|warn|error|info|debug)['"`]\s*\]\s*=\s*(function\s*\(\)|=>\s*\{?\s*\}|\(\)\s*=>)/.test(code) ||
+      /\['log','warn','error'|'log','warn','info','error'/.test(code)) {
+    const rule = RULE_DEFINITIONS["ANTI-4"];
+    findings.push({
+      rule_id: "ANTI-4",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: "console method reassigned to empty function",
+      file_path: filename,
+    });
+  }
+
+  // ANTI-5: Probabilistic activation
+  if (/Math\.random\(\)\s*[<>]\s*0\.[0-9]/.test(code) && hasNetworkCall) {
+    const rule = RULE_DEFINITIONS["ANTI-5"];
+    const match = code.match(/Math\.random\(\)[^;\n]{0,40}/);
+    findings.push({
+      rule_id: "ANTI-5",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "Math.random() gate before network call",
+      file_path: filename,
+    });
+  }
+
+  // ANTI-6: Time-delayed activation (tightened: require arithmetic subtraction context with threshold >= 3600000)
+  if (/(Date\.now\(\)|new Date\(\)\.getTime\(\))/.test(code) &&
+      /onInstalled|chrome\.storage|installedAt|installTime|firstRun/.test(code) &&
+      /(Date\.now\(\)|getTime\(\))\s*-\s*\w+|(\w+)\s*-\s*(Date\.now\(\)|getTime\(\))/.test(code) &&
+      /[3-9]\d{6,}|[1-9]\d{7,}/.test(code)) {
+    const rule = RULE_DEFINITIONS["ANTI-6"];
+    findings.push({
+      rule_id: "ANTI-6",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: "Date/time subtraction against stored install timestamp with large threshold detected",
+      file_path: filename,
+    });
+  }
+
+  // NET-3: WebSocket C2 channel
+  if (/new\s+WebSocket\s*\(\s*['"`]wss?:\/\//.test(code)) {
+    const rule = RULE_DEFINITIONS["NET-3"];
+    const match = code.match(/new\s+WebSocket\s*\(\s*['"`][^'"`]+['"`]/);
+    findings.push({
+      rule_id: "NET-3",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "WebSocket connection to external host",
+      file_path: filename,
+    });
+  }
+
+  // NET-4: Firebase/cloud database exfiltration
+  if (/firebaseio\.com|firebasedatabase\.app|\.firestore\(\)|getDatabase\(/.test(code)) {
+    const rule = RULE_DEFINITIONS["NET-4"];
+    const match = code.match(/(firebaseio\.com|firebasedatabase\.app)[^\s'"`]{0,60}/);
+    findings.push({
+      rule_id: "NET-4",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "Firebase database endpoint detected",
+      file_path: filename,
+    });
+  }
+
+  // NET-5: Geolocation fingerprinting via Cloudflare trace or IP lookup
+  if (/1\.1\.1\.1\/cdn-cgi\/trace|ipapi\.co|ip-api\.com|ipinfo\.io|api\.ipify\.org/.test(code)) {
+    const rule = RULE_DEFINITIONS["NET-5"];
+    const match = code.match(/(1\.1\.1\.1[^\s'"`]{0,40}|ipapi[^\s'"`]{0,40})/);
+    findings.push({
+      rule_id: "NET-5",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: match ? match[0] : "IP geolocation API call detected",
+      file_path: filename,
+    });
+  }
+
+  // MAN-3 dynamic variant: registerContentScripts with MAIN world
+  if (/registerContentScripts/.test(code) && /['"`]MAIN['"`]/.test(code)) {
+    const rule = RULE_DEFINITIONS["MAN-3"];
+    findings.push({
+      rule_id: "MAN-3",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title,
+      description: rule.description + " (dynamically registered at runtime)",
+      evidence: "chrome.scripting.registerContentScripts with world: MAIN",
+      file_path: filename,
+    });
+  }
+
   extractIOCsFromText(code, filename, iocs, findings);
 }
 
@@ -802,8 +1203,65 @@ function analyzeHTML(filename: string, html: string, findings: SecurityFinding[]
   extractIOCsFromText(html, filename, iocs, findings);
 }
 
-function analyzeJSON(filename: string, json: string, iocs: IOC[]): void {
-  extractIOCsFromText(json, filename, iocs, []);
+function analyzeJSON(filename: string, json: string, iocs: IOC[], findings: SecurityFinding[], manifest?: any): void {
+  extractIOCsFromText(json, filename, iocs, findings);
+
+  const isDNRFile =
+    filename === 'rules.json' ||
+    filename.includes('rules') ||
+    (manifest?.declarative_net_request?.rule_resources || []).some(
+      (r: any) => r.path && filename.endsWith(r.path.replace(/^\//, ''))
+    );
+
+  if (isDNRFile) {
+    try {
+      const parsed = JSON.parse(json);
+      const rules = Array.isArray(parsed) ? parsed : parsed.rules || [];
+
+      const SECURITY_HEADERS = [
+        'content-security-policy',
+        'content-security-policy-report-only',
+        'x-frame-options',
+        'x-content-type-options',
+        'strict-transport-security',
+        'x-xss-protection',
+        'permissions-policy',
+        'cross-origin-opener-policy',
+        'cross-origin-embedder-policy',
+      ];
+
+      const strippedHeaders: string[] = [];
+
+      for (const rule of rules) {
+        const actions = rule?.action?.responseHeaders || [];
+        for (const headerAction of actions) {
+          const headerName = (headerAction.header || '').toLowerCase();
+          if (
+            (rule.action?.type === 'modifyHeaders' || headerAction.operation === 'remove' || headerAction.operation === 'set') &&
+            SECURITY_HEADERS.includes(headerName)
+          ) {
+            strippedHeaders.push(headerName);
+          }
+        }
+      }
+
+      if (strippedHeaders.length > 0) {
+        const ruledef = RULE_DEFINITIONS["DNR-1"];
+        findings.push({
+          rule_id: 'DNR-1',
+          category: ruledef.category,
+          severity: ruledef.severity,
+          confidence: ruledef.confidence,
+          title: ruledef.title,
+          description: `Extension uses rules.json to silently remove browser security headers from pages the victim visits. This is a known technique used by ShotBird, QuickLens, and the DataByCloud campaign to bypass Content Security Policy and enable malicious script injection.`,
+          evidence: `Stripped headers: ${[...new Set(strippedHeaders)].join(', ')}`,
+          file_path: filename,
+        });
+      }
+    } catch (_e) {
+      // JSON parse failed, skip structural analysis
+    }
+  }
 }
 
 function extractIOCsFromText(text: string, sourceFile: string, iocs: IOC[], findings: SecurityFinding[]): void {
@@ -851,7 +1309,7 @@ function extractIOCsFromText(text: string, sourceFile: string, iocs: IOC[], find
           });
         }
       }
-    } catch (e) {
+    } catch (_e) {
     }
   }
 }
@@ -904,6 +1362,36 @@ function analyzeManifestDeep(manifest: any, findings: SecurityFinding[]): void {
         file_path: "manifest.json",
       });
     }
+  }
+
+  // MAN-3: MAIN world content script injection
+  if (manifest.content_scripts) {
+    const mainWorldScripts = manifest.content_scripts.filter(
+      (cs: any) => cs.world === 'MAIN'
+    );
+    if (mainWorldScripts.length > 0) {
+      const rule = RULE_DEFINITIONS["MAN-3"];
+      findings.push({
+        rule_id: "MAN-3",
+        category: rule.category, severity: rule.severity, confidence: rule.confidence,
+        title: rule.title, description: rule.description,
+        evidence: `${mainWorldScripts.length} MAIN world content script(s): ${mainWorldScripts.map((cs: any) => (cs.js || []).join(', ')).join('; ')}`,
+        file_path: "manifest.json",
+      });
+    }
+  }
+
+  // MAN-4: Offscreen document permission
+  const hasOffscreen = (manifest.permissions || []).includes('offscreen');
+  if (hasOffscreen) {
+    const rule = RULE_DEFINITIONS["MAN-4"];
+    findings.push({
+      rule_id: "MAN-4",
+      category: rule.category, severity: rule.severity, confidence: rule.confidence,
+      title: rule.title, description: rule.description,
+      evidence: "'offscreen' permission declared in manifest",
+      file_path: "manifest.json",
+    });
   }
 }
 
@@ -1038,7 +1526,6 @@ function calculateObfuscationScore(files: Map<string, Uint8Array>): number {
   }
 
   if (jsFileCount > 0 && totalScore / jsFileCount > 50) {
-    const rule = RULE_DEFINITIONS["OBF-1"];
     return Math.min(100, Math.round(totalScore / jsFileCount));
   }
 
@@ -1098,14 +1585,14 @@ async function sha256(data: Uint8Array): Promise<string> {
 }
 
 function calculateRiskScore(findings: SecurityFinding[], behaviorFlags: BehaviorFlag[], obfuscationScore: number): number {
-  const severityScores = {
+  const severityScores: Record<string, number> = {
     low: 5,
     medium: 15,
     high: 30,
     critical: 50,
   };
 
-  const confidenceMultipliers = {
+  const confidenceMultipliers: Record<string, number> = {
     low: 0.4,
     medium: 0.7,
     high: 1.0,
@@ -1173,8 +1660,8 @@ async function storeFileContents(supabase: any, analysisId: string, files: Map<s
           file_size: content.byteLength,
           file_type: fileType
         });
-      } catch (e) {
-        console.error(`Failed to decode ${filePath}:`, e);
+      } catch (_e) {
+        console.error(`Failed to decode ${filePath}:`, _e);
       }
     }
   }
