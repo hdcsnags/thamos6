@@ -51,9 +51,14 @@ interface BehaviorFlag {
   evidence: string[];
 }
 
-export default function ExtensionScanner() {
+interface ExtensionScannerProps {
+  initialUrl?: string;
+}
+
+export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) {
   const [extensionUrl, setExtensionUrl] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [hasAutoScanned, setHasAutoScanned] = useState(false);
   const [currentAnalysis, setCurrentAnalysis] = useState<Analysis | null>(null);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
   const [iocs, setIocs] = useState<IOC[]>([]);
@@ -75,6 +80,14 @@ export default function ExtensionScanner() {
       checkVaultStatus(currentAnalysis.extension_id);
     }
   }, [currentAnalysis]);
+
+  useEffect(() => {
+    if (initialUrl && !hasAutoScanned && !isAnalyzing) {
+      setHasAutoScanned(true);
+      setExtensionUrl(initialUrl);
+      analyzeExtension(initialUrl);
+    }
+  }, [initialUrl, hasAutoScanned]);
 
   const loadRecentAnalyses = async () => {
     const { data, error } = await supabase
