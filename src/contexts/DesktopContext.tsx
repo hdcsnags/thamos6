@@ -3,6 +3,7 @@ import { getApp } from '../design-system/appRegistry';
 
 export type AppId =
   | 'terminal'
+  | 'vps-terminal'
   | 'scanner'
   | 'browser'
   | 'workshop'

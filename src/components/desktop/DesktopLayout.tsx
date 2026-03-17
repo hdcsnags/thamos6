@@ -6,6 +6,7 @@ import { BootSequence } from './BootSequence';
 import { AppLauncher } from './AppLauncher';
 import { DesktopIcons } from './DesktopIcons';
 import { DesktopTerminal } from './DesktopTerminal';
+import { DesktopVPSTerminal } from './DesktopVPSTerminal';
 import { DesktopScanner } from './DesktopScanner';
 import IPResult from '../../pages/results/IPResult';
 import URLResult from '../../pages/results/URLResult';
@@ -113,6 +114,8 @@ function renderWindowContent(appId: string, data?: any) {
   switch (appId) {
     case 'terminal':
       return <DesktopTerminal />;
+    case 'vps-terminal':
+      return <DesktopVPSTerminal />;
     case 'scanner':
       return <DesktopScanner />;
     case 'browser':

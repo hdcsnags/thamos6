@@ -17,7 +17,7 @@ const P = {
   pink: '#ff0080',
 };
 
-type TabType = 'account' | 'api-keys' | 'connections' | 'appearance';
+type TabType = 'account' | 'api-keys' | 'connections' | 'vps' | 'appearance';
 
 interface ApiKey {
   id: string;
@@ -53,6 +53,10 @@ export function DesktopSettings() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [pwForm, setPwForm] = useState({ newPassword: '', confirm: '' });
   const [changingPw, setChangingPw] = useState(false);
+  const [vpsConns, setVpsConns] = useState<{ id: string; name: string; vps_url: string; hostname: string; is_default: boolean }[]>([]);
+  const [vpsLoading, setVpsLoading] = useState(false);
+  const [newVps, setNewVps] = useState({ name: '', url: '', hostname: '' });
+  const [savingVps, setSavingVps] = useState(false);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -132,6 +136,48 @@ export function DesktopSettings() {
     }
   };
 
+  const fetchVps = useCallback(async () => {
+    if (!user) return;
+    setVpsLoading(true);
+    const { data } = await supabase.from('user_vps_connections').select('id, name, vps_url, hostname, is_default').eq('user_id', user.id).order('created_at');
+    if (data) setVpsConns(data);
+    setVpsLoading(false);
+  }, [user]);
+
+  useEffect(() => { fetchVps(); }, [fetchVps]);
+
+  const addVps = async () => {
+    if (!user || !newVps.name || !newVps.url) return;
+    setSavingVps(true);
+    try {
+      const isFirst = vpsConns.length === 0;
+      await supabase.from('user_vps_connections').insert({
+        user_id: user.id, name: newVps.name, vps_url: newVps.url, hostname: newVps.hostname, is_default: isFirst,
+      });
+      showMsg('success', `VPS "${newVps.name}" added`);
+      setNewVps({ name: '', url: '', hostname: '' });
+      fetchVps();
+    } catch (err) {
+      showMsg('error', err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSavingVps(false);
+    }
+  };
+
+  const deleteVps = async (id: string) => {
+    await supabase.from('user_vps_connections').delete().eq('id', id);
+    showMsg('success', 'VPS connection removed');
+    fetchVps();
+  };
+
+  const setDefaultVps = async (id: string) => {
+    if (!user) return;
+    await supabase.from('user_vps_connections').update({ is_default: false }).eq('user_id', user.id);
+    await supabase.from('user_vps_connections').update({ is_default: true }).eq('id', id);
+    showMsg('success', 'Default VPS updated');
+    fetchVps();
+  };
+
   if (!user) {
     return (
       <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void, color: P.dim }}>
@@ -146,6 +192,7 @@ export function DesktopSettings() {
   const tabs: { id: TabType; label: string }[] = [
     { id: 'api-keys', label: 'API KEYS' },
     { id: 'connections', label: 'CONNECTIONS' },
+    { id: 'vps', label: 'VPS' },
     { id: 'account', label: 'ACCOUNT' },
     { id: 'appearance', label: 'THEME' },
   ];
@@ -309,6 +356,123 @@ export function DesktopSettings() {
               <span className="text-xs" style={{ color: P.dim, lineHeight: '1.6' }}>
                 GitHub access enables the File Manager app to browse your repositories.
                 You can also connect by pasting a personal access token directly in the File Manager.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {tab === 'vps' && (
+          <div className="space-y-4 max-w-md">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-3 rounded-sm" style={{ backgroundColor: P.amber }} />
+              <span className="text-xs font-medium tracking-wider" style={{ color: P.amber }}>VPS CONNECTIONS</span>
+            </div>
+
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={newVps.name}
+                onChange={e => setNewVps({ ...newVps, name: e.target.value })}
+                placeholder="Connection name (e.g. Primary VPS)"
+                className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              />
+              <input
+                type="text"
+                value={newVps.url}
+                onChange={e => setNewVps({ ...newVps, url: e.target.value })}
+                placeholder="Tunnel URL (e.g. terminal.thamos.online)"
+                className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              />
+              <input
+                type="text"
+                value={newVps.hostname}
+                onChange={e => setNewVps({ ...newVps, hostname: e.target.value })}
+                placeholder="Display hostname (optional)"
+                className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              />
+              <button
+                onClick={addVps}
+                disabled={!newVps.name || !newVps.url || savingVps}
+                className="w-full py-2 text-xs font-medium rounded transition-all"
+                style={{
+                  backgroundColor: newVps.name && newVps.url ? `${P.amber}15` : P.surfaceLight,
+                  border: `1px solid ${newVps.name && newVps.url ? `${P.amber}40` : P.border}`,
+                  color: newVps.name && newVps.url ? P.amber : P.dim,
+                }}
+              >
+                {savingVps ? '...' : 'ADD CONNECTION'}
+              </button>
+            </div>
+
+            {vpsLoading ? (
+              <span className="text-xs" style={{ color: P.dim }}>Loading...</span>
+            ) : vpsConns.length === 0 ? (
+              <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+                <span className="text-xs" style={{ color: P.dim }}>No VPS connections configured. Add one above to get started.</span>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {vpsConns.map(conn => (
+                  <div
+                    key={conn.id}
+                    className="flex items-center justify-between p-2.5 rounded"
+                    style={{
+                      backgroundColor: conn.is_default ? `${P.amber}06` : P.surface,
+                      border: `1px solid ${conn.is_default ? `${P.amber}20` : P.border}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{
+                        backgroundColor: conn.is_default ? P.amber : P.dim,
+                        boxShadow: conn.is_default ? `0 0 6px ${P.amber}40` : 'none',
+                      }} />
+                      <div className="min-w-0">
+                        <span className="text-xs font-medium" style={{ color: conn.is_default ? P.amber : P.text }}>{conn.name}</span>
+                        <span className="text-xs ml-2 truncate" style={{ color: P.dim }}>{conn.vps_url}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {!conn.is_default && (
+                        <button
+                          onClick={() => setDefaultVps(conn.id)}
+                          className="text-xs px-2 py-0.5 rounded transition-all"
+                          style={{ color: P.amber, border: `1px solid ${P.amber}30` }}
+                        >
+                          DEFAULT
+                        </button>
+                      )}
+                      {conn.is_default && (
+                        <span className="text-xs px-2 py-0.5 rounded" style={{
+                          backgroundColor: `${P.amber}15`,
+                          color: P.amber,
+                          border: `1px solid ${P.amber}30`,
+                        }}>
+                          DEFAULT
+                        </span>
+                      )}
+                      <button
+                        onClick={() => deleteVps(conn.id)}
+                        className="text-xs px-2 py-0.5 rounded transition-all"
+                        style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                      >
+                        x
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: P.amber }} />
+                <span className="text-xs" style={{ color: P.amber }}>CLOUDFLARE TUNNEL</span>
+              </div>
+              <span className="text-xs" style={{ color: P.dim, lineHeight: '1.6' }}>
+                VPS Terminal connects via ttyd + Cloudflare Tunnel. No ports need to be open on your server. The default connection is used when opening VPS Terminal.
               </span>
             </div>
           </div>

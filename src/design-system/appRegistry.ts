@@ -25,6 +25,17 @@ export const appRegistry: Record<string, AppDefinition> = {
     defaultSize: { width: 800, height: 500 },
     showOnDesktop: true,
   },
+  'vps-terminal': {
+    id: 'vps-terminal',
+    name: 'VPS Terminal',
+    icon: '>_',
+    description: 'Remote VPS shell access',
+    accentColor: palette.amber,
+    category: 'core',
+    keywords: ['vps', 'terminal', 'ssh', 'shell', 'remote', 'server', 'live'],
+    defaultSize: { width: 900, height: 600 },
+    showOnDesktop: true,
+  },
   scanner: {
     id: 'scanner',
     name: 'Scanner',

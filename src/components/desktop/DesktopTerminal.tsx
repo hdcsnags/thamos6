@@ -5,7 +5,7 @@ import { palette, typography } from '../../design-system/tokens';
 
 const COMMANDS = [
   'help', 'clear', 'history', 'status', 'scan', 'get', 'neofetch', 'nmap', 'whois', 'dig',
-  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit'
+  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit', 'vps'
 ];
 
 const AGENTS = {
@@ -143,6 +143,10 @@ export function DesktopTerminal() {
         addOutput('', 'info');
         break;
 
+      case 'vps':
+        handleVps(args);
+        break;
+
       case 'exit':
         addOutput('Use the window controls to close the terminal', 'info');
         addOutput('', 'info');
@@ -171,6 +175,10 @@ export function DesktopTerminal() {
     addOutput('  thamosx [query]        Route to Claude (deep analysis)', 'info');
     addOutput('  thamosy [query]        Route to GPT (code generation)', 'info');
     addOutput('  thamosz [query]        Route to Gemini (research)', 'info');
+    addOutput('', 'info');
+    addOutput('VPS:', 'success', palette.amber);
+    addOutput('  vps                    Open VPS Terminal (LIVE mode)', 'info');
+    addOutput('  vps status             VPS connection info', 'info');
     addOutput('', 'info');
     addOutput('DESKTOP & WINDOWS:', 'success', palette.teal);
     addOutput('  open [app]             Launch application window', 'info');
@@ -458,6 +466,7 @@ export function DesktopTerminal() {
 
     const appMap: Record<string, { id: any; title: string }> = {
       terminal: { id: 'terminal', title: 'Terminal' },
+      vps: { id: 'vps-terminal', title: 'VPS Terminal' },
       scanner: { id: 'scanner', title: 'Scanner' },
       browser: { id: 'browser', title: 'Browser' },
       workshop: { id: 'workshop', title: 'AI Workshop' },
@@ -510,13 +519,28 @@ export function DesktopTerminal() {
     }
   };
 
+  const handleVps = (args: string[]) => {
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'status') {
+      addOutput('', 'info');
+      addOutput('VPS Terminal: Use "vps" to open a live terminal window', 'info');
+      addOutput('Configure connection in Settings > VPS', 'info');
+      addOutput('', 'info');
+      return;
+    }
+    addOutput('', 'info');
+    addOutput('[*] Opening VPS Terminal (LIVE mode)...', 'success', palette.amber);
+    addOutput('', 'info');
+    desktop.openWindow({ appId: 'vps-terminal', title: 'VPS Terminal' });
+  };
+
   const handleLs = () => {
     addOutput('', 'info');
     addOutput('Available applications:', 'success');
     addOutput('', 'info');
-    addOutput('  terminal     scanner      browser      workshop', 'info', palette.cyan);
-    addOutput('  intel        cases        files        editor', 'info', palette.cyan);
-    addOutput('  monitor      settings', 'info', palette.cyan);
+    addOutput('  terminal     vps          scanner      browser', 'info', palette.cyan);
+    addOutput('  workshop     intel        cases        files', 'info', palette.cyan);
+    addOutput('  editor       monitor      settings', 'info', palette.cyan);
     addOutput('', 'info');
     addOutput('Use "open [app]" to launch', 'info');
     addOutput('', 'info');
@@ -650,6 +674,17 @@ export function DesktopTerminal() {
         <div className="flex items-center gap-4" style={{ fontSize: '10px', color: palette.textDisabled }}>
           <span>{commandHistory.length} cmds</span>
           <span>{Object.keys(desktop.windows).length} windows</span>
+          <span
+            className="px-1.5 py-0.5 rounded font-bold"
+            style={{
+              backgroundColor: palette.green + '15',
+              color: palette.green,
+              border: `1px solid ${palette.green}30`,
+              fontSize: '9px',
+            }}
+          >
+            SAFE
+          </span>
         </div>
       </div>
     </div>
