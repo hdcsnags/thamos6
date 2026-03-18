@@ -1,20 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { palette, typography } from '../../design-system/tokens';
-import { getLaunchableApps, searchApps, type AppDefinition } from '../../design-system/appRegistry';
+import { getLaunchableApps, searchApps, getAppsByCategory, type AppDefinition } from '../../design-system/appRegistry';
 import { Search } from 'lucide-react';
 
 interface AppLauncherProps {
   onClose: () => void;
 }
 
+type Category = 'all' | 'core' | 'intel' | 'tools' | 'system';
+
+const CATEGORIES: { id: Category; label: string; color: string }[] = [
+  { id: 'all', label: 'All', color: palette.cyan },
+  { id: 'core', label: 'Core', color: palette.green },
+  { id: 'intel', label: 'Intel', color: palette.cyan },
+  { id: 'tools', label: 'Tools', color: palette.amber },
+  { id: 'system', label: 'System', color: palette.textSecondary },
+];
+
 export function AppLauncher({ onClose }: AppLauncherProps) {
   const desktop = useDesktop();
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<Category>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = search ? searchApps(search) : getLaunchableApps();
+  const filtered = search
+    ? searchApps(search)
+    : category === 'all'
+      ? getLaunchableApps()
+      : getAppsByCategory(category).filter(a => a.keywords.length > 0);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -22,7 +37,7 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [search]);
+  }, [search, category]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -88,7 +103,8 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4">
+        {/* Search bar */}
+        <div className="mb-3">
           <div
             className="flex items-center gap-3 px-4 py-3 rounded-xl"
             style={{
@@ -101,7 +117,7 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
               ref={inputRef}
               type="text"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setCategory('all'); }}
               placeholder="Search apps, commands..."
               className="flex-1 bg-transparent focus:outline-none"
               style={{
@@ -123,6 +139,30 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
           </div>
         </div>
 
+        {/* Category tabs */}
+        {!search && (
+          <div className="flex items-center gap-1 mb-3">
+            {CATEGORIES.map(cat => {
+              const isActive = category === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategory(cat.id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    backgroundColor: isActive ? `${cat.color}12` : 'transparent',
+                    color: isActive ? cat.color : palette.textTertiary,
+                    border: `1px solid ${isActive ? `${cat.color}25` : 'transparent'}`,
+                  }}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* App grid */}
         {filtered.length === 0 ? (
           <div className="py-8 text-center">
             <span style={{ fontSize: '13px', color: palette.textTertiary }}>No matching apps</span>
@@ -169,6 +209,7 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
           </div>
         )}
 
+        {/* Footer hints */}
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {[
@@ -192,6 +233,9 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
               </div>
             ))}
           </div>
+          <span className="text-[10px]" style={{ color: palette.textDisabled }}>
+            {filtered.length} app{filtered.length !== 1 ? 's' : ''}
+          </span>
         </div>
       </div>
     </div>
