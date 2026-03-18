@@ -12,6 +12,7 @@ const MAX_RECONNECT_DELAY = 30000;
 const INITIAL_RECONNECT_DELAY = 1000;
 const PING_INTERVAL = 30000;
 
+// Protocol type bytes — raw values, mapped to wire format via cmdByte()/msgType()
 const MSG_OUTPUT = 0;
 const MSG_SET_TITLE = 1;
 const MSG_SET_PREFS = 2;
@@ -35,6 +36,9 @@ export class VPSConnection {
   private authenticated = false;
   private pendingResize: { cols: number; rows: number } | null = null;
   private lastKnownSize: { cols: number; rows: number } | null = null;
+  // ttyd protocol auto-detection: newer versions (>=1.7) use ASCII chars ('0'=0x30),
+  // older versions use raw byte values (0x00). null = not yet detected.
+  private asciiProtocol: boolean | null = null;
 
   get state() { return this._state; }
 
@@ -45,6 +49,7 @@ export class VPSConnection {
   async connect() {
     this.intentionalClose = false;
     this.authenticated = false;
+    this.asciiProtocol = null;
     this.cleanup();
     this.setState('connecting');
 
@@ -80,12 +85,21 @@ export class VPSConnection {
     };
 
     this.ws.onmessage = (event) => {
-      if (!this.authenticated) {
-        this.onAuthenticated();
-      }
       if (event.data instanceof ArrayBuffer) {
+        // Detect protocol version from first binary message's type byte
+        if (this.asciiProtocol === null) {
+          const firstByte = new Uint8Array(event.data)[0];
+          // ttyd >=1.7 sends '0' (0x30=48), older sends 0x00
+          this.asciiProtocol = firstByte >= 0x30 && firstByte <= 0x39;
+        }
+        if (!this.authenticated) {
+          this.onAuthenticated();
+        }
         this.handleBinaryMessage(event.data);
       } else if (typeof event.data === 'string') {
+        if (!this.authenticated) {
+          this.onAuthenticated();
+        }
         this.options.onData(event.data);
       }
     };
@@ -121,11 +135,21 @@ export class VPSConnection {
     this.setState('disconnected');
   }
 
+  /** Convert a raw command type (0, 1) to the wire byte based on detected protocol. */
+  private cmdByte(type: number): number {
+    return this.asciiProtocol ? type + 0x30 : type;
+  }
+
+  /** Normalize a received wire byte to a raw type (0, 1, 2) for internal handling. */
+  private normalizeMsg(wireByte: number): number {
+    return this.asciiProtocol ? wireByte - 0x30 : wireByte;
+  }
+
   send(data: string) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       const payload = this.textEncoder.encode(data);
       const msg = new Uint8Array(payload.length + 1);
-      msg[0] = CMD_INPUT;
+      msg[0] = this.cmdByte(CMD_INPUT);
       msg.set(payload, 1);
       this.ws.send(msg.buffer);
     }
@@ -145,7 +169,7 @@ export class VPSConnection {
       const json = JSON.stringify({ columns: cols, rows });
       const payload = this.textEncoder.encode(json);
       const msg = new Uint8Array(payload.length + 1);
-      msg[0] = CMD_RESIZE;
+      msg[0] = this.cmdByte(CMD_RESIZE);
       msg.set(payload, 1);
       this.ws.send(msg.buffer);
     }
@@ -163,7 +187,7 @@ export class VPSConnection {
     const data = new Uint8Array(buffer);
     if (data.length === 0) return;
 
-    const msgType = data[0];
+    const msgType = this.normalizeMsg(data[0]);
     const payload = data.slice(1);
 
     // Measure latency from the last ping to the next server response
