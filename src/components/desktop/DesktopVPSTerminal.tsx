@@ -149,6 +149,7 @@ export function DesktopVPSTerminal() {
         setStateDetail(detail || '');
         if (state === 'connected') {
           conn.sendResize(term.cols, term.rows);
+          term.focus();
         } else if (state === 'error') {
           term.writeln(`\x1b[31m[ThamOS] ${detail || 'Connection error'}\x1b[0m`);
         } else if (state === 'reconnecting') {
@@ -338,7 +339,7 @@ export function DesktopVPSTerminal() {
       </div>
 
       <div className="flex-1 relative">
-        <div ref={termRef} className="absolute inset-0" style={{ padding: '4px' }} />
+        <div ref={termRef} className="absolute inset-0" style={{ padding: '4px' }} onClick={() => terminalRef.current?.focus()} />
 
         {connState === 'disconnected' && !hasAttempted && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610ee', zIndex: 10 }}>
