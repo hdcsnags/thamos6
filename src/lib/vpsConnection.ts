@@ -63,6 +63,8 @@ export class VPSConnection {
         this.reconnectAttempts = 0;
         this.setState('connected');
         this.startPing();
+        const authPayload = JSON.stringify({ AuthToken: '' });
+        this.ws?.send(authPayload);
       };
 
       this.ws.onmessage = (event) => {
