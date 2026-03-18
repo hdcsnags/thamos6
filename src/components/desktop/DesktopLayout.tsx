@@ -20,6 +20,7 @@ import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
 import { DesktopGitHub } from './DesktopGitHub';
 import { DesktopCodeEditor } from '../editor/DesktopCodeEditor';
+import { DesktopClock } from './DesktopClock';
 import { ToastProvider } from './ToastNotifications';
 import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
@@ -90,6 +91,41 @@ function DesktopContent() {
     }
   }, [desktop]);
 
+  const tileActiveWindow = useCallback((direction: 'left' | 'right' | 'up' | 'down') => {
+    if (!desktop.activeWindowId) return;
+    const win = desktop.windows[desktop.activeWindowId];
+    if (!win) return;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight - 44; // taskbar height
+
+    if (direction === 'up') {
+      if (win.maximized) return;
+      desktop.maximizeWindow(desktop.activeWindowId);
+      return;
+    }
+    if (direction === 'down') {
+      if (win.maximized) {
+        desktop.restoreWindow(desktop.activeWindowId);
+      } else {
+        desktop.minimizeWindow(desktop.activeWindowId);
+      }
+      return;
+    }
+
+    // Restore first if maximized
+    if (win.maximized) desktop.restoreWindow(desktop.activeWindowId);
+
+    const halfW = Math.floor(vw / 2);
+    if (direction === 'left') {
+      desktop.updateWindowPosition(desktop.activeWindowId, { x: 0, y: 0 });
+      desktop.updateWindowSize(desktop.activeWindowId, { width: halfW, height: vh });
+    } else {
+      desktop.updateWindowPosition(desktop.activeWindowId, { x: halfW, y: 0 });
+      desktop.updateWindowSize(desktop.activeWindowId, { width: halfW, height: vh });
+    }
+  }, [desktop]);
+
   // --- Keyboard shortcuts ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -142,6 +178,14 @@ function DesktopContent() {
         return;
       }
 
+      // Window tiling — Ctrl+Arrow
+      if (mod && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        const dir = e.key.replace('Arrow', '').toLowerCase() as 'left' | 'right' | 'up' | 'down';
+        tileActiveWindow(dir);
+        return;
+      }
+
       // Shortcuts help — ?
       if (e.key === '?' && !isInputFocused) {
         e.preventDefault();
@@ -152,7 +196,7 @@ function DesktopContent() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showLauncher, desktop, closeActiveWindow, reopenLastClosed, cycleWindows, focusTerminal]);
+  }, [showLauncher, desktop, closeActiveWindow, reopenLastClosed, cycleWindows, focusTerminal, tileActiveWindow]);
 
   // --- Right-click on desktop background ---
   const handleDesktopRightClick = useCallback((e: React.MouseEvent) => {
@@ -220,6 +264,7 @@ function DesktopContent() {
       </div>
 
       <DesktopIcons />
+      <DesktopClock />
 
       {visibleWindows.map(window => (
         <DesktopWindow key={window.id} id={window.id}>
@@ -255,6 +300,9 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
     { keys: 'Ctrl + Shift + Tab', desc: 'Cycle windows backward' },
     { keys: 'Ctrl + `', desc: 'Focus terminal' },
     { keys: 'Ctrl + 1-4', desc: 'Switch workspace' },
+    { keys: 'Ctrl + \u2190/\u2192', desc: 'Tile window left / right' },
+    { keys: 'Ctrl + \u2191', desc: 'Maximize window' },
+    { keys: 'Ctrl + \u2193', desc: 'Restore / minimize window' },
     { keys: '?', desc: 'Toggle this overlay' },
     { keys: 'Escape', desc: 'Close overlay / launcher' },
   ];
@@ -266,7 +314,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
       style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
     >
       <div
-        className="rounded-xl p-6 shadow-2xl"
+        className="rounded-xl p-6 shadow-2xl animate-overlay-open"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: palette.base,
