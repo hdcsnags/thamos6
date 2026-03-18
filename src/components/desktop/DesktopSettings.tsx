@@ -58,6 +58,7 @@ export function DesktopSettings() {
   const [vpsConns, setVpsConns] = useState<{ id: string; name: string; vps_url: string; hostname: string; is_default: boolean }[]>([]);
   const [vpsLoading, setVpsLoading] = useState(false);
   const [newVps, setNewVps] = useState({ name: '', url: '', hostname: '' });
+  const [accentColor, setAccentColorState] = useState(() => localStorage.getItem('thamos6-accent') || '#00d9ff');
   const [savingVps, setSavingVps] = useState(false);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
@@ -572,6 +573,51 @@ export function DesktopSettings() {
                 </div>
               </button>
             ))}
+
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-3 rounded-sm" style={{ backgroundColor: accentColor }} />
+                <span className="text-xs font-medium tracking-wider" style={{ color: accentColor }}>ACCENT COLOR</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { color: '#00d9ff', name: 'Cyan' },
+                  { color: '#00ff9d', name: 'Green' },
+                  { color: '#fbbf24', name: 'Amber' },
+                  { color: '#f43f5e', name: 'Rose' },
+                  { color: '#00b4d8', name: 'Blue' },
+                  { color: '#2dd4bf', name: 'Teal' },
+                  { color: '#a855f7', name: 'Purple' },
+                  { color: '#ff6b35', name: 'Orange' },
+                  { color: '#ff0080', name: 'Pink' },
+                ].map(opt => (
+                  <button
+                    key={opt.color}
+                    onClick={() => {
+                      setAccentColorState(opt.color);
+                      localStorage.setItem('thamos6-accent', opt.color);
+                      addToast({ type: 'success', title: `Accent: ${opt.name}`, message: 'Refresh to apply fully' });
+                    }}
+                    className="flex flex-col items-center gap-1 p-2 rounded-lg transition-all"
+                    style={{
+                      backgroundColor: accentColor === opt.color ? `${opt.color}15` : P.surface,
+                      border: `1px solid ${accentColor === opt.color ? `${opt.color}40` : P.border}`,
+                      minWidth: '56px',
+                    }}
+                    title={opt.name}
+                  >
+                    <div
+                      className="w-6 h-6 rounded-full"
+                      style={{
+                        backgroundColor: opt.color,
+                        boxShadow: accentColor === opt.color ? `0 0 12px ${opt.color}60` : 'none',
+                      }}
+                    />
+                    <span className="text-[10px]" style={{ color: accentColor === opt.color ? opt.color : P.dim }}>{opt.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>

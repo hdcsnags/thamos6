@@ -80,6 +80,18 @@ function DesktopContent() {
     desktop.focusWindow(visible[nextIdx].id);
   }, [desktop]);
 
+  const showDesktop = useCallback(() => {
+    const visible = desktop.getVisibleWindows().filter(w => !w.minimized);
+    if (visible.length > 0) {
+      visible.forEach(w => desktop.minimizeWindow(w.id));
+    } else {
+      // Restore all minimized windows on current workspace
+      Object.values(desktop.windows)
+        .filter(w => w.minimized && (w.workspaceId === desktop.activeWorkspace || w.pinned))
+        .forEach(w => desktop.restoreWindow(w.id));
+    }
+  }, [desktop]);
+
   const focusTerminal = useCallback(() => {
     const terminalWin = Object.values(desktop.windows).find(
       w => w.appId === 'terminal' && (w.workspaceId === desktop.activeWorkspace || w.pinned)
@@ -178,6 +190,12 @@ function DesktopContent() {
         return;
       }
 
+      if (mod && e.key === 'd') {
+        e.preventDefault();
+        showDesktop();
+        return;
+      }
+
       // Window tiling — Ctrl+Arrow
       if (mod && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         e.preventDefault();
@@ -196,7 +214,7 @@ function DesktopContent() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showLauncher, desktop, closeActiveWindow, reopenLastClosed, cycleWindows, focusTerminal, tileActiveWindow]);
+  }, [showLauncher, desktop, closeActiveWindow, reopenLastClosed, cycleWindows, focusTerminal, tileActiveWindow, showDesktop]);
 
   // --- Right-click on desktop background ---
   const handleDesktopRightClick = useCallback((e: React.MouseEvent) => {
@@ -303,6 +321,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
     { keys: 'Ctrl + \u2190/\u2192', desc: 'Tile window left / right' },
     { keys: 'Ctrl + \u2191', desc: 'Maximize window' },
     { keys: 'Ctrl + \u2193', desc: 'Restore / minimize window' },
+    { keys: 'Ctrl + D', desc: 'Show desktop / restore all' },
     { keys: '?', desc: 'Toggle this overlay' },
     { keys: 'Escape', desc: 'Close overlay / launcher' },
   ];
