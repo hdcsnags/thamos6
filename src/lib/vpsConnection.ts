@@ -15,10 +15,14 @@ const PING_INTERVAL = 30000;
 const MSG_OUTPUT = 0;
 const MSG_SET_TITLE = 1;
 const MSG_SET_PREFS = 2;
+const MSG_SET_RECONNECT = 3;
+const MSG_OUTPUT_SYNC = 4;
 
 const CMD_INPUT = 0;
 const CMD_RESIZE = 1;
-const CMD_PING = 2;
+const CMD_PAUSE = 2;
+const CMD_RESUME = 3;
+const CMD_JSON_DATA = 4;
 
 export class VPSConnection {
   private ws: WebSocket | null = null;
@@ -32,6 +36,8 @@ export class VPSConnection {
   private _state: ConnectionState = 'disconnected';
   private textEncoder = new TextEncoder();
   private textDecoder = new TextDecoder();
+  private authenticated = false;
+  private pendingResize: { cols: number; rows: number } | null = null;
 
   get state() { return this._state; }
 
@@ -41,6 +47,7 @@ export class VPSConnection {
 
   connect() {
     this.intentionalClose = false;
+    this.authenticated = false;
     this.cleanup();
     this.setState('connecting');
 
@@ -63,15 +70,13 @@ export class VPSConnection {
         this.reconnectAttempts = 0;
         this.setState('connected');
         this.startPing();
-        const authPayload = JSON.stringify({ AuthToken: '' });
-        this.ws?.send(authPayload);
       };
 
       this.ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           this.handleBinaryMessage(event.data);
         } else if (typeof event.data === 'string') {
-          this.options.onData(event.data);
+          this.handleTextMessage(event.data);
         }
       };
 
@@ -115,6 +120,14 @@ export class VPSConnection {
   }
 
   sendResize(cols: number, rows: number) {
+    if (!this.authenticated) {
+      this.pendingResize = { cols, rows };
+      return;
+    }
+    this.doSendResize(cols, rows);
+  }
+
+  private doSendResize(cols: number, rows: number) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       const json = JSON.stringify({ columns: cols, rows });
       const payload = this.textEncoder.encode(json);
@@ -133,6 +146,20 @@ export class VPSConnection {
     this.connect();
   }
 
+  private sendAuthToken(token: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const json = JSON.stringify({ AuthToken: token });
+    const payload = this.textEncoder.encode(json);
+    const msg = new Uint8Array(payload.length + 1);
+    msg[0] = CMD_JSON_DATA;
+    msg.set(payload, 1);
+    this.ws.send(msg.buffer);
+  }
+
+  private handleTextMessage(text: string) {
+    this.options.onData(text);
+  }
+
   private handleBinaryMessage(buffer: ArrayBuffer) {
     const data = new Uint8Array(buffer);
     if (data.length === 0) return;
@@ -142,7 +169,17 @@ export class VPSConnection {
 
     switch (msgType) {
       case MSG_OUTPUT:
-        this.options.onData(this.textDecoder.decode(payload));
+        if (!this.authenticated) {
+          this.authenticated = true;
+          this.sendAuthToken('');
+          if (this.pendingResize) {
+            this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
+            this.pendingResize = null;
+          }
+        }
+        if (payload.length > 0) {
+          this.options.onData(this.textDecoder.decode(payload));
+        }
         break;
       case MSG_SET_TITLE: {
         const title = this.textDecoder.decode(payload);
@@ -150,10 +187,35 @@ export class VPSConnection {
         break;
       }
       case MSG_SET_PREFS:
+        if (!this.authenticated) {
+          this.authenticated = true;
+          this.sendAuthToken('');
+          if (this.pendingResize) {
+            this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
+            this.pendingResize = null;
+          }
+        }
+        break;
+      case MSG_SET_RECONNECT:
+        break;
+      case MSG_OUTPUT_SYNC:
+        if (payload.length > 0) {
+          this.options.onData(this.textDecoder.decode(payload));
+        }
+        this.sendAck();
         break;
       default:
-        this.options.onData(this.textDecoder.decode(data));
+        if (payload.length > 0) {
+          this.options.onData(this.textDecoder.decode(data));
+        }
         break;
+    }
+  }
+
+  private sendAck() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      const msg = new Uint8Array([CMD_RESUME]);
+      this.ws.send(msg.buffer);
     }
   }
 
@@ -193,7 +255,7 @@ export class VPSConnection {
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.lastPingTime = performance.now();
-        const msg = new Uint8Array([CMD_PING]);
+        const msg = new Uint8Array([CMD_PAUSE]);
         this.ws.send(msg.buffer);
         requestAnimationFrame(() => {
           const latency = Math.round(performance.now() - this.lastPingTime);
