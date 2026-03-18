@@ -80,6 +80,9 @@ export class VPSConnection {
     };
 
     this.ws.onmessage = (event) => {
+      if (!this.authenticated) {
+        this.onAuthenticated();
+      }
       if (event.data instanceof ArrayBuffer) {
         this.handleBinaryMessage(event.data);
       } else if (typeof event.data === 'string') {
@@ -172,9 +175,6 @@ export class VPSConnection {
 
     switch (msgType) {
       case MSG_OUTPUT:
-        if (!this.authenticated) {
-          this.onAuthenticated();
-        }
         if (payload.length > 0) {
           this.options.onData(this.textDecoder.decode(payload));
         }
@@ -185,9 +185,6 @@ export class VPSConnection {
         break;
       }
       case MSG_SET_PREFS:
-        if (!this.authenticated) {
-          this.onAuthenticated();
-        }
         break;
       default:
         if (data.length > 0) {
