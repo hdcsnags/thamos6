@@ -1,5 +1,6 @@
-import { ReactNode, useRef, useState, useEffect, MouseEvent } from 'react';
+import { ReactNode, useRef, useState, useEffect, useCallback, MouseEvent } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
+import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography, shadows, accentBorder } from '../../design-system/tokens';
 
 interface DesktopWindowProps {
@@ -13,6 +14,7 @@ const SNAP_THRESHOLD = 20;
 
 export function DesktopWindow({ id, children }: DesktopWindowProps) {
   const desktop = useDesktop();
+  const { showContextMenu } = useContextMenu();
   const win = desktop.windows[id];
   const windowRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -51,6 +53,33 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
       desktop.maximizeWindow(id);
     }
   };
+
+  const handleTitleBarRightClick = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const workspaceItems: MenuEntry[] = [1, 2, 3, 4]
+      .filter(n => n !== win.workspaceId)
+      .map(n => ({
+        label: `Move to Workspace ${n}`,
+        icon: `${n}`,
+        action: () => desktop.moveToWorkspace(id, n),
+      }));
+
+    const items: MenuEntry[] = [
+      win.maximized
+        ? { label: 'Restore', icon: '\u2750', action: () => desktop.restoreWindow(id) }
+        : { label: 'Maximize', icon: '\u2B1C', action: () => desktop.maximizeWindow(id) },
+      { label: 'Minimize', icon: '\u2500', action: () => desktop.minimizeWindow(id) },
+      { type: 'divider' },
+      { label: win.pinned ? 'Unpin from All Workspaces' : 'Pin to All Workspaces', icon: '\uD83D\uDCCC', action: () => desktop.togglePinWindow(id) },
+      ...workspaceItems,
+      { type: 'divider' },
+      { label: 'Close', icon: '\u2717', shortcut: 'Ctrl+W', action: () => desktop.closeWindow(id), danger: true },
+    ];
+
+    showContextMenu(e.clientX, e.clientY, items);
+  }, [id, win, desktop, showContextMenu]);
 
   const handleResizeMouseDown = (e: MouseEvent, direction: string) => {
     if (e.button !== 0) return;
@@ -204,6 +233,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
       )}
       <div
         ref={windowRef}
+        data-window="true"
         className="flex flex-col overflow-hidden animate-window-open"
         style={{
           ...style,
@@ -227,6 +257,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           }}
           onMouseDown={handleTitleBarMouseDown}
           onDoubleClick={handleTitleBarDoubleClick}
+          onContextMenu={handleTitleBarRightClick}
           onMouseEnter={() => setTitleHovered(true)}
           onMouseLeave={() => setTitleHovered(false)}
         >

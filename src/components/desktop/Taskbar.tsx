@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useAlerts } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { supabase } from '../../lib/supabase';
 import { Bell } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
@@ -14,6 +15,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   const desktop = useDesktop();
   const { unreadCount } = useAlerts();
   const { user } = useAuth();
+  const { showContextMenu } = useContextMenu();
   const [time, setTime] = useState(new Date());
   const [agentStatus, setAgentStatus] = useState({ x: false, y: false, z: false });
 
@@ -52,6 +54,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
 
   return (
     <div
+      data-taskbar="true"
       className="fixed bottom-0 left-0 right-0 h-11 flex items-center justify-between px-3 gap-3 backdrop-blur-xl z-50"
       style={{
         backgroundColor: `${palette.base}cc`,
@@ -103,6 +106,18 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 } else {
                   desktop.focusWindow(win.id);
                 }
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                const items: MenuEntry[] = [
+                  win.minimized
+                    ? { label: 'Restore', icon: '\u2B1C', action: () => desktop.restoreWindow(win.id) }
+                    : { label: 'Minimize', icon: '\u2500', action: () => desktop.minimizeWindow(win.id) },
+                  { label: win.pinned ? 'Unpin' : 'Pin to All Workspaces', icon: '\uD83D\uDCCC', action: () => desktop.togglePinWindow(win.id) },
+                  { type: 'divider' },
+                  { label: 'Close', icon: '\u2717', action: () => desktop.closeWindow(win.id), danger: true },
+                ];
+                showContextMenu(e.clientX, e.clientY, items);
               }}
               className="flex items-center gap-2 px-2.5 h-7 rounded-md text-xs font-medium transition-all whitespace-nowrap"
               style={{
