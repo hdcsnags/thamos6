@@ -145,7 +145,6 @@ export function DesktopVPSTerminal() {
         setConnState(state);
         setStateDetail(detail || '');
         if (state === 'connected') {
-          term.writeln('\x1b[32m[ThamOS] Connected.\x1b[0m');
           conn.sendResize(term.cols, term.rows);
         } else if (state === 'error') {
           term.writeln(`\x1b[31m[ThamOS] ${detail || 'Connection error'}\x1b[0m`);

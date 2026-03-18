@@ -15,14 +15,9 @@ const PING_INTERVAL = 30000;
 const MSG_OUTPUT = 0;
 const MSG_SET_TITLE = 1;
 const MSG_SET_PREFS = 2;
-const MSG_SET_RECONNECT = 3;
-const MSG_OUTPUT_SYNC = 4;
 
 const CMD_INPUT = 0;
 const CMD_RESIZE = 1;
-const CMD_PAUSE = 2;
-const CMD_RESUME = 3;
-const CMD_JSON_DATA = 4;
 
 export class VPSConnection {
   private ws: WebSocket | null = null;
@@ -36,6 +31,7 @@ export class VPSConnection {
   private _state: ConnectionState = 'disconnected';
   private textEncoder = new TextEncoder();
   private textDecoder = new TextDecoder();
+  private authToken = '';
   private authenticated = false;
   private pendingResize: { cols: number; rows: number } | null = null;
 
@@ -45,62 +41,89 @@ export class VPSConnection {
     this.options = options;
   }
 
-  connect() {
+  async connect() {
     this.intentionalClose = false;
     this.authenticated = false;
     this.cleanup();
     this.setState('connecting');
 
     try {
-      const wsUrl = this.buildWsUrl(this.options.url);
-      this.ws = new WebSocket(wsUrl);
-      this.ws.binaryType = 'arraybuffer';
-
-      const timeout = setTimeout(() => {
-        if (this._state === 'connecting') {
-          this.ws?.close();
-          this.setState('error', 'Connection timed out');
-          this.scheduleReconnect();
-        }
-      }, 10000);
-
-      this.ws.onopen = () => {
-        clearTimeout(timeout);
-        this.reconnectDelay = INITIAL_RECONNECT_DELAY;
-        this.reconnectAttempts = 0;
-        this.setState('connected');
-        this.startPing();
-      };
-
-      this.ws.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-          this.handleBinaryMessage(event.data);
-        } else if (typeof event.data === 'string') {
-          this.handleTextMessage(event.data);
-        }
-      };
-
-      this.ws.onclose = (event) => {
-        clearTimeout(timeout);
-        this.stopPing();
-        if (!this.intentionalClose) {
-          this.setState('error', `Connection closed (code ${event.code})`);
-          this.scheduleReconnect();
-        } else {
-          this.setState('disconnected');
-        }
-      };
-
-      this.ws.onerror = () => {
-        clearTimeout(timeout);
-        if (this._state !== 'error') {
-          this.setState('error', 'Connection failed');
-        }
-      };
+      const baseUrl = this.buildHttpUrl(this.options.url);
+      await this.fetchToken(baseUrl);
+      this.openWebSocket();
     } catch (err) {
       this.setState('error', err instanceof Error ? err.message : 'Failed to connect');
       this.scheduleReconnect();
     }
+  }
+
+  private async fetchToken(baseUrl: string) {
+    try {
+      const resp = await fetch(`${baseUrl}/token`);
+      if (resp.ok) {
+        const data = await resp.json();
+        this.authToken = data.token || '';
+      } else {
+        this.authToken = '';
+      }
+    } catch {
+      this.authToken = '';
+    }
+  }
+
+  private openWebSocket() {
+    if (this.intentionalClose) return;
+
+    const wsUrl = this.buildWsUrl(this.options.url);
+    this.ws = new WebSocket(wsUrl);
+    this.ws.binaryType = 'arraybuffer';
+
+    const timeout = setTimeout(() => {
+      if (this._state === 'connecting') {
+        this.ws?.close();
+        this.setState('error', 'Connection timed out');
+        this.scheduleReconnect();
+      }
+    }, 10000);
+
+    this.ws.onopen = () => {
+      clearTimeout(timeout);
+      this.reconnectDelay = INITIAL_RECONNECT_DELAY;
+      this.reconnectAttempts = 0;
+      this.sendAuth();
+    };
+
+    this.ws.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        this.handleBinaryMessage(event.data);
+      } else if (typeof event.data === 'string') {
+        this.options.onData(event.data);
+      }
+    };
+
+    this.ws.onclose = (event) => {
+      clearTimeout(timeout);
+      this.stopPing();
+      if (!this.intentionalClose) {
+        this.setState('error', `Connection closed (code ${event.code})`);
+        this.scheduleReconnect();
+      } else {
+        this.setState('disconnected');
+      }
+    };
+
+    this.ws.onerror = () => {
+      clearTimeout(timeout);
+      if (this._state !== 'error') {
+        this.setState('error', 'Connection failed');
+      }
+    };
+  }
+
+  private sendAuth() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const authPayload = JSON.stringify({ AuthToken: this.authToken });
+    this.ws.send(authPayload);
   }
 
   disconnect() {
@@ -146,20 +169,6 @@ export class VPSConnection {
     this.connect();
   }
 
-  private sendAuthToken(token: string) {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-    const json = JSON.stringify({ AuthToken: token });
-    const payload = this.textEncoder.encode(json);
-    const msg = new Uint8Array(payload.length + 1);
-    msg[0] = CMD_JSON_DATA;
-    msg.set(payload, 1);
-    this.ws.send(msg.buffer);
-  }
-
-  private handleTextMessage(text: string) {
-    this.options.onData(text);
-  }
-
   private handleBinaryMessage(buffer: ArrayBuffer) {
     const data = new Uint8Array(buffer);
     if (data.length === 0) return;
@@ -170,12 +179,7 @@ export class VPSConnection {
     switch (msgType) {
       case MSG_OUTPUT:
         if (!this.authenticated) {
-          this.authenticated = true;
-          this.sendAuthToken('');
-          if (this.pendingResize) {
-            this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
-            this.pendingResize = null;
-          }
+          this.onAuthenticated();
         }
         if (payload.length > 0) {
           this.options.onData(this.textDecoder.decode(payload));
@@ -188,35 +192,38 @@ export class VPSConnection {
       }
       case MSG_SET_PREFS:
         if (!this.authenticated) {
-          this.authenticated = true;
-          this.sendAuthToken('');
-          if (this.pendingResize) {
-            this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
-            this.pendingResize = null;
-          }
+          this.onAuthenticated();
         }
-        break;
-      case MSG_SET_RECONNECT:
-        break;
-      case MSG_OUTPUT_SYNC:
-        if (payload.length > 0) {
-          this.options.onData(this.textDecoder.decode(payload));
-        }
-        this.sendAck();
         break;
       default:
-        if (payload.length > 0) {
+        if (data.length > 0) {
           this.options.onData(this.textDecoder.decode(data));
         }
         break;
     }
   }
 
-  private sendAck() {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      const msg = new Uint8Array([CMD_RESUME]);
-      this.ws.send(msg.buffer);
+  private onAuthenticated() {
+    this.authenticated = true;
+    this.setState('connected');
+    this.startPing();
+    if (this.pendingResize) {
+      this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
+      this.pendingResize = null;
     }
+  }
+
+  private buildHttpUrl(url: string): string {
+    let httpUrl = url.trim().replace(/\/$/, '');
+    if (httpUrl.startsWith('ws://')) {
+      httpUrl = 'http://' + httpUrl.slice(5);
+    } else if (httpUrl.startsWith('wss://')) {
+      httpUrl = 'https://' + httpUrl.slice(6);
+    } else if (!httpUrl.startsWith('http://') && !httpUrl.startsWith('https://')) {
+      httpUrl = 'https://' + httpUrl;
+    }
+    httpUrl = httpUrl.replace(/\/ws\/?$/, '');
+    return httpUrl;
   }
 
   private buildWsUrl(url: string): string {
@@ -255,7 +262,7 @@ export class VPSConnection {
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.lastPingTime = performance.now();
-        const msg = new Uint8Array([CMD_PAUSE]);
+        const msg = new Uint8Array([CMD_INPUT]);
         this.ws.send(msg.buffer);
         requestAnimationFrame(() => {
           const latency = Math.round(performance.now() - this.lastPingTime);
