@@ -48,26 +48,11 @@ export class VPSConnection {
     this.setState('connecting');
 
     try {
-      const baseUrl = this.buildHttpUrl(this.options.url);
-      await this.fetchToken(baseUrl);
+      this.authToken = '';
       this.openWebSocket();
     } catch (err) {
       this.setState('error', err instanceof Error ? err.message : 'Failed to connect');
       this.scheduleReconnect();
-    }
-  }
-
-  private async fetchToken(baseUrl: string) {
-    try {
-      const resp = await fetch(`${baseUrl}/token`);
-      if (resp.ok) {
-        const data = await resp.json();
-        this.authToken = data.token || '';
-      } else {
-        this.authToken = '';
-      }
-    } catch {
-      this.authToken = '';
     }
   }
 
@@ -211,19 +196,6 @@ export class VPSConnection {
       this.doSendResize(this.pendingResize.cols, this.pendingResize.rows);
       this.pendingResize = null;
     }
-  }
-
-  private buildHttpUrl(url: string): string {
-    let httpUrl = url.trim().replace(/\/$/, '');
-    if (httpUrl.startsWith('ws://')) {
-      httpUrl = 'http://' + httpUrl.slice(5);
-    } else if (httpUrl.startsWith('wss://')) {
-      httpUrl = 'https://' + httpUrl.slice(6);
-    } else if (!httpUrl.startsWith('http://') && !httpUrl.startsWith('https://')) {
-      httpUrl = 'https://' + httpUrl;
-    }
-    httpUrl = httpUrl.replace(/\/ws\/?$/, '');
-    return httpUrl;
   }
 
   private buildWsUrl(url: string): string {
