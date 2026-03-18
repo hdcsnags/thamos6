@@ -23,7 +23,6 @@ export function DesktopVPSTerminal() {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const connectionRef = useRef<VPSConnection | null>(null);
-  const hasAutoConnected = useRef(false);
 
   const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [stateDetail, setStateDetail] = useState('');
@@ -33,6 +32,7 @@ export function DesktopVPSTerminal() {
   const [urlInput, setUrlInput] = useState('');
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [shellTitle, setShellTitle] = useState('');
+  const [hasAttempted, setHasAttempted] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -120,6 +120,7 @@ export function DesktopVPSTerminal() {
   const handleConnect = useCallback((url: string) => {
     if (!terminalRef.current || !url.trim()) return;
 
+    setHasAttempted(true);
     connectionRef.current?.destroy();
 
     const term = terminalRef.current;
@@ -178,11 +179,10 @@ export function DesktopVPSTerminal() {
   }, [urlInput, user, vpsConfig, handleConnect]);
 
   useEffect(() => {
-    if (!loadingConfig && vpsConfig && terminalRef.current && !hasAutoConnected.current) {
-      hasAutoConnected.current = true;
+    if (!loadingConfig && vpsConfig && terminalRef.current && !hasAttempted) {
       handleConnect(vpsConfig.vps_url);
     }
-  }, [loadingConfig, vpsConfig, handleConnect]);
+  }, [loadingConfig, vpsConfig, handleConnect, hasAttempted]);
 
   useEffect(() => {
     return () => {
@@ -320,8 +320,8 @@ export function DesktopVPSTerminal() {
       <div className="flex-1 relative">
         <div ref={termRef} className="absolute inset-0" style={{ padding: '4px' }} />
 
-        {connState === 'disconnected' && !hasAutoConnected.current && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610ee' }}>
+        {connState === 'disconnected' && !hasAttempted && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610ee', zIndex: 10 }}>
             <div className="w-80 space-y-4" style={{ fontFamily: typography.mono }}>
               <div className="text-center">
                 <div className="text-lg mb-1" style={{ color: palette.cyan }}>VPS Terminal</div>
@@ -380,10 +380,12 @@ export function DesktopVPSTerminal() {
           </div>
         )}
 
-        {connState === 'disconnected' && hasAutoConnected.current && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610dd' }}>
+        {(connState === 'disconnected' || connState === 'error') && hasAttempted && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610dd', zIndex: 10 }}>
             <div className="text-center space-y-3" style={{ fontFamily: typography.mono }}>
-              <div className="text-sm" style={{ color: palette.textTertiary }}>Session ended</div>
+              <div className="text-sm" style={{ color: connState === 'error' ? palette.rose : palette.textTertiary }}>
+                {connState === 'error' ? (stateDetail || 'Connection failed') : 'Session ended'}
+              </div>
               <button
                 onClick={() => handleConnect(urlInput)}
                 className="px-6 py-2 text-xs font-medium rounded transition-all"
