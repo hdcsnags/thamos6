@@ -34,6 +34,7 @@ export class VPSConnection {
   private authToken = '';
   private authenticated = false;
   private pendingResize: { cols: number; rows: number } | null = null;
+  private lastKnownSize: { cols: number; rows: number } | null = null;
 
   get state() { return this._state; }
 
@@ -60,7 +61,7 @@ export class VPSConnection {
     if (this.intentionalClose) return;
 
     const wsUrl = this.buildWsUrl(this.options.url);
-    this.ws = new WebSocket(wsUrl);
+    this.ws = new WebSocket(wsUrl, ['tty']);
     this.ws.binaryType = 'arraybuffer';
 
     const timeout = setTimeout(() => {
@@ -137,6 +138,7 @@ export class VPSConnection {
 
   private doSendResize(cols: number, rows: number) {
     if (this.ws?.readyState === WebSocket.OPEN) {
+      this.lastKnownSize = { cols, rows };
       const json = JSON.stringify({ columns: cols, rows });
       const payload = this.textEncoder.encode(json);
       const msg = new Uint8Array(payload.length + 1);
@@ -160,6 +162,13 @@ export class VPSConnection {
 
     const msgType = data[0];
     const payload = data.slice(1);
+
+    // Measure latency from the last ping to the next server response
+    if (this.lastPingTime > 0) {
+      const latency = Math.round(performance.now() - this.lastPingTime);
+      this.lastPingTime = 0;
+      this.options.onLatencyUpdate(latency);
+    }
 
     switch (msgType) {
       case MSG_OUTPUT:
@@ -229,17 +238,13 @@ export class VPSConnection {
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY);
   }
 
+  /** Keep the WebSocket alive by re-sending the current terminal size (harmless no-op). */
   private startPing() {
     this.stopPing();
     this.pingTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
+      if (this.ws?.readyState === WebSocket.OPEN && this.lastKnownSize) {
         this.lastPingTime = performance.now();
-        const msg = new Uint8Array([CMD_INPUT]);
-        this.ws.send(msg.buffer);
-        requestAnimationFrame(() => {
-          const latency = Math.round(performance.now() - this.lastPingTime);
-          this.options.onLatencyUpdate(latency);
-        });
+        this.doSendResize(this.lastKnownSize.cols, this.lastKnownSize.rows);
       }
     }, PING_INTERVAL);
   }

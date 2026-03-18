@@ -33,6 +33,7 @@ export function DesktopVPSTerminal() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [shellTitle, setShellTitle] = useState('');
   const [hasAttempted, setHasAttempted] = useState(false);
+  const [termReady, setTermReady] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -85,11 +86,13 @@ export function DesktopVPSTerminal() {
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    setTermReady(true);
 
     return () => {
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      setTermReady(false);
     };
   }, []);
 
@@ -196,10 +199,10 @@ export function DesktopVPSTerminal() {
   }, [urlInput, user, vpsConfig, handleConnect]);
 
   useEffect(() => {
-    if (!loadingConfig && vpsConfig && terminalRef.current && !hasAttempted) {
+    if (!loadingConfig && vpsConfig && termReady && !hasAttempted) {
       handleConnect(vpsConfig.vps_url);
     }
-  }, [loadingConfig, vpsConfig, handleConnect, hasAttempted]);
+  }, [loadingConfig, vpsConfig, termReady, handleConnect, hasAttempted]);
 
   useEffect(() => {
     return () => {
