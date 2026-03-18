@@ -23,6 +23,7 @@ export function DesktopVPSTerminal() {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const connectionRef = useRef<VPSConnection | null>(null);
+  const hasAutoConnected = useRef(false);
 
   const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [stateDetail, setStateDetail] = useState('');
@@ -31,6 +32,7 @@ export function DesktopVPSTerminal() {
   const [vpsConfig, setVpsConfig] = useState<VPSConfig | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const [loadingConfig, setLoadingConfig] = useState(true);
+  const [shellTitle, setShellTitle] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -75,7 +77,7 @@ export function DesktopVPSTerminal() {
     try {
       term.loadAddon(new WebglAddon());
     } catch {
-      // WebGL not available, canvas renderer used
+      // WebGL not available
     }
 
     fitAddon.fit();
@@ -140,6 +142,7 @@ export function DesktopVPSTerminal() {
         }
       },
       onLatencyUpdate: setLatency,
+      onTitleChange: setShellTitle,
     });
 
     term.onData((data) => conn.send(data));
@@ -173,6 +176,13 @@ export function DesktopVPSTerminal() {
     }
     handleConnect(url);
   }, [urlInput, user, vpsConfig, handleConnect]);
+
+  useEffect(() => {
+    if (!loadingConfig && vpsConfig && terminalRef.current && !hasAutoConnected.current) {
+      hasAutoConnected.current = true;
+      handleConnect(vpsConfig.vps_url);
+    }
+  }, [loadingConfig, vpsConfig, handleConnect]);
 
   useEffect(() => {
     return () => {
@@ -215,7 +225,7 @@ export function DesktopVPSTerminal() {
         className="flex items-center justify-between px-3 py-1.5 shrink-0"
         style={{
           backgroundColor: palette.elevated,
-          borderBottom: `1px solid ${isConnected ? palette.amber + '40' : palette.borderSubtle}`,
+          borderBottom: `1px solid ${isConnected ? palette.green + '40' : palette.borderSubtle}`,
           fontFamily: typography.mono,
         }}
       >
@@ -223,9 +233,9 @@ export function DesktopVPSTerminal() {
           <span
             className="text-[10px] font-bold px-1.5 py-0.5 rounded"
             style={{
-              backgroundColor: isConnected ? palette.amber + '20' : palette.textDisabled + '15',
-              color: isConnected ? palette.amber : palette.textDisabled,
-              border: `1px solid ${isConnected ? palette.amber + '40' : palette.textDisabled + '20'}`,
+              backgroundColor: isConnected ? palette.green + '20' : palette.textDisabled + '15',
+              color: isConnected ? palette.green : palette.textDisabled,
+              border: `1px solid ${isConnected ? palette.green + '40' : palette.textDisabled + '20'}`,
             }}
           >
             LIVE
@@ -249,9 +259,9 @@ export function DesktopVPSTerminal() {
             </span>
           </div>
 
-          {isConnected && vpsConfig?.hostname && (
+          {isConnected && (shellTitle || vpsConfig?.hostname) && (
             <span style={{ fontSize: '10px', color: palette.textTertiary }}>
-              {vpsConfig.hostname}
+              {shellTitle || vpsConfig?.hostname}
             </span>
           )}
         </div>
@@ -310,13 +320,13 @@ export function DesktopVPSTerminal() {
       <div className="flex-1 relative">
         <div ref={termRef} className="absolute inset-0" style={{ padding: '4px' }} />
 
-        {connState === 'disconnected' && (
+        {connState === 'disconnected' && !hasAutoConnected.current && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610ee' }}>
             <div className="w-80 space-y-4" style={{ fontFamily: typography.mono }}>
               <div className="text-center">
                 <div className="text-lg mb-1" style={{ color: palette.cyan }}>VPS Terminal</div>
                 <div className="text-[10px]" style={{ color: palette.textDisabled }}>
-                  Connect to your remote server
+                  Connect to your remote server via Cloudflare Tunnel
                 </div>
               </div>
 
@@ -328,7 +338,7 @@ export function DesktopVPSTerminal() {
                   type="text"
                   value={urlInput}
                   onChange={e => setUrlInput(e.target.value)}
-                  placeholder="terminal.yourdomain.com"
+                  placeholder="terminal.thamos.online"
                   onKeyDown={e => { if (e.key === 'Enter') handleSaveAndConnect(); }}
                   className="w-full px-3 py-2 text-xs rounded"
                   style={{
@@ -362,10 +372,29 @@ export function DesktopVPSTerminal() {
                 }}
               >
                 <span className="text-[10px]" style={{ color: palette.textDisabled }}>
-                  Requires ttyd or custom relay running behind a Cloudflare Tunnel.
+                  Requires ttyd running behind a Cloudflare Tunnel.
                   Configure in Settings {'>'} VPS.
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {connState === 'disconnected' && hasAutoConnected.current && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610dd' }}>
+            <div className="text-center space-y-3" style={{ fontFamily: typography.mono }}>
+              <div className="text-sm" style={{ color: palette.textTertiary }}>Session ended</div>
+              <button
+                onClick={() => handleConnect(urlInput)}
+                className="px-6 py-2 text-xs font-medium rounded transition-all"
+                style={{
+                  backgroundColor: palette.cyan + '15',
+                  border: `1px solid ${palette.cyan}40`,
+                  color: palette.cyan,
+                }}
+              >
+                RECONNECT
+              </button>
             </div>
           </div>
         )}
@@ -380,16 +409,16 @@ export function DesktopVPSTerminal() {
         }}
       >
         <div className="flex items-center gap-4" style={{ fontSize: '10px', color: palette.textDisabled }}>
-          <span>vps</span>
+          <span>{vpsConfig?.name || 'vps'}</span>
           <span>UTF-8</span>
-          {isConnected && <span>bash</span>}
+          {isConnected && <span>ttyd</span>}
         </div>
         <div className="flex items-center gap-4" style={{ fontSize: '10px', color: palette.textDisabled }}>
           {stateDetail && connState !== 'connected' && (
             <span style={{ color: statusColor }}>{stateDetail}</span>
           )}
-          <span style={{ color: isConnected ? palette.amber : palette.textDisabled }}>
-            {isConnected ? 'LIVE' : 'SAFE'}
+          <span style={{ color: isConnected ? palette.green : palette.textDisabled }}>
+            {isConnected ? 'LIVE' : 'IDLE'}
           </span>
         </div>
       </div>

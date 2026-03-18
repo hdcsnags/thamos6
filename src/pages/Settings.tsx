@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock, User, Settings as SettingsIcon, Palette } from 'lucide-react';
+import { Key, Upload, BarChart3, Plus, Trash2, Check, AlertCircle, Download, Shield, Lock, User, Palette, Terminal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/themecontext';
 import { supabase } from '../lib/supabase';
 
-type TabType = 'account' | 'appearance' | 'api-keys' | 'usage';
+type TabType = 'account' | 'appearance' | 'api-keys' | 'vps' | 'usage';
 
 interface ApiKey {
   id: string;
@@ -52,6 +52,10 @@ export default function Settings() {
     confirmPassword: '',
   });
   const [changingPassword, setChangingPassword] = useState(false);
+  const [vpsConns, setVpsConns] = useState<{ id: string; name: string; vps_url: string; hostname: string; is_default: boolean }[]>([]);
+  const [vpsLoading, setVpsLoading] = useState(false);
+  const [newVps, setNewVps] = useState({ name: '', url: '', hostname: '' });
+  const [savingVps, setSavingVps] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -254,6 +258,48 @@ export default function Settings() {
     URL.revokeObjectURL(url);
   };
 
+  const fetchVps = useCallback(async () => {
+    if (!user) return;
+    setVpsLoading(true);
+    const { data } = await supabase.from('user_vps_connections').select('id, name, vps_url, hostname, is_default').eq('user_id', user.id).order('created_at');
+    if (data) setVpsConns(data);
+    setVpsLoading(false);
+  }, [user]);
+
+  useEffect(() => { fetchVps(); }, [fetchVps]);
+
+  const addVps = async () => {
+    if (!user || !newVps.name || !newVps.url) return;
+    setSavingVps(true);
+    try {
+      const isFirst = vpsConns.length === 0;
+      await supabase.from('user_vps_connections').insert({
+        user_id: user.id, name: newVps.name, vps_url: newVps.url, hostname: newVps.hostname, is_default: isFirst,
+      });
+      showMessage('success', `VPS "${newVps.name}" added`);
+      setNewVps({ name: '', url: '', hostname: '' });
+      fetchVps();
+    } catch (err) {
+      showMessage('error', err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSavingVps(false);
+    }
+  };
+
+  const deleteVps = async (id: string) => {
+    await supabase.from('user_vps_connections').delete().eq('id', id);
+    showMessage('success', 'VPS connection removed');
+    fetchVps();
+  };
+
+  const setDefaultVps = async (id: string) => {
+    if (!user) return;
+    await supabase.from('user_vps_connections').update({ is_default: false }).eq('user_id', user.id);
+    await supabase.from('user_vps_connections').update({ is_default: true }).eq('id', id);
+    showMessage('success', 'Default VPS updated');
+    fetchVps();
+  };
+
   const totalLookups = usageStats.reduce((sum, s) => sum + s.count, 0);
   const lookupsByType = usageStats.reduce((acc, s) => {
     acc[s.lookup_type] = (acc[s.lookup_type] || 0) + s.count;
@@ -282,6 +328,7 @@ export default function Settings() {
     { id: 'account' as TabType, name: 'Account', icon: User },
     { id: 'appearance' as TabType, name: 'Appearance', icon: Palette },
     { id: 'api-keys' as TabType, name: 'API Keys', icon: Key },
+    { id: 'vps' as TabType, name: 'VPS', icon: Terminal },
     { id: 'usage' as TabType, name: 'Usage & Stats', icon: BarChart3 },
   ];
 
@@ -639,6 +686,119 @@ export default function Settings() {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'vps' && (
+            <div className="space-y-6 max-w-2xl">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                  <Terminal className="w-5 h-5 text-amber-400" />
+                  VPS Connections
+                </h2>
+                <p className="text-sm text-slate-400 mb-6">
+                  Manage your remote VPS terminal connections. The default connection is used when opening VPS Terminal.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={newVps.name}
+                  onChange={e => setNewVps(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Connection name (e.g. Primary VPS)"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <input
+                  type="text"
+                  value={newVps.url}
+                  onChange={e => setNewVps(prev => ({ ...prev, url: e.target.value }))}
+                  placeholder="Tunnel URL (e.g. terminal.thamos.online)"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <input
+                  type="text"
+                  value={newVps.hostname}
+                  onChange={e => setNewVps(prev => ({ ...prev, hostname: e.target.value }))}
+                  placeholder="Display hostname (optional)"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <button
+                  onClick={addVps}
+                  disabled={!newVps.name || !newVps.url || savingVps}
+                  className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-all font-medium flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  {savingVps ? 'Adding...' : 'Add Connection'}
+                </button>
+              </div>
+
+              {vpsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-amber-500"></div>
+                </div>
+              ) : vpsConns.length === 0 ? (
+                <div className="text-center py-8">
+                  <Terminal className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                  <p className="text-slate-500">No VPS connections configured</p>
+                  <p className="text-sm text-slate-600 mt-1">Add one above to get started</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {vpsConns.map(conn => (
+                    <div
+                      key={conn.id}
+                      className={`flex items-center justify-between p-4 rounded-lg ${
+                        conn.is_default ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className={`font-medium ${conn.is_default ? 'text-amber-400' : 'text-white'}`}>
+                            {conn.name}
+                          </p>
+                          {conn.is_default && (
+                            <span className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded-md font-medium">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-400 font-mono truncate">{conn.vps_url}</p>
+                        {conn.hostname && (
+                          <p className="text-xs text-slate-500">{conn.hostname}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        {!conn.is_default && (
+                          <button
+                            onClick={() => setDefaultVps(conn.id)}
+                            className="text-sm px-3 py-1 text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
+                          >
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteVps(conn.id)}
+                          className="p-2 text-slate-400 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                <div className="flex items-center gap-2 text-amber-400 text-sm mb-2">
+                  <Shield className="w-4 h-4" />
+                  Cloudflare Tunnel
+                </div>
+                <p className="text-sm text-slate-400">
+                  VPS Terminal connects via ttyd + Cloudflare Tunnel. No ports need to be open on your server.
+                  The default connection is automatically used when opening VPS Terminal in Desktop mode.
+                </p>
               </div>
             </div>
           )}
