@@ -3,6 +3,7 @@ import { useDesktop } from '../../contexts/DesktopContext';
 import { useAlerts } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useContextMenu, type MenuEntry } from './ContextMenu';
+import { NotificationCenter } from './NotificationCenter';
 import { supabase } from '../../lib/supabase';
 import { Bell } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
@@ -18,6 +19,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   const { showContextMenu } = useContextMenu();
   const [time, setTime] = useState(new Date());
   const [agentStatus, setAgentStatus] = useState({ x: false, y: false, z: false });
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -167,16 +169,9 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
 
           <div className="relative">
             <button
-              onClick={() => {
-                desktop.openWindow({
-                  appId: 'intel',
-                  title: 'Intel Dashboard',
-                  icon: '\u{1F4E1}',
-                  accentColor: palette.cyan,
-                });
-              }}
+              onClick={() => setShowNotifications(prev => !prev)}
               className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
-              style={{ color: palette.amber }}
+              style={{ color: showNotifications ? palette.cyan : palette.amber }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.amber}10`; }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               aria-label="Notifications"
@@ -191,6 +186,9 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 </span>
               )}
             </button>
+            {showNotifications && (
+              <NotificationCenter onClose={() => setShowNotifications(false)} />
+            )}
           </div>
         </div>
 

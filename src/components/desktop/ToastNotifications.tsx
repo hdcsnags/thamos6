@@ -15,6 +15,8 @@ interface Toast {
 interface ToastContextType {
   addToast: (toast: Omit<Toast, 'id' | 'timestamp'>) => void;
   toasts: Toast[];
+  history: Toast[];
+  clearHistory: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -38,6 +40,7 @@ const DEFAULT_DURATION = 4000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [history, setHistory] = useState<Toast[]>([]);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeToast = useCallback((id: string) => {
@@ -55,6 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const duration = toast.duration ?? DEFAULT_DURATION;
 
     setToasts(prev => [...prev.slice(-4), newToast]); // Keep max 5
+    setHistory(prev => [...prev.slice(-49), newToast]); // Keep last 50 in history
 
     const timer = setTimeout(() => {
       timersRef.current.delete(id);
@@ -70,8 +74,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const clearHistory = useCallback(() => setHistory([]), []);
+
   return (
-    <ToastContext.Provider value={{ addToast, toasts }}>
+    <ToastContext.Provider value={{ addToast, toasts, history, clearHistory }}>
       {children}
       <div
         className="fixed bottom-14 right-3 flex flex-col gap-2 z-[9999]"
