@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDesktop } from '../../contexts/DesktopContext';
 import { supabase } from '../../lib/supabase';
 
 const P = {
@@ -25,10 +26,21 @@ interface AgentStatus {
   color: string;
 }
 
+interface ActivityEvent {
+  id: string;
+  time: string;
+  message: string;
+  color: string;
+}
+
 export function DesktopSystemMonitor() {
   const { user } = useAuth();
+  const desktop = useDesktop();
   const [sessionStart] = useState(Date.now());
   const [uptime, setUptime] = useState('00:00:00');
+  const [activity, setActivity] = useState<ActivityEvent[]>([
+    { id: 'boot', time: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'ThamOS session started', color: P.green },
+  ]);
   const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([
     { name: 'ThamOS-X', provider: 'anthropic_key', keyConfigured: false, color: P.green },
     { name: 'ThamOS-Y', provider: 'openai_key', keyConfigured: false, color: P.orange },
@@ -96,13 +108,58 @@ export function DesktopSystemMonitor() {
     loadStatus();
   }, [user]);
 
+  // Track window opens/closes for activity feed
+  const [prevWindowCount, setPrevWindowCount] = useState(Object.keys(desktop.windows).length);
+  useEffect(() => {
+    const currentCount = Object.keys(desktop.windows).length;
+    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+    if (currentCount > prevWindowCount) {
+      const newest = Object.values(desktop.windows).sort((a, b) => b.zIndex - a.zIndex)[0];
+      if (newest) {
+        setActivity(prev => [...prev.slice(-19), {
+          id: `open-${Date.now()}`,
+          time: now,
+          message: `Opened ${newest.title}`,
+          color: P.cyan,
+        }]);
+      }
+    } else if (currentCount < prevWindowCount) {
+      setActivity(prev => [...prev.slice(-19), {
+        id: `close-${Date.now()}`,
+        time: now,
+        message: `Window closed`,
+        color: P.dim,
+      }]);
+    }
+    setPrevWindowCount(currentCount);
+  }, [Object.keys(desktop.windows).length]);
+
+  // Track workspace switches
+  const [prevWorkspace, setPrevWorkspace] = useState(desktop.activeWorkspace);
+  useEffect(() => {
+    if (desktop.activeWorkspace !== prevWorkspace) {
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+      setActivity(prev => [...prev.slice(-19), {
+        id: `ws-${Date.now()}`,
+        time: now,
+        message: `Switched to Workspace ${desktop.activeWorkspace}`,
+        color: P.amber,
+      }]);
+      setPrevWorkspace(desktop.activeWorkspace);
+    }
+  }, [desktop.activeWorkspace]);
+
   const totalScans = scanCounts.ip + scanCounts.url + scanCounts.hash + scanCounts.domain;
+  const windowCount = Object.keys(desktop.windows).length;
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
       <Section title="SESSION">
         <Row label="USER" value={user?.email || 'anonymous'} color={P.cyan} />
         <Row label="UPTIME" value={uptime} color={P.green} />
+        <Row label="WINDOWS" value={windowCount.toString()} color={P.textLight} />
+        <Row label="WORKSPACE" value={desktop.activeWorkspace.toString()} color={P.amber} />
         <Row label="STATUS" value="ACTIVE" color={P.green} />
       </Section>
 
@@ -154,6 +211,17 @@ export function DesktopSystemMonitor() {
               }}
             />
           </div>
+        </div>
+      </Section>
+
+      <Section title="ACTIVITY">
+        <div className="space-y-0.5 max-h-40 overflow-y-auto">
+          {activity.slice().reverse().map(event => (
+            <div key={event.id} className="flex items-start gap-2 py-0.5">
+              <span className="text-[10px] tabular-nums shrink-0" style={{ color: P.dim }}>{event.time}</span>
+              <span className="text-[10px]" style={{ color: event.color }}>{event.message}</span>
+            </div>
+          ))}
         </div>
       </Section>
     </div>
