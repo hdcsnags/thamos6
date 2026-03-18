@@ -1,9 +1,11 @@
 import { useDesktop } from '../../contexts/DesktopContext';
+import { useContextMenu } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
 import { getDesktopIcons } from '../../design-system/appRegistry';
 
 export function DesktopIcons() {
   const desktop = useDesktop();
+  const { showContextMenu } = useContextMenu();
   const icons = getDesktopIcons();
 
   const handleDoubleClick = (app: ReturnType<typeof getDesktopIcons>[number]) => {
@@ -20,7 +22,17 @@ export function DesktopIcons() {
       {icons.map(app => (
         <button
           key={app.id}
+          data-icon="true"
           onDoubleClick={() => handleDoubleClick(app)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showContextMenu(e.clientX, e.clientY, [
+              { label: `Open ${app.name}`, icon: app.icon, action: () => handleDoubleClick(app) },
+              { label: 'Open in Workspace 2', icon: '2', action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 2 }) },
+              { label: 'Open in Workspace 3', icon: '3', action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 3 }) },
+            ]);
+          }}
           className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all hover:bg-white/5 pointer-events-auto group"
           style={{ width: '76px' }}
         >

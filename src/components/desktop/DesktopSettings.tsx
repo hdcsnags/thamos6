@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/themecontext';
+import { useToast } from './ToastNotifications';
 import { supabase } from '../../lib/supabase';
 
 const P = {
@@ -45,6 +46,7 @@ const SERVICES = [
 export function DesktopSettings() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { addToast } = useToast();
   const [tab, setTab] = useState<TabType>('api-keys');
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +62,7 @@ export function DesktopSettings() {
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
+    addToast({ type: type === 'success' ? 'success' : 'error', title: text });
     setTimeout(() => setMessage(null), 3000);
   };
 
