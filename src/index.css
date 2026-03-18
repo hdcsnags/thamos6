@@ -83,6 +83,21 @@ html {
       transform: scale(1);
     }
   }
+
+  @keyframes wsFlash {
+    0% {
+      opacity: 1;
+      transform: scale(0.8);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.1);
+    }
+  }
 }
 
 ::-webkit-scrollbar {

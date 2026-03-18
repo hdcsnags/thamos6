@@ -31,6 +31,7 @@ function DesktopContent() {
   const [showLauncher, setShowLauncher] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [closedHistory, setClosedHistory] = useState<Array<{ appId: string; title: string }>>([]);
+  const [workspaceFlash, setWorkspaceFlash] = useState<number | null>(null);
 
   // Restore layout on boot
   useEffect(() => {
@@ -52,6 +53,14 @@ function DesktopContent() {
       }
     }
   }, [desktop.bootComplete]);
+
+  // --- Workspace switch indicator ---
+  useEffect(() => {
+    if (!desktop.bootComplete) return;
+    setWorkspaceFlash(desktop.activeWorkspace);
+    const timer = setTimeout(() => setWorkspaceFlash(null), 800);
+    return () => clearTimeout(timer);
+  }, [desktop.activeWorkspace]);
 
   // --- Keyboard shortcut helpers ---
   const closeActiveWindow = useCallback(() => {
@@ -280,6 +289,26 @@ function DesktopContent() {
           }}
         />
       </div>
+
+      {workspaceFlash !== null && (
+        <div
+          className="fixed inset-0 flex items-center justify-center pointer-events-none z-[80]"
+          style={{ animation: 'wsFlash 800ms ease-out forwards' }}
+        >
+          <div
+            style={{
+              fontSize: '120px',
+              fontWeight: 200,
+              fontFamily: typography.mono,
+              color: palette.cyan,
+              opacity: 0.12,
+              letterSpacing: '-0.05em',
+            }}
+          >
+            {workspaceFlash}
+          </div>
+        </div>
+      )}
 
       <DesktopIcons />
       <DesktopClock />

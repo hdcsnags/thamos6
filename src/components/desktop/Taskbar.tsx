@@ -63,6 +63,12 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         borderTop: `1px solid ${palette.borderSubtle}`,
         fontFamily: typography.ui,
       }}
+      onDoubleClick={(e) => {
+        // Double-click empty area to open new terminal
+        const target = e.target as HTMLElement;
+        if (target.closest('button')) return;
+        desktop.openWindow({ appId: 'terminal', title: 'Terminal' });
+      }}
     >
       <div className="flex items-center gap-3">
         <button
@@ -79,21 +85,32 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         </button>
 
         <div className="flex items-center gap-1">
-          {[1, 2, 3, 4].map(num => (
-            <button
-              key={num}
-              onClick={() => desktop.switchWorkspace(num)}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-xs font-medium transition-all"
-              style={{
-                backgroundColor: desktop.activeWorkspace === num ? `${palette.cyan}15` : 'transparent',
-                color: desktop.activeWorkspace === num ? palette.cyan : palette.textTertiary,
-                border: desktop.activeWorkspace === num ? `1px solid ${palette.cyan}30` : '1px solid transparent',
-              }}
-              aria-label={`Switch to workspace ${num}`}
-            >
-              {num}
-            </button>
-          ))}
+          {[1, 2, 3, 4].map(num => {
+            const winCount = Object.values(desktop.windows).filter(w => w.workspaceId === num && !w.pinned).length;
+            const isActive = desktop.activeWorkspace === num;
+            const hasWindows = winCount > 0;
+            return (
+              <button
+                key={num}
+                onClick={() => desktop.switchWorkspace(num)}
+                className="relative flex items-center justify-center w-7 h-7 rounded-md text-xs font-medium transition-all"
+                style={{
+                  backgroundColor: isActive ? `${palette.cyan}15` : 'transparent',
+                  color: isActive ? palette.cyan : hasWindows ? palette.textSecondary : palette.textTertiary,
+                  border: isActive ? `1px solid ${palette.cyan}30` : '1px solid transparent',
+                }}
+                aria-label={`Switch to workspace ${num} (${winCount} windows)`}
+              >
+                {num}
+                {hasWindows && !isActive && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: palette.cyan, opacity: 0.6 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="w-px h-5" style={{ backgroundColor: palette.borderDefault }} />
