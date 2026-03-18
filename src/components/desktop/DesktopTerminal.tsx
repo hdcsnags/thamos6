@@ -459,7 +459,7 @@ export function DesktopTerminal() {
     const app = args[0]?.toLowerCase();
     if (!app) {
       addOutput('ERROR: Usage: open [app]', 'error');
-      addOutput('Available apps: terminal, scanner, browser, workshop, intel, cases, files, editor, monitor, settings', 'info');
+      addOutput('Available apps: terminal, scanner, browser, maestro, intel, cases, files, editor, monitor, settings', 'info');
       addOutput('', 'info');
       return;
     }
@@ -469,7 +469,8 @@ export function DesktopTerminal() {
       vps: { id: 'vps-terminal', title: 'VPS Terminal' },
       scanner: { id: 'scanner', title: 'Scanner' },
       browser: { id: 'browser', title: 'Browser' },
-      workshop: { id: 'workshop', title: 'AI Workshop' },
+      maestro: { id: 'workshop', title: 'Maestro' },
+      workshop: { id: 'workshop', title: 'Maestro' },
       intel: { id: 'intel', title: 'Intel Dashboard' },
       cases: { id: 'cases', title: 'Case Manager' },
       files: { id: 'files', title: 'File Manager' },
@@ -539,7 +540,7 @@ export function DesktopTerminal() {
     addOutput('Available applications:', 'success');
     addOutput('', 'info');
     addOutput('  terminal     vps          scanner      browser', 'info', palette.cyan);
-    addOutput('  workshop     intel        cases        files', 'info', palette.cyan);
+    addOutput('  maestro      intel        cases        files', 'info', palette.cyan);
     addOutput('  editor       monitor      settings', 'info', palette.cyan);
     addOutput('', 'info');
     addOutput('Use "open [app]" to launch', 'info');

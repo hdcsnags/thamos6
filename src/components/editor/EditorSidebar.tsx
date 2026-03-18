@@ -129,7 +129,7 @@ export function EditorSidebar({ files, activeFileId, onSelectFile, onDeleteFile 
           <div className="p-4 text-center">
             <div style={{ color: P.dim, fontSize: '11px' }}>No files open</div>
             <div style={{ color: P.dim, fontSize: '10px', marginTop: '4px' }}>
-              Create a new file or open from AI Workshop
+              Create a new file or open from Maestro
             </div>
           </div>
         ) : (

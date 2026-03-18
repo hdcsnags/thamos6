@@ -380,7 +380,7 @@ export function DesktopCodeEditor({ initialFile }: { initialFile?: EditorFile })
               </div>
               <span className="text-xs font-medium mb-1" style={{ color: P.textLight }}>Code Editor</span>
               <span style={{ color: P.dim, fontSize: '11px', maxWidth: '300px', textAlign: 'center', lineHeight: 1.5 }}>
-                Create a new file or open an artifact from AI Workshop
+                Create a new file or open an artifact from Maestro
               </span>
               <div className="flex items-center gap-2 mt-4">
                 <button

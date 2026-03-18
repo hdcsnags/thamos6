@@ -31,7 +31,7 @@ const sidebarItems: { id: Page; label: string; icon: React.ElementType }[] = [
 
 // Tools dropdown items
 const toolsItems: { id: Page; label: string; icon: React.ElementType }[] = [
-  { id: 'aiworkshop', label: 'AI Workshop', icon: Bot },
+  { id: 'aiworkshop', label: 'Maestro', icon: Bot },
   { id: 'ip', label: 'IP Lookup', icon: Globe },
   { id: 'url', label: 'URL Scanner', icon: Link },
   { id: 'hash', label: 'Hash Lookup', icon: Hash },

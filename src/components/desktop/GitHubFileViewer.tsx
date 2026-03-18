@@ -63,7 +63,7 @@ export function GitHubFileViewer({ content, filename, language, htmlUrl, onSendT
                 border: `1px solid ${pinned ? `${P.teal}40` : P.border}`,
                 backgroundColor: pinned ? `${P.teal}10` : 'transparent',
               }}
-              title={pinned ? 'Pinned to Workshop' : 'Send to AI Workshop'}
+              title={pinned ? 'Pinned to Maestro' : 'Send to Maestro'}
             >
               {pinned ? 'PINNED' : 'SEND TO AGENT'}
             </button>

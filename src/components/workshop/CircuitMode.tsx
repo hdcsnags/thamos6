@@ -391,7 +391,7 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
                       boxShadow: isFocused ? `0 0 6px ${c}` : 'none',
                     }}
                   />
-                  {a.name.replace('ThamOS-', '')}
+                  {a.name}
                   {isLead && (
                     <span style={{ color: '#fbbf24', fontSize: '0.55rem' }}>L</span>
                   )}
@@ -435,9 +435,9 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
             >
               <span className="text-2xl" style={{ color: '#fbbf24' }}>{'\u26A1'}</span>
             </div>
-            <h2 className="text-sm font-medium mb-2" style={{ color: P.textLight }}>AI Boardroom</h2>
+            <h2 className="text-sm font-medium mb-2" style={{ color: P.textLight }}>Maestro Orchestra</h2>
             <p className="text-xs text-center max-w-md mb-1" style={{ color: P.text }}>
-              Your council of AI models. Broadcast to all, focus on one, or select a group.
+              Your AI orchestra. Broadcast to all, focus on one, or select a group.
             </p>
             <p className="text-xs text-center max-w-md mb-4" style={{ color: P.dim }}>
               Click agent to toggle | Double-click to focus | Share responses between models
@@ -601,7 +601,7 @@ function ColumnsView({
                           boxShadow: result.status === 'streaming' ? `0 0 6px ${c}` : 'none',
                         }}
                       />
-                      <span className="text-xs font-medium truncate" style={{ color: c }}>{result.agentName.replace('ThamOS-', '')}</span>
+                      <span className="text-xs font-medium truncate" style={{ color: c }}>{result.agentName}</span>
                       {isLead && <span style={{ color: '#fbbf24', fontSize: '0.5rem' }}>LEAD</span>}
                       <span className="ml-auto flex-shrink-0" style={{ color: P.dim, fontSize: '0.55rem' }}>
                         {result.status === 'streaming' ? 'thinking...' : result.status === 'error' ? 'FAILED' : result.tokens > 0 ? `${result.tokens} tok` : ''}
@@ -631,7 +631,7 @@ function ColumnsView({
                   color: '#fbbf24',
                 }}
               >
-                {isSynthesizing ? 'SYNTHESIZING...' : `SYNTHESIZE WITH ${leadAgent?.name.replace('ThamOS-', '') || 'LEAD'}`}
+                {isSynthesizing ? 'SYNTHESIZING...' : `SYNTHESIZE WITH ${leadAgent?.name || 'LEAD'}`}
               </button>
             )}
 
@@ -697,7 +697,7 @@ function FocusedView({
           className="w-8 h-8 rounded-lg flex items-center justify-center"
           style={{ backgroundColor: `${c}15`, border: `1px solid ${c}30` }}
         >
-          <span className="text-sm font-bold" style={{ color: c }}>{agent.name.replace('ThamOS-', '')}</span>
+          <span className="text-sm font-bold" style={{ color: c }}>{agent.name}</span>
         </div>
         <div>
           <div className="flex items-center gap-2">

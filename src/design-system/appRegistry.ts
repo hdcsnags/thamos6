@@ -60,12 +60,12 @@ export const appRegistry: Record<string, AppDefinition> = {
   },
   workshop: {
     id: 'workshop',
-    name: 'AI Workshop',
-    icon: '\uD83E\uDD16',
-    description: 'Multi-agent chat interface',
+    name: 'Maestro',
+    icon: '\uD83C\uDFBC',
+    description: 'AI orchestra — brainstorm with Claude, GPT & Gemini',
     accentColor: palette.green,
     category: 'intel',
-    keywords: ['ai', 'workshop', 'chat', 'agent', 'claude', 'gpt', 'gemini'],
+    keywords: ['ai', 'maestro', 'workshop', 'chat', 'agent', 'claude', 'gpt', 'gemini', 'orchestra'],
     defaultSize: { width: 1100, height: 700 },
   },
   intel: {

@@ -39,9 +39,9 @@ interface Message {
 }
 
 const DEFAULT_AGENTS = [
-  { name: 'ThamOS-X', provider: 'anthropic' as const, model: 'claude-3-5-sonnet-20241022', system_prompt: 'You are ThamOS-X, a cybersecurity-focused AI assistant. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 4096, is_default: true },
-  { name: 'ThamOS-Y', provider: 'openai' as const, model: 'gpt-4o', system_prompt: 'You are ThamOS-Y, a cybersecurity-focused AI assistant. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 4096, is_default: false },
-  { name: 'ThamOS-Z', provider: 'google' as const, model: 'gemini-pro', system_prompt: 'You are ThamOS-Z, a cybersecurity-focused AI assistant. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 4096, is_default: false },
+  { name: 'Claude', provider: 'anthropic' as const, model: 'claude-sonnet-4-20250514', system_prompt: 'You are Claude, a cybersecurity-focused AI assistant operating within ThamOS Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: true },
+  { name: 'GPT', provider: 'openai' as const, model: 'gpt-4.1', system_prompt: 'You are GPT, a cybersecurity-focused AI assistant operating within ThamOS Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
+  { name: 'Gemini', provider: 'google' as const, model: 'gemini-2.5-pro', system_prompt: 'You are Gemini, a cybersecurity-focused AI assistant operating within ThamOS Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
 ];
 
 const AGENT_COLORS: Record<string, string> = {
@@ -406,7 +406,7 @@ export function DesktopWorkshop() {
     setCommitStatus(null);
     try {
       const meta = await fetchFileMeta(ghToken, file.owner, file.repo, file.path);
-      const commitMsg = `Update ${file.path.split('/').pop()} via ThamOS Workshop`;
+      const commitMsg = `Update ${file.path.split('/').pop()} via ThamOS Maestro`;
       await commitFile(ghToken, file.owner, file.repo, file.path, code, meta.sha, commitMsg, file.branch);
       setCommitStatus({ status: 'success', message: `Committed to ${file.path}` });
       setTimeout(() => setCommitStatus(null), 4000);
@@ -590,7 +590,7 @@ export function DesktopWorkshop() {
       <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void, color: P.text }}>
         <div className="text-center">
           <div className="text-4xl mb-3 opacity-50">&#9632;</div>
-          <div className="text-sm">Sign in to access AI Workshop</div>
+          <div className="text-sm">Sign in to access Maestro</div>
         </div>
       </div>
     );
@@ -617,7 +617,7 @@ export function DesktopWorkshop() {
                     }}
                     title={a.name}
                   >
-                    {a.name.replace('ThamOS-', '')}
+                    {a.name}
                   </button>
                 );
               })}
@@ -781,7 +781,7 @@ export function DesktopWorkshop() {
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: `${agentColor}10`, border: `1px solid ${agentColor}25` }}>
               <span className="text-2xl" style={{ color: agentColor }}>&#9670;</span>
             </div>
-            <h2 className="text-base font-medium mb-2" style={{ color: P.textLight }}>AI Workshop</h2>
+            <h2 className="text-base font-medium mb-2" style={{ color: P.textLight }}>Maestro</h2>
             <p className="text-xs text-center max-w-sm mb-6" style={{ color: P.text }}>
               Interface with Claude, GPT, and Gemini through ThamOS agents. Configure API keys in Settings.
             </p>

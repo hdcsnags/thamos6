@@ -235,7 +235,7 @@ export default function AIWorkshop() {
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <Bot className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-400 text-lg">Sign in to use AI Workshop</p>
+          <p className="text-gray-400 text-lg">Sign in to use Maestro</p>
         </div>
       </div>
     );
@@ -284,7 +284,7 @@ export default function AIWorkshop() {
         {!selectedConversation ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
             <Sparkles className="w-16 h-16 text-cyan-500 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">AI Workshop</h2>
+            <h2 className="text-xl font-bold text-white mb-2">Maestro</h2>
             <p className="text-gray-400 max-w-md mb-6">
               Chat with Claude, GPT, and Gemini using your own API keys. Configure keys in Settings.
             </p>

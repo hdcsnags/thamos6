@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { renderCircuitMarkdown } from './MarkdownRenderer';
 
 export interface CircuitResult {
   agentId: string;
@@ -42,6 +43,26 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
   const color = PROVIDER_COLORS[result.provider] || '#00d9ff';
   const otherAgents = allAgentNames.filter(n => n !== result.agentName);
 
+  const handleDownload = (code: string, lang: string) => {
+    const ext = lang || 'txt';
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `circuit-${result.agentName.toLowerCase()}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const renderedContent = useMemo(() => {
+    if (!result.content) return null;
+    return renderCircuitMarkdown(
+      result.content,
+      (code) => navigator.clipboard.writeText(code),
+      handleDownload,
+    );
+  }, [result.content]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(result.content);
     setCopied(true);
@@ -64,8 +85,6 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
             color: P.textLight,
             fontFamily: 'JetBrains Mono, monospace',
             maxHeight: '200px',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
           }}
         >
           {result.status === 'streaming' && !result.content && (
@@ -78,7 +97,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
             <span style={{ color: P.dim }}>Waiting...</span>
           )}
           {(result.status === 'done' || (result.status === 'streaming' && result.content)) && (
-            result.content || <span style={{ color: P.dim }}>No response</span>
+            renderedContent || <span style={{ color: P.dim }}>No response</span>
           )}
         </div>
         {result.status === 'done' && (
@@ -105,7 +124,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
                 className="px-1.5 py-0.5 rounded transition-all"
                 style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.6rem' }}
               >
-                {'\u2192'} {name.replace('ThamOS-', '')}
+                {'\u2192'} {name}
               </button>
             ))}
             <button
@@ -173,14 +192,12 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
           color: P.textLight,
           fontFamily: 'JetBrains Mono, monospace',
           maxHeight: '300px',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
         }}
       >
         {result.status === 'pending' && <span style={{ color: P.dim }}>Waiting...</span>}
         {result.status === 'error' && <span style={{ color: '#ff0080' }}>{result.error || 'Request failed'}</span>}
         {(result.status === 'done' || result.status === 'streaming') && (
-          result.content || <span style={{ color: P.dim }}>No response</span>
+          renderedContent || <span style={{ color: P.dim }}>No response</span>
         )}
       </div>
 
@@ -208,7 +225,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
               className="px-2 py-1 text-xs rounded transition-all"
               style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.65rem' }}
             >
-              SHARE {'\u2192'} {name.replace('ThamOS-', '')}
+              SHARE {'\u2192'} {name}
             </button>
           ))}
           <button
