@@ -9,6 +9,7 @@ import { VPSConnection, type ConnectionState } from '../../lib/vpsConnection';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { palette, typography } from '../../design-system/tokens';
+import { useToast } from './ToastNotifications';
 
 interface VPSConfig {
   id: string;
@@ -19,6 +20,7 @@ interface VPSConfig {
 
 export function DesktopVPSTerminal() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -150,8 +152,10 @@ export function DesktopVPSTerminal() {
         if (state === 'connected') {
           conn.sendResize(term.cols, term.rows);
           term.focus();
+          addToast({ type: 'success', title: 'VPS Connected', message: 'Terminal session active' });
         } else if (state === 'error') {
           term.writeln(`\x1b[31m[ThamOS] ${detail || 'Connection error'}\x1b[0m`);
+          addToast({ type: 'error', title: 'VPS Error', message: detail || 'Connection failed' });
         } else if (state === 'reconnecting') {
           term.writeln(`\x1b[33m[ThamOS] ${detail || 'Reconnecting...'}\x1b[0m`);
         }

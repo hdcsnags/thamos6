@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { getApp } from '../design-system/appRegistry';
 
 export type AppId =
@@ -61,11 +61,54 @@ interface DesktopContextType {
   updateWindowData: (id: string, data: any) => void;
   setBootComplete: () => void;
   getVisibleWindows: () => WindowInstance[];
+  restoreSavedLayout: () => boolean;
 }
 
 const DesktopContext = createContext<DesktopContextType | undefined>(undefined);
 
 const FALLBACK_DEFAULTS = { icon: '\uD83D\uDD0D', accentColor: '#00d9ff', defaultSize: { width: 800, height: 600 } };
+const LAYOUT_STORAGE_KEY = 'thamos6-desktop-layout';
+
+interface SavedLayout {
+  windows: Array<{
+    appId: AppId;
+    title: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+    workspaceId: number;
+    pinned: boolean;
+    maximized: boolean;
+  }>;
+  activeWorkspace: number;
+}
+
+function loadSavedLayout(): SavedLayout | null {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.windows)) return parsed;
+  } catch {}
+  return null;
+}
+
+function saveLayout(state: DesktopState) {
+  try {
+    const layout: SavedLayout = {
+      windows: Object.values(state.windows).map(w => ({
+        appId: w.appId,
+        title: w.title,
+        position: w.position,
+        size: w.size,
+        workspaceId: w.workspaceId,
+        pinned: w.pinned,
+        maximized: w.maximized,
+      })),
+      activeWorkspace: state.activeWorkspace,
+    };
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  } catch {}
+}
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DesktopState>({
@@ -75,6 +118,7 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
     maxZIndex: 100,
     bootComplete: false,
   });
+  const layoutRestoredRef = useRef(false);
 
   const openWindow = useCallback((config: Partial<WindowInstance> & { appId: AppId; title: string }): string => {
     const id = config.id || `${config.appId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -234,6 +278,60 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, bootComplete: true }));
   }, []);
 
+  const restoreSavedLayout = useCallback(() => {
+    if (layoutRestoredRef.current) return false;
+    layoutRestoredRef.current = true;
+    const saved = loadSavedLayout();
+    if (!saved || saved.windows.length === 0) return false;
+
+    setState(prev => {
+      let zIndex = prev.maxZIndex;
+      const windows: Record<string, WindowInstance> = {};
+
+      saved.windows.forEach((w, i) => {
+        const registryApp = getApp(w.appId);
+        const defaults = registryApp
+          ? { icon: registryApp.icon, accentColor: registryApp.accentColor }
+          : { icon: FALLBACK_DEFAULTS.icon, accentColor: FALLBACK_DEFAULTS.accentColor };
+        const id = `${w.appId}-restored-${i}`;
+        zIndex++;
+        windows[id] = {
+          id,
+          appId: w.appId,
+          title: w.title,
+          icon: defaults.icon,
+          accentColor: defaults.accentColor,
+          position: w.position,
+          size: w.size,
+          minimized: false,
+          maximized: w.maximized,
+          zIndex,
+          workspaceId: w.workspaceId,
+          pinned: w.pinned,
+        };
+      });
+
+      const lastId = Object.keys(windows).pop() || null;
+      return {
+        ...prev,
+        windows,
+        activeWindowId: lastId,
+        activeWorkspace: saved.activeWorkspace || 1,
+        maxZIndex: zIndex,
+      };
+    });
+    return true;
+  }, []);
+
+  // Persist layout on every window/workspace change (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!state.bootComplete || Object.keys(state.windows).length === 0) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => saveLayout(state), 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [state.windows, state.activeWorkspace, state.bootComplete]);
+
   const getVisibleWindows = useCallback((): WindowInstance[] => {
     return Object.values(state.windows)
       .filter(w => w.pinned || w.workspaceId === state.activeWorkspace)
@@ -261,6 +359,7 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
         updateWindowData,
         setBootComplete,
         getVisibleWindows,
+        restoreSavedLayout,
       }}
     >
       {children}
