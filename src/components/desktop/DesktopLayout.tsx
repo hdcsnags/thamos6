@@ -28,6 +28,7 @@ function DesktopContent() {
   const desktop = useDesktop();
   const { showContextMenu } = useContextMenu();
   const [showLauncher, setShowLauncher] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [closedHistory, setClosedHistory] = useState<Array<{ appId: string; title: string }>>([]);
 
   // Restore layout on boot
@@ -104,9 +105,9 @@ function DesktopContent() {
         return;
       }
 
-      if (e.key === 'Escape' && showLauncher) {
-        setShowLauncher(false);
-        return;
+      if (e.key === 'Escape') {
+        if (showLauncher) { setShowLauncher(false); return; }
+        if (showShortcuts) { setShowShortcuts(false); return; }
       }
 
       if (mod && ['1', '2', '3', '4'].includes(e.key)) {
@@ -138,6 +139,13 @@ function DesktopContent() {
       if (mod && e.key === '`') {
         e.preventDefault();
         focusTerminal();
+        return;
+      }
+
+      // Shortcuts help — ?
+      if (e.key === '?' && !isInputFocused) {
+        e.preventDefault();
+        setShowShortcuts(prev => !prev);
         return;
       }
     };
@@ -221,6 +229,8 @@ function DesktopContent() {
 
       {showLauncher && <AppLauncher onClose={() => setShowLauncher(false)} />}
 
+      {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
+
       <Taskbar onOpenLauncher={() => setShowLauncher(true)} />
     </div>
   );
@@ -233,6 +243,89 @@ export function DesktopLayout() {
         <DesktopContent />
       </ToastProvider>
     </ContextMenuProvider>
+  );
+}
+
+function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  const shortcuts = [
+    { keys: 'Ctrl + K', desc: 'App Launcher' },
+    { keys: 'Ctrl + W', desc: 'Close active window' },
+    { keys: 'Ctrl + Shift + T', desc: 'Reopen last closed' },
+    { keys: 'Ctrl + Tab', desc: 'Cycle windows forward' },
+    { keys: 'Ctrl + Shift + Tab', desc: 'Cycle windows backward' },
+    { keys: 'Ctrl + `', desc: 'Focus terminal' },
+    { keys: 'Ctrl + 1-4', desc: 'Switch workspace' },
+    { keys: '?', desc: 'Toggle this overlay' },
+    { keys: 'Escape', desc: 'Close overlay / launcher' },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
+      onClick={onClose}
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+    >
+      <div
+        className="rounded-xl p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          backgroundColor: palette.base,
+          border: `1px solid ${palette.borderSubtle}`,
+          minWidth: '360px',
+          maxWidth: '440px',
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span
+            className="text-sm font-semibold tracking-wide"
+            style={{ color: palette.cyan, fontFamily: typography.mono }}
+          >
+            KEYBOARD SHORTCUTS
+          </span>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded-md transition-colors"
+            style={{ color: palette.textTertiary }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}15`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+          >
+            ✕
+          </button>
+        </div>
+        <div className="space-y-2">
+          {shortcuts.map((s) => (
+            <div key={s.keys} className="flex items-center justify-between py-1">
+              <span
+                className="text-xs"
+                style={{ color: palette.textSecondary, fontFamily: typography.ui }}
+              >
+                {s.desc}
+              </span>
+              <kbd
+                className="px-2 py-0.5 rounded text-xs"
+                style={{
+                  backgroundColor: palette.void,
+                  border: `1px solid ${palette.borderSubtle}`,
+                  color: palette.textPrimary,
+                  fontFamily: typography.mono,
+                  fontSize: '11px',
+                }}
+              >
+                {s.keys}
+              </kbd>
+            </div>
+          ))}
+        </div>
+        <div
+          className="mt-4 pt-3 text-center"
+          style={{ borderTop: `1px solid ${palette.borderSubtle}` }}
+        >
+          <span className="text-[10px]" style={{ color: palette.textTertiary, fontFamily: typography.mono }}>
+            Press ? or Escape to close
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
