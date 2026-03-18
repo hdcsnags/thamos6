@@ -44,9 +44,9 @@ export interface Message {
 }
 
 const DEFAULT_AGENTS = [
-  { name: 'GPT-4o', provider: 'openai' as const, model: 'gpt-4o', system_prompt: 'You are a helpful AI assistant.', temperature: 0.7, max_tokens: 4096, is_default: true },
-  { name: 'Claude 3.5 Sonnet', provider: 'anthropic' as const, model: 'claude-3-5-sonnet-20241022', system_prompt: 'You are a helpful AI assistant.', temperature: 0.7, max_tokens: 4096, is_default: false },
-  { name: 'Gemini Pro', provider: 'google' as const, model: 'gemini-pro', system_prompt: 'You are a helpful AI assistant.', temperature: 0.7, max_tokens: 4096, is_default: false },
+  { name: 'Claude', provider: 'anthropic' as const, model: 'claude-sonnet-4-20250514', system_prompt: 'You are Claude, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: true },
+  { name: 'GPT', provider: 'openai' as const, model: 'gpt-4.1', system_prompt: 'You are GPT, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
+  { name: 'Gemini', provider: 'google' as const, model: 'gemini-2.5-pro', system_prompt: 'You are Gemini, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
 ];
 
 export default function AIWorkshop() {
@@ -76,6 +76,38 @@ export default function AIWorkshop() {
       .order('created_at', { ascending: false });
 
     if (data && data.length > 0) {
+      // Migrate old ThamOS-named agents to new names/models
+      const MIGRATION_MAP: Record<string, { name: string; model: string }> = {
+        'ThamOS-X': { name: 'Claude', model: 'claude-sonnet-4-20250514' },
+        'ThamOS-Y': { name: 'GPT', model: 'gpt-4.1' },
+        'ThamOS-Z': { name: 'Gemini', model: 'gemini-2.5-pro' },
+        'GPT-4o': { name: 'GPT', model: 'gpt-4.1' },
+        'Claude 3.5 Sonnet': { name: 'Claude', model: 'claude-sonnet-4-20250514' },
+        'Gemini Pro': { name: 'Gemini', model: 'gemini-2.5-pro' },
+      };
+      let needsReload = false;
+      for (const agent of data) {
+        const migration = MIGRATION_MAP[agent.name];
+        if (migration) {
+          await supabase.from('ai_agents').update({
+            name: migration.name,
+            model: migration.model,
+          }).eq('id', agent.id);
+          needsReload = true;
+        }
+      }
+      if (needsReload) {
+        const { data: refreshed } = await supabase
+          .from('ai_agents')
+          .select('*')
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: false });
+        if (refreshed) {
+          setAgents(refreshed);
+          if (!selectedAgent) setSelectedAgent(refreshed.find(a => a.is_default) || refreshed[0]);
+          return;
+        }
+      }
       setAgents(data);
       if (!selectedAgent) setSelectedAgent(data.find(a => a.is_default) || data[0]);
     } else if (data && data.length === 0) {

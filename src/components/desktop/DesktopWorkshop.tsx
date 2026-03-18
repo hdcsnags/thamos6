@@ -305,6 +305,56 @@ export function DesktopWorkshop() {
       .order('created_at', { ascending: false });
 
     if (data && data.length > 0) {
+      // Migrate old ThamOS-named agents to new names/models
+      const MIGRATION_MAP: Record<string, { name: string; model: string }> = {
+        'ThamOS-X': { name: 'Claude', model: 'claude-sonnet-4-20250514' },
+        'ThamOS-Y': { name: 'GPT', model: 'gpt-4.1' },
+        'ThamOS-Z': { name: 'Gemini', model: 'gemini-2.5-pro' },
+        'GPT-4o': { name: 'GPT', model: 'gpt-4.1' },
+        'Claude 3.5 Sonnet': { name: 'Claude', model: 'claude-sonnet-4-20250514' },
+        'Gemini Pro': { name: 'Gemini', model: 'gemini-2.5-pro' },
+      };
+      let needsReload = false;
+      for (const agent of data) {
+        const migration = MIGRATION_MAP[agent.name];
+        if (migration) {
+          await supabase.from('ai_agents').update({
+            name: migration.name,
+            model: migration.model,
+          }).eq('id', agent.id);
+          needsReload = true;
+        }
+      }
+      // Deduplicate: keep one agent per provider, delete extras
+      const seen = new Set<string>();
+      const dupeIds: string[] = [];
+      for (const agent of needsReload ? data : data) {
+        const key = agent.provider;
+        if (seen.has(key)) {
+          dupeIds.push(agent.id);
+        } else {
+          seen.add(key);
+        }
+      }
+      if (dupeIds.length > 0) {
+        for (const id of dupeIds) {
+          await supabase.from('ai_agents').delete().eq('id', id);
+        }
+        needsReload = true;
+      }
+
+      if (needsReload) {
+        const { data: refreshed } = await supabase
+          .from('ai_agents')
+          .select('*')
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: false });
+        if (refreshed) {
+          setAgents(refreshed);
+          if (!selectedAgent) setSelectedAgent(refreshed.find((a: Agent) => a.is_default) || refreshed[0]);
+          return;
+        }
+      }
       setAgents(data);
       if (!selectedAgent) setSelectedAgent(data.find((a: Agent) => a.is_default) || data[0]);
     } else if (data && data.length === 0) {
