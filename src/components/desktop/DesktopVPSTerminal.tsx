@@ -118,12 +118,23 @@ export function DesktopVPSTerminal() {
   }, []);
 
   const handleConnect = useCallback((url: string) => {
-    if (!terminalRef.current || !url.trim()) return;
+    if (!url.trim()) return;
 
     setHasAttempted(true);
+    setConnState('connecting');
     connectionRef.current?.destroy();
 
+    if (!terminalRef.current) {
+      initTerminal();
+    }
+
     const term = terminalRef.current;
+    if (!term) {
+      setConnState('error');
+      setStateDetail('Terminal failed to initialize');
+      return;
+    }
+
     term.clear();
     term.writeln('\x1b[36m[ThamOS] Connecting to VPS...\x1b[0m');
 
@@ -150,7 +161,7 @@ export function DesktopVPSTerminal() {
 
     connectionRef.current = conn;
     conn.connect();
-  }, []);
+  }, [initTerminal]);
 
   const handleDisconnect = useCallback(() => {
     connectionRef.current?.disconnect();
@@ -159,23 +170,30 @@ export function DesktopVPSTerminal() {
 
   const handleSaveAndConnect = useCallback(async () => {
     const url = urlInput.trim();
-    if (!url || !user) return;
+    if (!url) return;
 
-    if (vpsConfig) {
-      await supabase
-        .from('user_vps_connections')
-        .update({ vps_url: url, updated_at: new Date().toISOString() })
-        .eq('id', vpsConfig.id);
-      setVpsConfig({ ...vpsConfig, vps_url: url });
-    } else {
-      const { data } = await supabase
-        .from('user_vps_connections')
-        .insert({ user_id: user.id, name: 'Primary VPS', vps_url: url, hostname: '', is_default: true })
-        .select('id, name, vps_url, hostname')
-        .maybeSingle();
-      if (data) setVpsConfig(data);
-    }
     handleConnect(url);
+
+    if (user) {
+      try {
+        if (vpsConfig) {
+          await supabase
+            .from('user_vps_connections')
+            .update({ vps_url: url, updated_at: new Date().toISOString() })
+            .eq('id', vpsConfig.id);
+          setVpsConfig({ ...vpsConfig, vps_url: url });
+        } else {
+          const { data } = await supabase
+            .from('user_vps_connections')
+            .insert({ user_id: user.id, name: 'Primary VPS', vps_url: url, hostname: '', is_default: true })
+            .select('id, name, vps_url, hostname')
+            .maybeSingle();
+          if (data) setVpsConfig(data);
+        }
+      } catch {
+        // Save failed but connection is still active
+      }
+    }
   }, [urlInput, user, vpsConfig, handleConnect]);
 
   useEffect(() => {
