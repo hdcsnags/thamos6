@@ -76,7 +76,7 @@ async function callAgent(
   return response.json();
 }
 
-type ViewMode = 'columns' | 'focused';
+type ViewMode = 'columns' | 'focused' | 'carousel';
 
 export default function CircuitMode({ agents, leadAgentId, onSetLead }: Props) {
   const [rounds, setRounds] = useState<RoundEntry[]>([]);
@@ -457,6 +457,34 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="flex items-center" style={{ border: `1px solid ${P.border}`, borderRadius: '4px', overflow: 'hidden' }}>
+            <button
+              onClick={() => { setViewMode('columns'); setFocusedAgentId(null); setSelectedAgentIds(new Set(agents.map(a => a.id))); }}
+              className="px-1.5 py-1 transition-all"
+              style={{
+                backgroundColor: viewMode === 'columns' ? '#fbbf2415' : 'transparent',
+                color: viewMode === 'columns' ? '#fbbf24' : P.dim,
+                fontSize: '0.55rem',
+                borderRight: `1px solid ${P.border}`,
+              }}
+              title="Column view"
+            >
+              {'\u2261'}
+            </button>
+            <button
+              onClick={() => { setViewMode('carousel'); setFocusedAgentId(null); setSelectedAgentIds(new Set(agents.map(a => a.id))); }}
+              className="px-1.5 py-1 transition-all"
+              style={{
+                backgroundColor: viewMode === 'carousel' ? '#fbbf2415' : 'transparent',
+                color: viewMode === 'carousel' ? '#fbbf24' : P.dim,
+                fontSize: '0.55rem',
+              }}
+              title="Carousel view — full-width, one agent at a time"
+            >
+              {'\u25A1'}
+            </button>
+          </div>
+
           <button
             onClick={() => setAutoShare(!autoShare)}
             className="px-2 py-1 rounded transition-all"
@@ -544,6 +572,17 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
             agent={agents.find(a => a.id === focusedAgentId)!}
             rounds={getAgentRounds(focusedAgentId)}
             allRounds={rounds}
+            agentNames={agentNames}
+            leadAgent={leadAgent}
+            onFlag={handleFlag}
+            onShareTo={handleShareTo}
+            onSynthesize={synthesize}
+            isSynthesizing={isSynthesizing}
+          />
+        ) : viewMode === 'carousel' ? (
+          <CarouselView
+            agents={agents}
+            rounds={rounds}
             agentNames={agentNames}
             leadAgent={leadAgent}
             onFlag={handleFlag}
@@ -872,6 +911,336 @@ function FocusedView({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+
+function CarouselView({
+  agents,
+  rounds,
+  agentNames,
+  leadAgent,
+  onFlag,
+  onShareTo,
+  onSynthesize,
+  isSynthesizing,
+}: {
+  agents: Agent[];
+  rounds: RoundEntry[];
+  agentNames: string[];
+  leadAgent: Agent;
+  onFlag: (roundIdx: number, agentId: string) => void;
+  onShareTo: (roundIdx: number, sourceAgentId: string, targetName: string) => void;
+  onSynthesize: (roundIdx: number) => void;
+  isSynthesizing: boolean;
+}) {
+  const [activeAgentIdx, setActiveAgentIdx] = useState(0);
+  const [activeRoundIdx, setActiveRoundIdx] = useState(rounds.length - 1);
+  const [copiedCarousel, setCopiedCarousel] = useState(false);
+
+  useEffect(() => {
+    setActiveRoundIdx(rounds.length - 1);
+  }, [rounds.length]);
+
+  const activeAgent = agents[activeAgentIdx];
+  const round = rounds[activeRoundIdx];
+
+  const prevAgent = () => setActiveAgentIdx(i => (i - 1 + agents.length) % agents.length);
+  const nextAgent = () => setActiveAgentIdx(i => (i + 1) % agents.length);
+
+  const handleDownload = (content: string, agentName: string, roundNum: number) => {
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `maestro-${agentName.toLowerCase()}-round${roundNum + 1}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyCarousel = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCarousel(true);
+    setTimeout(() => setCopiedCarousel(false), 1500);
+  };
+
+  if (!round || !activeAgent) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-xs" style={{ color: P.dim }}>No rounds yet</p>
+      </div>
+    );
+  }
+
+  const result = round.results.find(r => r.agentId === activeAgent.id);
+  const allDone = round.results.every(r => r.status === 'done' || r.status === 'error');
+  const successCount = round.results.filter(r => r.status === 'done').length;
+  const isLead = activeAgent.id === leadAgent?.id;
+  const otherAgents = agentNames.filter(n => n !== activeAgent.name);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Round selector */}
+      {rounds.length > 1 && (
+        <div
+          className="flex items-center gap-2 px-4 py-1.5 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}
+        >
+          {rounds.map((r, i) => (
+            <button
+              key={r.id}
+              onClick={() => setActiveRoundIdx(i)}
+              className="px-2 py-0.5 rounded transition-all"
+              style={{
+                backgroundColor: i === activeRoundIdx ? '#fbbf2412' : 'transparent',
+                border: `1px solid ${i === activeRoundIdx ? '#fbbf2435' : P.border}`,
+                color: i === activeRoundIdx ? '#fbbf24' : P.dim,
+                fontSize: '0.6rem',
+              }}
+            >
+              R{i + 1}
+            </button>
+          ))}
+          <span className="text-xs truncate flex-1" style={{ color: P.dim, fontSize: '0.55rem' }}>
+            {round.prompt.slice(0, 80)}{round.prompt.length > 80 ? '...' : ''}
+          </span>
+        </div>
+      )}
+
+      {/* Agent tabs with arrows */}
+      <div
+        className="flex items-center gap-1 px-4 py-2 flex-shrink-0"
+        style={{ borderBottom: `1px solid ${P.border}` }}
+      >
+        <button
+          onClick={prevAgent}
+          className="px-2 py-1 rounded transition-all flex-shrink-0"
+          style={{ color: P.dim, border: `1px solid ${P.border}`, fontSize: '0.7rem' }}
+        >
+          {'\u2190'}
+        </button>
+
+        <div className="flex items-center gap-1 flex-1 justify-center">
+          {agents.map((a, i) => {
+            const c = PROVIDER_COLORS[a.provider] || '#00d9ff';
+            const isActive = i === activeAgentIdx;
+            const agentResult = round.results.find(r => r.agentId === a.id);
+            const status = agentResult?.status;
+
+            return (
+              <button
+                key={a.id}
+                onClick={() => setActiveAgentIdx(i)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded transition-all"
+                style={{
+                  backgroundColor: isActive ? `${c}15` : 'transparent',
+                  border: `1px solid ${isActive ? `${c}50` : P.border}`,
+                  color: isActive ? c : P.dim,
+                  fontSize: '0.65rem',
+                }}
+              >
+                <div
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: status === 'done' ? c : status === 'error' ? '#ff0080' : P.dim,
+                    animation: status === 'streaming' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                    boxShadow: isActive ? `0 0 6px ${c}` : 'none',
+                  }}
+                />
+                {a.name}
+                {a.id === leadAgent?.id && <span style={{ color: '#fbbf24', fontSize: '0.5rem' }}>L</span>}
+                {agentResult?.tokens ? <span style={{ color: P.dim, fontSize: '0.5rem' }}>{agentResult.tokens}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={nextAgent}
+          className="px-2 py-1 rounded transition-all flex-shrink-0"
+          style={{ color: P.dim, border: `1px solid ${P.border}`, fontSize: '0.7rem' }}
+        >
+          {'\u2192'}
+        </button>
+      </div>
+
+      {/* Full-width response content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Prompt */}
+        <div
+          className="px-4 py-2.5 rounded-lg mb-3"
+          style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}` }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium" style={{ color: '#fbbf24' }}>ROUND {activeRoundIdx + 1}</span>
+            <span style={{ color: P.dim, fontSize: '0.55rem' }}>
+              {new Date(round.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+          <p className="text-xs" style={{ color: P.textLight, whiteSpace: 'pre-wrap' }}>{round.prompt}</p>
+        </div>
+
+        {/* Response */}
+        {result ? (
+          <div
+            className="rounded-lg overflow-hidden"
+            style={{
+              backgroundColor: P.surface,
+              border: `1px solid ${result.flagged ? `${PROVIDER_COLORS[result.provider]}50` : isLead ? '#fbbf2430' : P.border}`,
+              boxShadow: result.flagged ? `0 0 12px ${PROVIDER_COLORS[result.provider]}15` : 'none',
+            }}
+          >
+            {/* Agent header */}
+            <div
+              className="flex items-center justify-between px-4 py-2"
+              style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: `${PROVIDER_COLORS[result.provider] || '#00d9ff'}06` }}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{
+                    backgroundColor: result.status === 'done' ? (PROVIDER_COLORS[result.provider] || '#00d9ff') : result.status === 'error' ? '#ff0080' : P.dim,
+                    boxShadow: result.status === 'streaming' ? `0 0 8px ${PROVIDER_COLORS[result.provider]}` : 'none',
+                  }}
+                />
+                <span className="text-sm font-medium" style={{ color: PROVIDER_COLORS[result.provider] || '#00d9ff' }}>{result.agentName}</span>
+                <span className="text-xs" style={{ color: P.dim }}>{result.model}</span>
+                {isLead && (
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fbbf2412', color: '#fbbf24', border: '1px solid #fbbf2425', fontSize: '0.6rem' }}>
+                    LEAD
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {result.status === 'done' && result.tokens > 0 && (
+                  <span className="text-xs" style={{ color: P.dim }}>{result.tokens} tokens</span>
+                )}
+                {result.status === 'streaming' && (
+                  <span className="text-xs animate-pulse" style={{ color: PROVIDER_COLORS[result.provider] }}>thinking...</span>
+                )}
+              </div>
+            </div>
+
+            {/* Response body — compact layout, no height limit, actions handled by carousel bar */}
+            <CircuitResponseCard
+              result={result}
+              onFlag={(id) => onFlag(activeRoundIdx, id)}
+              onShareTo={(id, target) => onShareTo(activeRoundIdx, id, target)}
+              allAgentNames={agentNames}
+              isLead={isLead}
+              compact
+              noHeightLimit
+              hideActions
+            />
+
+            {/* Carousel action bar */}
+            {result.status === 'done' && (
+              <div
+                className="flex items-center gap-2 px-4 py-2.5 flex-wrap"
+                style={{ borderTop: `1px solid ${P.border}`, backgroundColor: P.surfaceLight }}
+              >
+                <button
+                  onClick={() => onFlag(activeRoundIdx, result.agentId)}
+                  className="px-3 py-1.5 rounded transition-all"
+                  style={{
+                    backgroundColor: result.flagged ? `${PROVIDER_COLORS[result.provider]}15` : 'transparent',
+                    border: `1px solid ${result.flagged ? `${PROVIDER_COLORS[result.provider]}50` : P.border}`,
+                    color: result.flagged ? (PROVIDER_COLORS[result.provider] || '#00d9ff') : P.dim,
+                    fontSize: '0.65rem',
+                  }}
+                >
+                  {result.flagged ? 'FLAGGED' : 'FLAG'}
+                </button>
+
+                {otherAgents.map(name => (
+                  <button
+                    key={name}
+                    onClick={() => onShareTo(activeRoundIdx, result.agentId, name)}
+                    className="px-3 py-1.5 rounded transition-all"
+                    style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.65rem' }}
+                  >
+                    {'\u2192'} {name}
+                  </button>
+                ))}
+
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={() => handleCopyCarousel(result.content)}
+                    className="px-3 py-1.5 rounded transition-all"
+                    style={{
+                      border: `1px solid ${copiedCarousel ? `${PROVIDER_COLORS[result.provider]}40` : P.border}`,
+                      color: copiedCarousel ? PROVIDER_COLORS[result.provider] : P.dim,
+                      fontSize: '0.65rem',
+                    }}
+                  >
+                    {copiedCarousel ? 'COPIED' : 'COPY'}
+                  </button>
+                  <button
+                    onClick={() => handleDownload(result.content, result.agentName, activeRoundIdx)}
+                    className="px-3 py-1.5 rounded transition-all"
+                    style={{ border: '1px solid #00d9ff30', color: '#00d9ff', fontSize: '0.65rem', backgroundColor: '#00d9ff08' }}
+                  >
+                    DOWNLOAD .MD
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-xs" style={{ color: P.dim }}>
+              {activeAgent.name} was not part of this round
+            </p>
+          </div>
+        )}
+
+        {/* Synthesis */}
+        {round.synthesis && (
+          <div
+            className="rounded-lg overflow-hidden mt-3"
+            style={{ border: '1px solid #fbbf2430', backgroundColor: '#fbbf2406' }}
+          >
+            <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid #fbbf2420' }}>
+              <div className="w-1 h-4 rounded-sm" style={{ backgroundColor: '#fbbf24' }} />
+              <span className="text-xs font-medium" style={{ color: '#fbbf24' }}>SYNTHESIS</span>
+              <span style={{ color: P.dim, fontSize: '0.6rem' }}>{leadAgent?.name} {leadAgent?.model}</span>
+              <button
+                onClick={() => handleDownload(round.synthesis!.content, 'synthesis', activeRoundIdx)}
+                className="ml-auto px-2 py-0.5 rounded transition-all"
+                style={{ border: '1px solid #fbbf2425', color: '#fbbf24', fontSize: '0.6rem' }}
+              >
+                DOWNLOAD .MD
+              </button>
+            </div>
+            <CircuitResponseCard
+              result={round.synthesis}
+              onFlag={() => {}}
+              onShareTo={() => {}}
+              allAgentNames={[]}
+              isLead={true}
+              compact
+              noHeightLimit
+              hideActions
+            />
+          </div>
+        )}
+
+        {allDone && successCount >= 2 && !round.synthesis && (
+          <button
+            onClick={() => onSynthesize(activeRoundIdx)}
+            disabled={isSynthesizing}
+            className="w-full py-3 text-xs font-medium rounded-lg transition-all mt-3"
+            style={{
+              backgroundColor: '#fbbf240a',
+              border: '1px solid #fbbf2425',
+              color: '#fbbf24',
+            }}
+          >
+            {isSynthesizing ? 'SYNTHESIZING...' : `SYNTHESIZE WITH ${leadAgent?.name || 'LEAD'}`}
+          </button>
+        )}
       </div>
     </div>
   );

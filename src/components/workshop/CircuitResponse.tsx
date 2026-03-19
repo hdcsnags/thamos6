@@ -36,9 +36,11 @@ interface Props {
   allAgentNames: string[];
   isLead: boolean;
   compact?: boolean;
+  noHeightLimit?: boolean;
+  hideActions?: boolean;
 }
 
-export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgentNames, isLead, compact }: Props) {
+export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgentNames, isLead, compact, noHeightLimit, hideActions }: Props) {
   const [copied, setCopied] = useState(false);
   const color = PROVIDER_COLORS[result.provider] || '#00d9ff';
   const otherAgents = allAgentNames.filter(n => n !== result.agentName);
@@ -84,7 +86,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
           style={{
             color: P.textLight,
             fontFamily: 'JetBrains Mono, monospace',
-            maxHeight: '200px',
+            maxHeight: noHeightLimit ? undefined : '200px',
           }}
         >
           {result.status === 'streaming' && !result.content && (
@@ -100,7 +102,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
             renderedContent || <span style={{ color: P.dim }}>No response</span>
           )}
         </div>
-        {result.status === 'done' && (
+        {result.status === 'done' && !hideActions && (
           <div
             className="flex items-center gap-1 px-3 py-1.5 flex-wrap"
             style={{ borderTop: `1px solid ${P.border}` }}
@@ -191,7 +193,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
         style={{
           color: P.textLight,
           fontFamily: 'JetBrains Mono, monospace',
-          maxHeight: '300px',
+          maxHeight: noHeightLimit ? undefined : '300px',
         }}
       >
         {result.status === 'pending' && <span style={{ color: P.dim }}>Waiting...</span>}
