@@ -87,6 +87,9 @@ export default function CircuitMode({ agents, leadAgentId, onSetLead }: Props) {
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set(agents.map(a => a.id)));
   const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('columns');
+  const [autoShare, setAutoShare] = useState(false);
+  // Per-agent conversation memory: agentId -> message history
+  const [agentMemory, setAgentMemory] = useState<Record<string, Array<{ role: string; content: string }>>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -287,6 +290,7 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
 
     setRounds(prev => [...prev, newRound]);
 
+    // Build per-agent messages with conversation memory
     const promises = targetAgents.map(async (agent) => {
       const agentShared = sharedContext[agent.id] || [];
       const extraContext = agentShared.length > 0
@@ -295,8 +299,19 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
 
       const systemPrompt = agent.system_prompt + extraContext;
 
+      // Include conversation history for this agent
+      const history = agentMemory[agent.id] || [];
+      const messages = [...history, { role: 'user', content: prompt }];
+
       try {
-        const result = await callAgent(agent, [{ role: 'user', content: prompt }], systemPrompt, token);
+        const result = await callAgent(agent, messages, systemPrompt, token);
+
+        // Update agent memory with this exchange
+        setAgentMemory(prev => ({
+          ...prev,
+          [agent.id]: [...(prev[agent.id] || []), { role: 'user', content: prompt }, { role: 'assistant', content: result.content }],
+        }));
+
         setRounds(prev => prev.map(r => {
           if (r.id !== roundId) return r;
           return {
@@ -324,12 +339,42 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
     });
 
     await Promise.allSettled(promises);
-    setSharedContext({});
+
+    // Auto-share: after all responses come in, cross-pollinate to all other agents
+    if (autoShare) {
+      setRounds(prev => {
+        const thisRound = prev.find(r => r.id === roundId);
+        if (!thisRound) return prev;
+        const doneResults = thisRound.results.filter(r => r.status === 'done' && r.content);
+        if (doneResults.length > 1) {
+          const newShared: Record<string, string[]> = {};
+          for (const agent of targetAgents) {
+            const othersResponses = doneResults
+              .filter(r => r.agentId !== agent.id)
+              .map(r => `[${r.agentName} (${r.model})]:\n\n${r.content}`);
+            if (othersResponses.length > 0) {
+              newShared[agent.id] = othersResponses;
+            }
+          }
+          setSharedContext(newShared);
+        }
+        return prev;
+      });
+    } else {
+      setSharedContext({});
+    }
+
     setIsBroadcasting(false);
+  };
+
+  const clearMemory = () => {
+    setAgentMemory({});
+    setSharedContext({});
   };
 
   const agentNames = agents.map(a => a.name);
   const sharedCount = Object.values(sharedContext).reduce((acc, arr) => acc + arr.length, 0);
+  const totalMemoryMessages = Object.values(agentMemory).reduce((acc, msgs) => acc + msgs.length, 0);
   const targetCount = selectedAgentIds.size;
   const isAllSelected = targetCount === agents.length;
 
@@ -412,6 +457,30 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAutoShare(!autoShare)}
+            className="px-2 py-1 rounded transition-all"
+            style={{
+              backgroundColor: autoShare ? '#00b4d815' : 'transparent',
+              border: `1px solid ${autoShare ? '#00b4d840' : P.border}`,
+              color: autoShare ? '#00b4d8' : P.dim,
+              fontSize: '0.6rem',
+            }}
+            title={autoShare ? 'Auto-share ON: all responses are cross-pollinated each round' : 'Auto-share OFF: manually share responses between agents'}
+          >
+            {autoShare ? 'AUTO-SHARE ON' : 'AUTO-SHARE'}
+          </button>
+
+          {totalMemoryMessages > 0 && (
+            <span
+              className="px-1.5 py-0.5 rounded"
+              style={{ backgroundColor: '#a78bfa10', color: '#a78bfa', border: '1px solid #a78bfa25', fontSize: '0.6rem' }}
+              title={`Agents remember ${totalMemoryMessages / 2 | 0} exchanges`}
+            >
+              {totalMemoryMessages / 2 | 0} mem
+            </span>
+          )}
+
           {sharedCount > 0 && (
             <span
               className="px-1.5 py-0.5 rounded"
@@ -420,6 +489,18 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
               {sharedCount} shared
             </span>
           )}
+
+          {(totalMemoryMessages > 0 || sharedCount > 0) && (
+            <button
+              onClick={clearMemory}
+              className="px-1.5 py-0.5 rounded transition-all"
+              style={{ border: `1px solid ${P.border}`, color: P.dim, fontSize: '0.55rem' }}
+              title="Clear all agent memory and shared context (fresh start)"
+            >
+              RESET
+            </button>
+          )}
+
           <span className="text-xs" style={{ color: P.dim, fontSize: '0.6rem' }}>
             {targetCount}/{agents.length} active
           </span>
@@ -439,8 +520,11 @@ Be direct. Highlight the strongest path forward. If one AI found something the o
             <p className="text-xs text-center max-w-md mb-1" style={{ color: P.text }}>
               Your AI orchestra. Broadcast to all, focus on one, or select a group.
             </p>
-            <p className="text-xs text-center max-w-md mb-4" style={{ color: P.dim }}>
+            <p className="text-xs text-center max-w-md mb-1" style={{ color: P.dim }}>
               Click agent to toggle | Double-click to focus | Share responses between models
+            </p>
+            <p className="text-xs text-center max-w-md mb-4" style={{ color: P.dim }}>
+              Agents remember the conversation | AUTO-SHARE cross-pollinates every round
             </p>
             <div className="flex items-center gap-3">
               {agents.map(a => {
