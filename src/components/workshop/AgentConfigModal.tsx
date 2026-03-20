@@ -5,7 +5,7 @@ import { X, Plus, Trash2, Save } from 'lucide-react';
 interface Agent {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: 'openai' | 'anthropic' | 'google' | 'openrouter';
   model: string;
   system_prompt: string;
   temperature: number;
@@ -17,6 +17,7 @@ const PROVIDER_MODELS: Record<string, { label: string; models: string[] }> = {
   anthropic: { label: 'Anthropic', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-20250414'] },
   openai: { label: 'OpenAI', models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'] },
   google: { label: 'Google', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'] },
+  openrouter: { label: 'OpenRouter', models: ['anthropic/claude-opus-4-6', 'anthropic/claude-sonnet-4-6', 'openai/gpt-4.1', 'openai/o3', 'google/gemini-2.5-pro', 'meta-llama/llama-4-maverick', 'deepseek/deepseek-r1'] },
 };
 
 interface Props {
@@ -126,7 +127,7 @@ export default function AgentConfigModal({ agents, onClose, onSave, userId }: Pr
                   <select
                     value={editingAgent.provider || 'openai'}
                     onChange={(e) => {
-                      const provider = e.target.value as 'openai' | 'anthropic' | 'google';
+                      const provider = e.target.value as 'openai' | 'anthropic' | 'google' | 'openrouter';
                       setEditingAgent({ ...editingAgent, provider, model: PROVIDER_MODELS[provider].models[0] });
                     }}
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white focus:ring-2 focus:ring-cyan-500"

@@ -28,10 +28,11 @@ const PROVIDER_SERVICE_MAP: Record<string, string> = {
   openai: "openai_key",
   anthropic: "anthropic_key",
   google: "gemini_key",
+  openrouter: "openrouter_key",
 };
 
 interface ChatRequest {
-  provider: "openai" | "anthropic" | "google";
+  provider: "openai" | "anthropic" | "google" | "openrouter";
   model: string;
   messages: Array<{ role: string; content: string }>;
   system_prompt?: string;
@@ -198,6 +199,46 @@ async function callAnthropic(
   };
 }
 
+async function callOpenRouter(
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  systemPrompt: string | undefined,
+  temperature: number,
+  maxTokens: number
+) {
+  const allMessages = systemPrompt
+    ? [{ role: "system", content: systemPrompt }, ...messages]
+    : messages;
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://t6.thamos.ca",
+      "X-Title": "ThamOS Maestro",
+    },
+    body: JSON.stringify({
+      model,
+      messages: allMessages,
+      temperature,
+      max_tokens: maxTokens,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenRouter API error: ${err}`);
+  }
+
+  const data = await response.json();
+  return {
+    content: data.choices[0]?.message?.content || "",
+    tokens_used: data.usage?.total_tokens || 0,
+  };
+}
+
 async function callGoogle(
   apiKey: string,
   model: string,
@@ -322,6 +363,16 @@ Deno.serve(async (req: Request) => {
         break;
       case "google":
         result = await callGoogle(
+          apiKey,
+          model,
+          messages,
+          system_prompt,
+          temperature,
+          max_tokens
+        );
+        break;
+      case "openrouter":
+        result = await callOpenRouter(
           apiKey,
           model,
           messages,

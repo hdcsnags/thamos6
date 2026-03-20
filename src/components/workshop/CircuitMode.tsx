@@ -6,7 +6,7 @@ import { renderCircuitMarkdown } from './MarkdownRenderer';
 interface Agent {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: 'openai' | 'anthropic' | 'google' | 'openrouter';
   model: string;
   system_prompt: string;
   temperature: number;

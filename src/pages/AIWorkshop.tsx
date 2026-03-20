@@ -17,7 +17,7 @@ import {
 interface Agent {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: 'openai' | 'anthropic' | 'google' | 'openrouter';
   model: string;
   system_prompt: string;
   temperature: number;
@@ -47,6 +47,8 @@ const DEFAULT_AGENTS = [
   { name: 'Claude', provider: 'anthropic' as const, model: 'claude-sonnet-4-20250514', system_prompt: 'You are Claude, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: true },
   { name: 'GPT', provider: 'openai' as const, model: 'gpt-4.1', system_prompt: 'You are GPT, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
   { name: 'Gemini', provider: 'google' as const, model: 'gemini-2.5-pro', system_prompt: 'You are Gemini, a helpful AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
+  { name: 'Opus', provider: 'openrouter' as const, model: 'anthropic/claude-opus-4-6', system_prompt: 'You are Claude Opus, a highly capable AI assistant operating within Maestro. Be thorough, insightful, and precise.', temperature: 0.7, max_tokens: 8192, is_default: false },
+  { name: 'Sonnet', provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-4-6', system_prompt: 'You are Claude Sonnet, a fast and capable AI assistant operating within Maestro. Be concise, technical, and helpful.', temperature: 0.7, max_tokens: 8192, is_default: false },
 ];
 
 export default function AIWorkshop() {

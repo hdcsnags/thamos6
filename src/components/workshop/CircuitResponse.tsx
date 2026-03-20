@@ -4,7 +4,7 @@ import { renderCircuitMarkdown } from './MarkdownRenderer';
 export interface CircuitResult {
   agentId: string;
   agentName: string;
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: 'openai' | 'anthropic' | 'google' | 'openrouter';
   model: string;
   content: string;
   tokens: number;
@@ -17,6 +17,7 @@ export const AGENT_COLORS: Record<string, string> = {
   anthropic: '#E57B5C',
   openai: '#ff6b35',
   google: '#4285F4',
+  openrouter: '#9370DB',
 };
 
 export const G = {
