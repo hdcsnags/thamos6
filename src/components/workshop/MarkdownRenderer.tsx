@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
 
+const G = {
+  elevated: '#11141a',
+  border: 'rgba(255,255,255,0.06)',
+  borderHover: 'rgba(255,255,255,0.12)',
+  dim: '#444',
+  code: '#a0a0b0',
+  kw: '#E57B5C',
+  str: '#7ec699',
+  type: '#6eb4ff',
+  cmt: '#444',
+};
+
 interface CodeBlockProps {
   code: string;
   lang: string;
@@ -21,37 +33,106 @@ function CodeBlock({ code, lang, onCopy, onDownload, onOpenInEditor }: CodeBlock
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const btnStyle = (color: string): React.CSSProperties => ({
-    color,
-    fontSize: '0.6rem',
-    border: `1px solid ${color}30`,
-    borderRadius: '3px',
-    padding: '1px 6px',
-    backgroundColor: `${color}08`,
-    cursor: 'pointer',
-  });
-
   return (
-    <div style={{ backgroundColor: '#0a0e1a', border: '1px solid #1a1f35', borderRadius: '6px', margin: '6px 0', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', borderBottom: '1px solid #1a1f3540' }}>
-        <span style={{ color: '#3a3f55', fontSize: '0.65rem' }}>{lang || 'code'}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <button onClick={handleCopy} style={btnStyle('#8a8fa8')}>
+    <div style={{
+      background: 'rgba(0,0,0,0.4)',
+      border: `1px solid ${G.border}`,
+      borderRadius: '12px',
+      overflow: 'hidden',
+      margin: '10px 0',
+    }}>
+      {/* Header with lang label + actions */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '6px 14px',
+        background: 'rgba(255,255,255,0.03)',
+        borderBottom: `1px solid ${G.border}`,
+      }}>
+        <span style={{
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: '10px',
+          color: G.dim,
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+        }}>
+          {lang || 'code'}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={handleCopy}
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '10px',
+              color: copied ? '#50c878' : '#555',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
+            onMouseLeave={e => { (e.target as HTMLElement).style.background = 'none'; }}
+          >
             {copied ? 'COPIED' : 'COPY'}
           </button>
           {onDownload && (
-            <button onClick={() => onDownload(code, lang)} style={btnStyle('#00d9ff')}>
+            <button
+              onClick={() => onDownload(code, lang)}
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '10px',
+                color: '#555',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.background = 'none'; }}
+            >
               DOWNLOAD
             </button>
           )}
           {onOpenInEditor && (
-            <button onClick={() => onOpenInEditor(code, lang)} style={btnStyle('#fbbf24')}>
+            <button
+              onClick={() => onOpenInEditor(code, lang)}
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '10px',
+                color: '#555',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.background = 'none'; }}
+            >
               OPEN IN EDITOR
             </button>
           )}
         </div>
       </div>
-      <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', color: '#00ff9d', margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{code}</pre>
+      {/* Code body */}
+      <pre style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: '12.5px',
+        lineHeight: 1.6,
+        color: G.code,
+        margin: 0,
+        padding: '14px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}>
+        {code}
+      </pre>
     </div>
   );
 }
@@ -81,9 +162,27 @@ export function renderCircuitMarkdown(
       }
       const token = match[0];
       if (token.startsWith('`')) {
-        result.push(<span key={`${key++}-c`} style={{ backgroundColor: '#1a1f35', padding: '1px 4px', borderRadius: '3px', color: '#00ff9d', fontSize: '0.7rem' }}>{token.slice(1, -1)}</span>);
+        result.push(
+          <span
+            key={`${key++}-c`}
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              padding: '1px 6px',
+              borderRadius: '4px',
+              color: '#c8cde0',
+              fontSize: '0.8em',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+          >
+            {token.slice(1, -1)}
+          </span>
+        );
       } else if (token.startsWith('**')) {
-        result.push(<strong key={`${key++}-b`} style={{ color: '#c8cde0', fontWeight: 600 }}>{token.slice(2, -2)}</strong>);
+        result.push(
+          <strong key={`${key++}-b`} style={{ color: '#ffffff', fontWeight: 500 }}>
+            {token.slice(2, -2)}
+          </strong>
+        );
       }
       idx = match.index + token.length;
     }
@@ -114,18 +213,28 @@ export function renderCircuitMarkdown(
       continue;
     }
     if (line.startsWith('### ')) {
-      parts.push(<div key={key++} style={{ color: '#c8cde0', fontWeight: 600, fontSize: '0.75rem', margin: '8px 0 4px' }}>{renderInline(line.slice(4))}</div>);
+      parts.push(<div key={key++} style={{ color: '#e8e8ec', fontWeight: 600, fontSize: '0.85em', margin: '12px 0 4px' }}>{renderInline(line.slice(4))}</div>);
     } else if (line.startsWith('## ')) {
-      parts.push(<div key={key++} style={{ color: '#c8cde0', fontWeight: 600, fontSize: '0.8rem', margin: '10px 0 4px' }}>{renderInline(line.slice(3))}</div>);
+      parts.push(<div key={key++} style={{ color: '#e8e8ec', fontWeight: 600, fontSize: '0.9em', margin: '14px 0 6px' }}>{renderInline(line.slice(3))}</div>);
     } else if (line.startsWith('# ')) {
-      parts.push(<div key={key++} style={{ color: '#c8cde0', fontWeight: 700, fontSize: '0.85rem', margin: '12px 0 6px' }}>{renderInline(line.slice(2))}</div>);
+      parts.push(<div key={key++} style={{ color: '#e8e8ec', fontWeight: 700, fontSize: '1em', margin: '16px 0 8px' }}>{renderInline(line.slice(2))}</div>);
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      parts.push(<div key={key++} style={{ paddingLeft: '12px' }}><span style={{ color: '#3a3f55' }}>-</span> {renderInline(line.slice(2))}</div>);
+      parts.push(
+        <div key={key++} style={{ paddingLeft: '14px', display: 'flex', gap: '8px' }}>
+          <span style={{ color: '#444', marginTop: '2px' }}>{'\u25B8'}</span>
+          <span>{renderInline(line.slice(2))}</span>
+        </div>
+      );
     } else if (/^\d+\.\s/.test(line)) {
       const numEnd = line.indexOf('. ');
-      parts.push(<div key={key++} style={{ paddingLeft: '12px' }}><span style={{ color: '#3a3f55' }}>{line.slice(0, numEnd + 1)}</span> {renderInline(line.slice(numEnd + 2))}</div>);
+      parts.push(
+        <div key={key++} style={{ paddingLeft: '14px', display: 'flex', gap: '8px' }}>
+          <span style={{ color: '#555', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.85em' }}>{line.slice(0, numEnd + 1)}</span>
+          <span>{renderInline(line.slice(numEnd + 2))}</span>
+        </div>
+      );
     } else if (line.trim() === '') {
-      parts.push(<div key={key++} style={{ height: '6px' }} />);
+      parts.push(<div key={key++} style={{ height: '8px' }} />);
     } else {
       parts.push(<div key={key++}>{renderInline(line)}</div>);
     }
