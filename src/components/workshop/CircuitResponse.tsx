@@ -59,7 +59,7 @@ export default function CircuitResponseCard({ result, onFlag, onShareTo, allAgen
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `circuit-${result.agentName.toLowerCase()}.${ext}`;
+    a.download = `maestro-${result.agentName.toLowerCase()}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
