@@ -59,16 +59,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          await supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', user.id);
+          const { error } = await supabase.from('profiles').update({ ui_theme: newTheme }).eq('id', user.id);
+          if (error) {
+            console.warn('Failed to persist theme to database (check constraint?):', error.message);
+          }
         }
-      } catch {
-        // persist failed -- localStorage still has the right value
+      } catch (err) {
+        console.error('Theme persistence error:', err);
       }
     })();
   };
 
   const toggleTheme = () => {
-    const cycle: Theme[] = ['tactical', 'terminal', 'desktop'];
+    const cycle: Theme[] = ['tactical', 'terminal', 'desktop', 'mission-control'];
     const idx = cycle.indexOf(theme);
     const next = cycle[(idx + 1) % cycle.length];
     setTheme(next);
