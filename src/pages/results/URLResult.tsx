@@ -3,6 +3,7 @@ import {
   Globe, AlertTriangle, Shield, Database, Link as LinkIcon, Target, FileJson, Zap,
   Copy, Check, ExternalLink, Code, Search
 } from 'lucide-react';
+import { useTheme } from '../../contexts/themecontext';
 import { scanURL } from '../../lib/threatIntel';
 import type { URLLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
@@ -14,6 +15,7 @@ interface URLResultProps {
 type MenuItem = 'overview' | 'analysis' | 'threats' | 'sources' | 'raw';
 
 export default function URLResult({ url }: URLResultProps) {
+  const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<URLLookupResult | null>(null);
@@ -100,35 +102,63 @@ export default function URLResult({ url }: URLResultProps) {
   ];
 
   return (
-    <div ref={containerRef} className="flex h-full">
+    <div ref={containerRef} className={`flex h-full ${theme === 'desktop' ? 'flex-col' : ''}`}>
       <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent animate-pulse" 
              style={{ backgroundSize: '100% 4px', animation: 'scanline 8s linear infinite' }} />
       </div>
 
-      <div className="w-64 flex-shrink-0 relative z-10" 
-           style={{ background: 'rgba(0, 0, 0, 0.5)', borderRight: '1px solid rgba(148, 163, 184, 0.1)' }}>
-        <div className="p-6">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">ANALYSIS SECTIONS</h2>
-          <div className="space-y-1">
-            {menuItems.map(item => {
-              const Icon = item.icon;
-              const isActive = activeMenu === item.id;
-              return (
-                <button key={item.id} onClick={() => setActiveMenu(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all ${
-                    isActive ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-                  }`}>
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              );
-            })}
+      {/* Side Menu (Tactical Only) */}
+      {theme !== 'desktop' && (
+        <div className="w-64 flex-shrink-0 relative z-10" 
+             style={{ background: 'rgba(0, 0, 0, 0.5)', borderRight: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <div className="p-6">
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">ANALYSIS SECTIONS</h2>
+            <div className="space-y-1">
+              {menuItems.map(item => {
+                const Icon = item.icon;
+                const isActive = activeMenu === item.id;
+                return (
+                  <button key={item.id} onClick={() => setActiveMenu(item.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all ${
+                      isActive ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                    }`}>
+                    <Icon className="w-4 h-4" />
+                    <span className="text-sm font-medium">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 overflow-y-auto relative z-10">
+        {/* Desktop Horizontal Menu */}
+        {theme === 'desktop' && (
+          <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
+            <div className="flex items-center gap-1">
+              {menuItems.map(item => {
+                const Icon = item.icon;
+                const isActive = activeMenu === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveMenu(item.id)}
+                    className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                      isActive 
+                        ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
+                        : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
             <div className="flex-1 min-w-0">

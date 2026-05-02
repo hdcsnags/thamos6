@@ -212,8 +212,12 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
       };
 
   const activeBorder = isActive
-    ? accentBorder(win.accentColor, 0.15)
+    ? accentBorder(win.accentColor, 0.3)
     : palette.borderSubtle;
+
+  const activeGlow = isActive
+    ? `0 0 40px ${win.accentColor}10, ${shadows.windowActive}`
+    : shadows.window;
 
   return (
     <>
@@ -241,18 +245,20 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           backgroundColor: palette.elevated,
           border: `1px solid ${activeBorder}`,
           backdropFilter: 'blur(24px)',
-          boxShadow: isActive ? shadows.windowActive : shadows.window,
-          transition: isDragging || isResizing ? 'none' : 'box-shadow 250ms cubic-bezier(0.25, 0.1, 0.25, 1), border-color 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
-          opacity: isActive ? 1 : 0.92,
+          boxShadow: activeGlow,
+          transition: isDragging || isResizing ? 'none' : 'box-shadow 300ms cubic-bezier(0.25, 0.1, 0.25, 1), border-color 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+          opacity: isActive ? 1 : 0.85,
         }}
         onMouseDown={handleMouseDown}
       >
         <div
           className="flex items-center justify-between px-3 select-none cursor-move"
           style={{
-            height: '36px',
-            background: `linear-gradient(to bottom, ${palette.float}, ${palette.elevated})`,
-            borderBottom: `1px solid ${palette.borderSubtle}`,
+            height: '38px',
+            background: isActive 
+              ? `linear-gradient(to bottom, ${palette.surface}, ${palette.elevated})`
+              : `linear-gradient(to bottom, ${palette.float}, ${palette.elevated})`,
+            borderBottom: `1px solid ${isActive ? accentBorder(win.accentColor, 0.1) : palette.borderSubtle}`,
             fontFamily: typography.ui,
           }}
           onMouseDown={handleTitleBarMouseDown}
@@ -261,19 +267,19 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           onMouseEnter={() => setTitleHovered(true)}
           onMouseLeave={() => setTitleHovered(false)}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 desktop.closeWindow(id);
               }}
-              className="w-3 h-3 rounded-full flex items-center justify-center transition-colors"
-              style={{ backgroundColor: '#f43f5e' }}
+              className="w-3 h-3 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ backgroundColor: '#f43f5e', boxShadow: isActive ? '0 0 8px #f43f5e40' : 'none' }}
               aria-label="Close"
             >
               {titleHovered && (
                 <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-                  <path d="M1 1L5 5M5 1L1 5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.2" strokeLinecap="round" />
+                  <path d="M1 1L5 5M5 1L1 5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               )}
             </button>
@@ -282,13 +288,13 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
                 e.stopPropagation();
                 desktop.minimizeWindow(id);
               }}
-              className="w-3 h-3 rounded-full flex items-center justify-center transition-colors"
-              style={{ backgroundColor: '#f59e0b' }}
+              className="w-3 h-3 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ backgroundColor: '#f59e0b', boxShadow: isActive ? '0 0 8px #f59e0b40' : 'none' }}
               aria-label="Minimize"
             >
               {titleHovered && (
                 <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-                  <path d="M1 3H5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.2" strokeLinecap="round" />
+                  <path d="M1 3H5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               )}
             </button>
@@ -301,33 +307,47 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
                   desktop.maximizeWindow(id);
                 }
               }}
-              className="w-3 h-3 rounded-full flex items-center justify-center transition-colors"
-              style={{ backgroundColor: '#00d9a3' }}
+              className="w-3 h-3 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ backgroundColor: '#00ff9d', boxShadow: isActive ? '0 0 8px #00ff9d40' : 'none' }}
               aria-label="Maximize"
             >
               {titleHovered && (
                 <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-                  <path d="M1 1.5H5V4.5H1V1.5Z" stroke="rgba(0,0,0,0.5)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M1 1.5H5V4.5H1V1.5Z" stroke="rgba(0,0,0,0.5)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               )}
             </button>
           </div>
 
-          <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
-            <span className="text-xs" style={{ opacity: 0.6 }}>{win.icon}</span>
+          <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2 transition-all"
+               style={{ opacity: isActive ? 1 : 0.6 }}>
+            <span className="text-sm">{win.icon}</span>
             <span
               style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                color: palette.textSecondary,
-                letterSpacing: '-0.01em',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: isActive ? palette.textPrimary : palette.textSecondary,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                fontFamily: typography.mono,
               }}
             >
               {win.title}
             </span>
           </div>
 
-          <div className="w-[60px]" />
+          <div className="flex items-center gap-3 pr-1">
+            {win.pinned && (
+              <span title="Pinned to all workspaces" style={{ color: palette.cyan }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+                </svg>
+              </span>
+            )}
+            <div className="text-[10px] font-mono text-slate-500 opacity-40">
+              {win.size.width}x{win.size.height}
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto" style={{ fontFamily: typography.mono }}>

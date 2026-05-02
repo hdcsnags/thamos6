@@ -15,8 +15,8 @@ import TerminalIPResult from './pages/results/terminalipresult';
 import TerminalURLResult from './pages/results/TerminalURLResult';
 import TerminalDomainResult from './pages/results/TerminalDomainResult';
 import TerminalHashResult from './pages/results/TerminalHashResult';
-import DesktopIPResult from './pages/results/DesktopIPResult';
-// TODO: Create these as needed following the same pattern as DesktopIPResult
+// import DesktopIPResult from './pages/results/DesktopIPResult';
+// TODO: Create these as needed following the same pattern as IPResult
 // import DesktopURLResult from './pages/results/DesktopURLResult';
 // import DesktopDomainResult from './pages/results/DesktopDomainResult';
 // import DesktopHashResult from './pages/results/DesktopHashResult';
@@ -62,14 +62,13 @@ function App() {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
-          return <DesktopIPResult ip={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
-        // TODO: Uncomment as Desktop result components are created
-        // case 'url':
-        //   return <DesktopURLResult url={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
-        // case 'domain':
-        //   return <DesktopDomainResult domain={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
-        // case 'hash':
-        //   return <DesktopHashResult hash={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
+          return <IPResult ip={scanResult.value} />;
+        case 'url':
+          return <URLResult url={scanResult.value} />;
+        case 'domain':
+          return <DomainResult domain={scanResult.value} />;
+        case 'hash':
+          return <HashResult hash={scanResult.value} />;
         default:
           // Fallback to terminal results for types not yet built
           return <DesktopScanner onScan={handleScan} />;

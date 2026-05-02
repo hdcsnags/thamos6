@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { parseFlags, type ScanFlags } from '../../lib/cliFlags';
+import { detectIOCType } from '../../lib/iocDetection';
 import { palette, typography } from '../../design-system/tokens';
 
 const COMMANDS = [
@@ -267,11 +268,21 @@ export function DesktopTerminal() {
 
   const handleScan = (args: string[]) => {
     const { flags, remainingArgs } = parseFlags(args);
-    const type = remainingArgs[0]?.toLowerCase();
-    const value = remainingArgs.slice(1).join(' ');
+    let type = remainingArgs[0]?.toLowerCase();
+    let value = remainingArgs.slice(1).join(' ');
+
+    // Smart detection if first arg is not a recognized type flag
+    const typeFlags = ['-ip', '-hash', '-url', '-domain'];
+    if (type && !typeFlags.includes(type)) {
+      const detection = detectIOCType(remainingArgs.join(' '));
+      if (detection.type !== 'unknown') {
+        type = `-${detection.type}`;
+        value = detection.value;
+      }
+    }
 
     if (!type || !value) {
-      addOutput('ERROR: Invalid syntax. Usage: scan -ip [IP] [FLAGS]', 'error');
+      addOutput('ERROR: Invalid syntax. Usage: scan -ip [IP] [FLAGS] or scan [VALUE]', 'error');
       addOutput('Type "scan --help" for more information', 'info');
       addOutput('', 'info');
       return;
@@ -282,6 +293,7 @@ export function DesktopTerminal() {
       '-hash': 'hash',
       '-url': 'url',
       '-domain': 'domain',
+      '-extension': 'extension',
     };
 
     const scanType = typeMap[type];
