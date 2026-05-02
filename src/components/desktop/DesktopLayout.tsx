@@ -21,6 +21,7 @@ import { DesktopSettings } from './DesktopSettings';
 import { DesktopGitHub } from './DesktopGitHub';
 import { DesktopCodeEditor } from '../editor/DesktopCodeEditor';
 import { DesktopClock } from './DesktopClock';
+import { SpotlightSearch } from './SpotlightSearch';
 import { ToastProvider } from './ToastNotifications';
 import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
@@ -29,6 +30,7 @@ function DesktopContent() {
   const desktop = useDesktop();
   const { showContextMenu } = useContextMenu();
   const [showLauncher, setShowLauncher] = useState(false);
+  const [showSpotlight, setShowSpotlight] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [closedHistory, setClosedHistory] = useState<Array<{ appId: string; title: string }>>([]);
   const [workspaceFlash, setWorkspaceFlash] = useState<number | null>(null);
@@ -156,13 +158,14 @@ function DesktopContent() {
         || activeEl instanceof HTMLTextAreaElement
         || activeEl?.closest('.xterm');
 
-      if (mod && e.key === 'k') {
+      if (mod && (e.key === 'k' || e.key === ' ')) {
         e.preventDefault();
-        setShowLauncher(prev => !prev);
+        setShowSpotlight(prev => !prev);
         return;
       }
 
       if (e.key === 'Escape') {
+        if (showSpotlight) { setShowSpotlight(false); return; }
         if (showLauncher) { setShowLauncher(false); return; }
         if (showShortcuts) { setShowShortcuts(false); return; }
       }
@@ -319,11 +322,12 @@ function DesktopContent() {
         </DesktopWindow>
       ))}
 
+      {showSpotlight && <SpotlightSearch onClose={() => setShowSpotlight(false)} />}
       {showLauncher && <AppLauncher onClose={() => setShowLauncher(false)} />}
 
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
 
-      <Taskbar onOpenLauncher={() => setShowLauncher(true)} />
+      <Taskbar onOpenLauncher={() => setShowSpotlight(true)} />
     </div>
   );
 }
