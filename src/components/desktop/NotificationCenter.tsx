@@ -11,6 +11,14 @@ const TOAST_COLORS: Record<string, { accent: string; icon: string }> = {
   success: { accent: palette.green, icon: '\u2713' },
   warning: { accent: palette.amber, icon: '\u26A0' },
   error: { accent: palette.rose, icon: '\u2717' },
+  incident: { accent: palette.rose, icon: '\u2623' },
+};
+
+const SEVERITY_COLORS = {
+  low: palette.green,
+  medium: palette.amber,
+  high: palette.orange,
+  critical: palette.rose,
 };
 
 function formatTime(ts: number): string {
@@ -106,29 +114,50 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
               return (
                 <div
                   key={toast.id}
-                  className="flex items-start gap-2.5 px-3 py-2 rounded-lg transition-colors"
+                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg transition-all ${toast.metadata?.action ? 'cursor-pointer hover:bg-white/[0.05]' : ''}`}
                   style={{ cursor: 'default' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.surface}`; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  onMouseEnter={(e) => { if(!toast.metadata?.action) e.currentTarget.style.backgroundColor = `${palette.surface}`; }}
+                  onMouseLeave={(e) => { if(!toast.metadata?.action) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  onClick={() => {
+                    if (toast.metadata?.action) {
+                      toast.metadata.action();
+                      onClose();
+                    }
+                  }}
                 >
                   <span
                     className="flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold shrink-0 mt-0.5"
-                    style={{ color: colors.accent }}
+                    style={{ 
+                      color: toast.metadata?.severity ? SEVERITY_COLORS[toast.metadata.severity] : (TOAST_COLORS[toast.type]?.accent || palette.cyan)
+                    }}
                   >
-                    {colors.icon}
+                    {TOAST_COLORS[toast.type]?.icon || '\u24D8'}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium truncate" style={{ color: palette.textPrimary }}>
-                        {toast.title}
-                      </span>
-                      <span className="text-[10px] shrink-0 tabular-nums" style={{ color: palette.textDisabled }}>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-xs font-bold truncate uppercase tracking-tight" style={{ color: palette.textPrimary }}>
+                          {toast.title}
+                        </span>
+                        {toast.metadata?.severity && (
+                          <span className="text-[8px] px-1 rounded bg-white/5 font-bold border border-white/10 shrink-0"
+                                style={{ color: SEVERITY_COLORS[toast.metadata.severity] }}>
+                            {toast.metadata.severity.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[9px] shrink-0 tabular-nums" style={{ color: palette.textDisabled }}>
                         {formatTime(toast.timestamp)}
                       </span>
                     </div>
                     {toast.message && (
                       <div className="text-[11px] mt-0.5 leading-tight" style={{ color: palette.textTertiary }}>
                         {toast.message}
+                      </div>
+                    )}
+                    {toast.metadata?.ticketId && (
+                      <div className="text-[9px] mt-1 font-mono opacity-40">
+                        ID: {toast.metadata.ticketId}
                       </div>
                     )}
                   </div>

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
+import { useToast } from './ToastNotifications';
 import { parseFlags, type ScanFlags } from '../../lib/cliFlags';
 import { detectIOCType } from '../../lib/iocDetection';
 import { palette, typography } from '../../design-system/tokens';
 
 const COMMANDS = [
   'help', 'clear', 'history', 'status', 'scan', 'get', 'neofetch', 'nmap', 'whois', 'dig',
-  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit', 'vps'
+  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit', 'vps', 'incident'
 ];
 
 const AGENTS = {
@@ -23,6 +24,7 @@ interface OutputLine {
 
 export function DesktopTerminal() {
   const desktop = useDesktop();
+  const { addToast } = useToast();
   const [input, setInput] = useState('');
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -148,6 +150,32 @@ export function DesktopTerminal() {
         handleVps(args);
         break;
 
+      case 'incident':
+        const mockUPN = args[0] || 'michael.thomas@dsbn.io';
+        addOutput(`[*] Generating mock incident for ${mockUPN}...`, 'info');
+        addToast({
+          type: 'incident',
+          title: 'High Severity Incident',
+          message: `Suspicious activity detected for ${mockUPN}. Possible AITM kit usage.`,
+          metadata: {
+            ticketId: `TD-${Math.floor(Math.random() * 90000) + 10000}`,
+            upn: mockUPN,
+            severity: 'high',
+            action: () => {
+               desktop.openWindow({ 
+                 appId: 'terminal', 
+                 title: `Investigate: ${mockUPN}`
+               });
+               // Small delay to let window open before adding output
+               setTimeout(() => {
+                 addOutput(`scan -upn ${mockUPN}`, 'info');
+               }, 500);
+            }
+          }
+        });
+        addOutput('[+] Actionable incident toast dispatched to workstation.', 'success');
+        break;
+
       case 'exit':
         addOutput('Use the window controls to close the terminal', 'info');
         addOutput('', 'info');
@@ -193,6 +221,7 @@ export function DesktopTerminal() {
     addOutput('', 'info');
     addOutput('SYSTEM:', 'success', palette.textSecondary);
     addOutput('  neofetch               System information', 'info');
+    addOutput('  incident [UPN]         Trigger mock security alert', 'info');
     addOutput('  projects               List GitHub projects', 'info');
     addOutput('  git status             Git repository status', 'info');
     addOutput('  status                 System status', 'info');

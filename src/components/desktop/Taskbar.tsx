@@ -4,6 +4,7 @@ import { useAlerts } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { NotificationCenter } from './NotificationCenter';
+import { ServiceStatus } from './ServiceStatus';
 import { supabase } from '../../lib/supabase';
 import { Bell } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
@@ -181,6 +182,10 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
               </div>
             ))}
           </div>
+
+          <div className="w-px h-4" style={{ backgroundColor: palette.borderDefault }} />
+
+          <ServiceStatus />
 
           <div className="w-px h-4" style={{ backgroundColor: palette.borderDefault }} />
 
