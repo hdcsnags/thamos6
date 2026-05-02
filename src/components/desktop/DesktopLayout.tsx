@@ -461,6 +461,8 @@ function renderWindowContent(appId: string, data?: any) {
       return <DomainResult domain={data?.value} />;
     case 'hash-result':
       return <HashResult hash={data?.value} />;
+    case 'extension-result':
+      return <ExtensionScanner initialUrl={data?.value} />;
     default:
       return (
         <div
