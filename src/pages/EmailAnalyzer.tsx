@@ -259,243 +259,318 @@ export default function EmailAnalyzer() {
     );
   };
 
-  return (
-    <div className="space-y-8">
-      <div className="text-center max-w-2xl mx-auto">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
-          <Mail className="w-8 h-8 text-white" />
-        </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Email Header Analyzer</h1>
-        <p className="text-slate-400">
-          Parse email headers to trace origin, check SPF/DKIM/DMARC authentication,
-          and identify spoofing attempts or suspicious indicators.
-        </p>
-      </div>
+  const menuItems = [
+    { id: 'headers', label: 'Basic Headers', icon: Mail },
+    { id: 'auth', label: 'Authentication', icon: CheckCircle },
+    { id: 'hops', label: 'Email Hops', icon: Activity },
+    { id: 'raw', label: 'Raw Headers', icon: FileText },
+  ];
 
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          <label className="block text-sm font-medium text-slate-300 mb-3">
-            Paste Raw Email Headers
-          </label>
-          <textarea
-            value={rawHeaders}
-            onChange={e => setRawHeaders(e.target.value)}
-            placeholder="Paste the full email headers here...&#10;&#10;To get headers:&#10;- Gmail: Open email → More (⋮) → Show original&#10;- Outlook: Open email → File → Properties → Internet headers&#10;- Apple Mail: View → Message → Raw Source"
-            className="w-full h-64 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
-          />
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={handleAnalyze}
-              disabled={loading || !rawHeaders.trim()}
-              className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <Mail className="w-4 h-4" />
-                  Analyze Headers
-                </>
-              )}
-            </button>
+  return (
+    <div className={`h-full flex flex-col ${theme === 'desktop' ? '' : 'p-8 space-y-8'}`}>
+      {theme === 'desktop' && result ? (
+        <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
+          <div className="flex items-center gap-1">
+            {menuItems.map(item => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                    isActive 
+                      ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
+                      : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </div>
-      </div>
+      ) : theme !== 'desktop' && (
+        <div className="text-center max-w-2xl mx-auto">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
+            <Mail className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">Email Header Analyzer</h1>
+          <p className="text-slate-400">
+            Parse email headers to trace origin, check SPF/DKIM/DMARC authentication,
+            and identify spoofing attempts or suspicious indicators.
+          </p>
+        </div>
+      )}
 
-      {result && (
-        <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
-          {result.suspiciousIndicators.length > 0 && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-red-400 mb-2">Suspicious Indicators Detected</h3>
-                  <ul className="space-y-1">
-                    {result.suspiciousIndicators.map((indicator, i) => (
-                      <li key={i} className="text-red-300 text-sm">{indicator}</li>
-                    ))}
-                  </ul>
-                </div>
+      <div className={`flex-1 overflow-y-auto ${theme === 'desktop' ? 'p-8' : ''}`}>
+        <div className="max-w-4xl mx-auto space-y-6">
+          {!result && (
+            <div className="bg-slate-900 rounded-xl border border-white/5 p-6">
+              <label className="block text-sm font-medium text-slate-300 mb-3">
+                Paste Raw Email Headers
+              </label>
+              <textarea
+                value={rawHeaders}
+                onChange={e => setRawHeaders(e.target.value)}
+                placeholder="Paste the full email headers here...&#10;&#10;To get headers:&#10;- Gmail: Open email → More (⋮) → Show original&#10;- Outlook: Open email → File → Properties → Internet headers&#10;- Apple Mail: View → Message → Raw Source"
+                className="w-full h-64 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+              />
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={handleAnalyze}
+                  disabled={loading || !rawHeaders.trim()}
+                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4" />
+                      Analyze Headers
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
 
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            <button
-              onClick={() => toggleSection('headers')}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
-            >
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Mail className="w-5 h-5 text-cyan-400" />
-                Basic Headers
-              </h3>
-              {expandedSections.headers ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-            </button>
-            {expandedSections.headers && (
-              <div className="px-4 pb-4 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">From</p>
-                    <p className="text-white font-mono text-sm break-all">{result.headers.from || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">To</p>
-                    <p className="text-white font-mono text-sm break-all">{result.headers.to || 'N/A'}</p>
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-                    <p className="text-white font-medium">{result.headers.subject || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Date</p>
-                    <p className="text-white text-sm">{result.headers.date || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Origin IP</p>
-                    <p className="text-cyan-400 font-mono text-sm">{result.originIP || 'Could not determine'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Return-Path</p>
-                    <p className="text-white font-mono text-sm break-all">{result.headers.returnPath || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Reply-To</p>
-                    <p className="text-white font-mono text-sm break-all">{result.headers.replyTo || 'N/A'}</p>
+          {result && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between">
+                 <button 
+                  onClick={() => setResult(null)}
+                  className="text-xs font-bold uppercase tracking-wider text-slate-500 hover:text-cyan-400 transition-colors"
+                >
+                  ← Analyze Another
+                </button>
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors text-sm"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copy Analysis
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {result.suspiciousIndicators.length > 0 && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-red-400 mb-2">Suspicious Indicators Detected</h3>
+                      <ul className="space-y-1">
+                        {result.suspiciousIndicators.map((indicator, i) => (
+                          <li key={i} className="text-red-300 text-sm">{indicator}</li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
 
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            <button
-              onClick={() => toggleSection('auth')}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
-            >
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-cyan-400" />
-                Email Authentication
-              </h3>
-              {expandedSections.auth ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-            </button>
-            {expandedSections.auth && (
-              <div className="px-4 pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-slate-800/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-slate-300 font-medium">SPF</span>
-                      <AuthStatusBadge result={result.authentication.spf} />
-                    </div>
-                    <p className="text-xs text-slate-500">Sender Policy Framework</p>
-                  </div>
-                  <div className="p-4 bg-slate-800/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-slate-300 font-medium">DKIM</span>
-                      <AuthStatusBadge result={result.authentication.dkim} />
-                    </div>
-                    <p className="text-xs text-slate-500">DomainKeys Identified Mail</p>
-                  </div>
-                  <div className="p-4 bg-slate-800/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-slate-300 font-medium">DMARC</span>
-                      <AuthStatusBadge result={result.authentication.dmarc} />
-                    </div>
-                    <p className="text-xs text-slate-500">Domain-based Message Authentication</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            <button
-              onClick={() => toggleSection('hops')}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
-            >
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Mail className="w-5 h-5 text-cyan-400" />
-                Email Routing ({result.hops.length} hops)
-              </h3>
-              {expandedSections.hops ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-            </button>
-            {expandedSections.hops && (
-              <div className="px-4 pb-4">
-                {result.hops.length > 0 ? (
-                  <div className="space-y-2">
-                    {result.hops.map((hop, i) => (
-                      <div key={i} className="p-3 bg-slate-800/50 rounded-lg">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="w-6 h-6 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded-full text-xs font-bold">
-                            {i + 1}
-                          </span>
-                          <span className="text-white font-medium">{hop.by}</span>
+              {/* Desktop Mode Tab Rendering */}
+              {theme === 'desktop' ? (
+                <>
+                  {activeTab === 'headers' && (
+                    <div className="bg-slate-900 border border-white/5 rounded-xl p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">From</p>
+                          <p className="text-white font-mono text-sm break-all">{result.headers.from || 'N/A'}</p>
                         </div>
-                        <div className="ml-9 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">To</p>
+                          <p className="text-white font-mono text-sm break-all">{result.headers.to || 'N/A'}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Subject</p>
+                          <p className="text-white font-medium text-lg">{result.headers.subject || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Date</p>
+                          <p className="text-white text-sm">{result.headers.date || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Origin IP</p>
+                          <p className="text-cyan-400 font-mono text-sm">{result.originIP || 'Could not determine'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Return-Path</p>
+                          <p className="text-white font-mono text-sm break-all">{result.headers.returnPath || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Reply-To</p>
+                          <p className="text-white font-mono text-sm break-all">{result.headers.replyTo || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'auth' && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="p-6 bg-slate-900 border border-white/5 rounded-xl">
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="text-slate-300 font-bold uppercase tracking-wider text-xs">SPF</span>
+                          <AuthStatusBadge result={result.authentication.spf} />
+                        </div>
+                        <p className="text-xs text-slate-500">Sender Policy Framework verifies the sender's IP address.</p>
+                      </div>
+                      <div className="p-6 bg-slate-900 border border-white/5 rounded-xl">
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="text-slate-300 font-bold uppercase tracking-wider text-xs">DKIM</span>
+                          <AuthStatusBadge result={result.authentication.dkim} />
+                        </div>
+                        <p className="text-xs text-slate-500">DomainKeys Identified Mail ensures message integrity.</p>
+                      </div>
+                      <div className="p-6 bg-slate-900 border border-white/5 rounded-xl">
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="text-slate-300 font-bold uppercase tracking-wider text-xs">DMARC</span>
+                          <AuthStatusBadge result={result.authentication.dmarc} />
+                        </div>
+                        <p className="text-xs text-slate-500">DMARC provides instructions for failed authentication.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'hops' && (
+                    <div className="space-y-4">
+                      {result.hops.length > 0 ? (
+                        result.hops.map((hop, i) => (
+                          <div key={i} className="p-4 bg-slate-900 border border-white/5 rounded-xl">
+                            <div className="flex items-center gap-4 mb-3">
+                              <span className="w-8 h-8 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded-lg text-sm font-bold border border-cyan-500/20">
+                                {i + 1}
+                              </span>
+                              <span className="text-white font-medium">{hop.by}</span>
+                            </div>
+                            <div className="ml-12 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
+                              <div>
+                                <span className="text-slate-500 block mb-1">FROM:</span>
+                                <span className="text-slate-300">{hop.from}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500 block mb-1">PROTOCOL:</span>
+                                <span className="text-slate-300">{hop.with}</span>
+                              </div>
+                              <div className="md:col-span-2">
+                                <span className="text-slate-500 block mb-1">TIMESTAMP:</span>
+                                <span className="text-slate-300">{hop.timestamp}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-500 text-center py-12">No routing information found</p>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'raw' && (
+                    <div className="bg-slate-950 border border-white/5 rounded-xl p-4 overflow-hidden">
+                      <pre className="text-[10px] text-slate-400 font-mono overflow-auto max-h-[500px] leading-relaxed">
+                        {JSON.stringify(result.rawHeaders, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Tactical Mode Section Rendering */
+                <div className="space-y-6">
+                  <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                    <button
+                      onClick={() => toggleSection('headers')}
+                      className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
+                    >
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Mail className="w-5 h-5 text-cyan-400" />
+                        Basic Headers
+                      </h3>
+                      {expandedSections.headers ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+                    </button>
+                    {expandedSections.headers && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <span className="text-slate-500">From:</span>
-                            <span className="text-slate-300 ml-1">{hop.from}</span>
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">From</p>
+                            <p className="text-white font-mono text-sm break-all">{result.headers.from || 'N/A'}</p>
                           </div>
                           <div>
-                            <span className="text-slate-500">Protocol:</span>
-                            <span className="text-slate-300 ml-1">{hop.with}</span>
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">To</p>
+                            <p className="text-white font-mono text-sm break-all">{result.headers.to || 'N/A'}</p>
                           </div>
                           <div className="md:col-span-2">
-                            <span className="text-slate-500">Time:</span>
-                            <span className="text-slate-300 ml-1 text-xs">{hop.timestamp}</span>
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Subject</p>
+                            <p className="text-white font-medium">{result.headers.subject || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Date</p>
+                            <p className="text-white text-sm">{result.headers.date || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Origin IP</p>
+                            <p className="text-cyan-400 font-mono text-sm">{result.originIP || 'Could not determine'}</p>
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                ) : (
-                  <p className="text-slate-500 text-sm">No routing information found</p>
-                )}
-              </div>
-            )}
-          </div>
 
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            <button
-              onClick={() => toggleSection('raw')}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
-            >
-              <h3 className="text-lg font-semibold text-white">All Parsed Headers</h3>
-              {expandedSections.raw ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-            </button>
-            {expandedSections.raw && (
-              <div className="px-4 pb-4">
-                <div className="bg-slate-800 rounded-lg p-4 max-h-96 overflow-auto">
-                  <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap">
-                    {JSON.stringify(result.rawHeaders, null, 2)}
-                  </pre>
+                  <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                    <button
+                      onClick={() => toggleSection('auth')}
+                      className="w-full flex items-center justify-between p-4 hover:bg-slate-800/50 transition-colors"
+                    >
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-cyan-400" />
+                        Email Authentication
+                      </h3>
+                      {expandedSections.auth ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+                    </button>
+                    {expandedSections.auth && (
+                      <div className="px-4 pb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="p-4 bg-slate-800/50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-slate-300 font-medium">SPF</span>
+                              <AuthStatusBadge result={result.authentication.spf} />
+                            </div>
+                          </div>
+                          <div className="p-4 bg-slate-800/50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-slate-300 font-medium">DKIM</span>
+                              <AuthStatusBadge result={result.authentication.dkim} />
+                            </div>
+                          </div>
+                          <div className="p-4 bg-slate-800/50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-slate-300 font-medium">DMARC</span>
+                              <AuthStatusBadge result={result.authentication.dmarc} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Copy Analysis
-                </>
               )}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
