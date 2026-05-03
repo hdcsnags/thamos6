@@ -683,7 +683,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                           <div className="text-sm font-mono text-white mb-3 break-all bg-slate-950/50 p-2 rounded">
                             {ioc.ioc_value}
                           </div>
-                          <IOCEnrichment type={ioc.ioc_type} value={ioc.ioc_value} />
+                          <IOCEnrichment iocs={[ioc]} />
                         </div>
                       ))}
                     </div>
@@ -730,6 +730,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                         analysisId={currentAnalysis.id}
                         onFileSelect={setSelectedFile}
                         selectedFile={selectedFile}
+                        findings={findings}
                       />
                     </div>
                     <div className="flex-1 overflow-hidden">
@@ -737,6 +738,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                         <FileViewer
                           analysisId={currentAnalysis.id}
                           filePath={selectedFile}
+                          findings={findings}
                         />
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center text-slate-500 p-8 text-center">
