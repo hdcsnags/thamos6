@@ -12,6 +12,7 @@ import IPResult from '../../pages/results/IPResult';
 import URLResult from '../../pages/results/URLResult';
 import DomainResult from '../../pages/results/DomainResult';
 import HashResult from '../../pages/results/HashResult';
+import ExtensionScanner from '../../pages/ExtensionScanner';
 import { DesktopWorkshop } from './DesktopWorkshop';
 import { DesktopSystemMonitor } from './DesktopSystemMonitor';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
