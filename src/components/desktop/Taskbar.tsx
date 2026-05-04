@@ -148,7 +148,9 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
               }}
               aria-label={`Focus ${win.title}`}
             >
-              <span className="text-xs">{win.icon}</span>
+              <span style={{ color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary }}>
+                <win.icon size={14} />
+              </span>
               <span className="max-w-[100px] truncate">{win.title}</span>
             </button>
           ))}

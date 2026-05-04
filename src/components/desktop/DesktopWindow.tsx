@@ -24,8 +24,22 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
   const [resizeDirection, setResizeDirection] = useState<string>('');
   const [snapPreview, setSnapPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [titleHovered, setTitleHovered] = useState(false);
+  const [isMinimizing, setIsMinimizing] = useState(false);
+  const prevMinimizedRef = useRef(win?.minimized ?? false);
 
-  if (!win || win.minimized) return null;
+  // Minimize animation: delay unmount so CSS animation can play
+  useEffect(() => {
+    const wasMinimized = prevMinimizedRef.current;
+    const nowMinimized = win?.minimized ?? false;
+    if (nowMinimized && !wasMinimized) {
+      setIsMinimizing(true);
+      const timer = setTimeout(() => setIsMinimizing(false), 200);
+      return () => clearTimeout(timer);
+    }
+    prevMinimizedRef.current = nowMinimized;
+  }, [win?.minimized]);
+
+  if (!win || (win.minimized && !isMinimizing)) return null;
 
   const isActive = desktop.activeWindowId === id;
 
@@ -246,8 +260,12 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           border: `1px solid ${activeBorder}`,
           backdropFilter: 'blur(24px)',
           boxShadow: activeGlow,
-          transition: isDragging || isResizing ? 'none' : 'box-shadow 300ms cubic-bezier(0.25, 0.1, 0.25, 1), border-color 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
-          opacity: isActive ? 1 : 0.85,
+          transition: isDragging || isResizing
+            ? 'none'
+            : 'top 250ms cubic-bezier(0.25, 0.1, 0.25, 1), left 250ms cubic-bezier(0.25, 0.1, 0.25, 1), width 250ms cubic-bezier(0.25, 0.1, 0.25, 1), height 250ms cubic-bezier(0.25, 0.1, 0.25, 1), box-shadow 300ms cubic-bezier(0.25, 0.1, 0.25, 1), border-color 300ms cubic-bezier(0.25, 0.1, 0.25, 1), border-radius 250ms ease-out, opacity 200ms ease-out, transform 200ms ease-out',
+          opacity: isMinimizing ? 0 : (isActive ? 1 : 0.85),
+          transform: isMinimizing ? 'scale(0.85) translateY(20px)' : 'scale(1) translateY(0)',
+          pointerEvents: isMinimizing ? 'none' : 'auto',
         }}
         onMouseDown={handleMouseDown}
       >
@@ -321,7 +339,9 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
           <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2 transition-all"
                style={{ opacity: isActive ? 1 : 0.6 }}>
-            <span className="text-sm">{win.icon}</span>
+            <span style={{ color: isActive ? win.accentColor : palette.textSecondary }}>
+              <win.icon size={14} />
+            </span>
             <span
               style={{
                 fontSize: '11px',
@@ -344,9 +364,6 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
                 </svg>
               </span>
             )}
-            <div className="text-[10px] font-mono text-slate-500 opacity-40">
-              {win.size.width}x{win.size.height}
-            </div>
           </div>
         </div>
 

@@ -186,7 +186,7 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
                   }`}
                 >
                   <div className={`p-2.5 rounded-xl ${isActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-400'}`}>
-                    {result.type === 'app' && <span className="text-xl leading-none">{result.data.icon}</span>}
+                    {result.type === 'app' && <span className="leading-none"><result.data.icon size={20} /></span>}
                     {result.type === 'command' && <result.data.icon className="w-5 h-5" />}
                     {result.type === 'history' && <Clock className="w-5 h-5" />}
                     {result.type === 'agent' && <span className="text-xl leading-none">{result.data.icon}</span>}

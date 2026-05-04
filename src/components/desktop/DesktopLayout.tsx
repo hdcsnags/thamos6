@@ -26,6 +26,7 @@ import { SpotlightSearch } from './SpotlightSearch';
 import { ToastProvider } from './ToastNotifications';
 import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
+import { getSavedWallpaper, getWallpaperById } from '../../design-system/wallpapers';
 
 function DesktopContent() {
   const desktop = useDesktop();
@@ -35,6 +36,14 @@ function DesktopContent() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [closedHistory, setClosedHistory] = useState<Array<{ appId: string; title: string }>>([]);
   const [workspaceFlash, setWorkspaceFlash] = useState<number | null>(null);
+  const [wallpaper, setWallpaper] = useState(getSavedWallpaper);
+
+  // Listen for wallpaper changes from Settings
+  useEffect(() => {
+    const handler = () => setWallpaper(getSavedWallpaper());
+    window.addEventListener('thamos:wallpaper-changed', handler);
+    return () => window.removeEventListener('thamos:wallpaper-changed', handler);
+  }, []);
 
   // Restore layout on boot
   useEffect(() => {
@@ -273,12 +282,8 @@ function DesktopContent() {
       style={{ fontFamily: typography.ui }}
       onContextMenu={handleDesktopRightClick}
     >
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `radial-gradient(ellipse at 50% 40%, ${palette.base} 0%, ${palette.void} 100%)`,
-        }}
-      >
+      <div className="absolute inset-0" style={getWallpaperById(wallpaper).style}>
+        {/* Dot grid overlay — kept for all wallpapers for consistency */}
         <div
           className="absolute inset-0 opacity-[0.02]"
           style={{

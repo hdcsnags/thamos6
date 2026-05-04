@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import type { IconProps } from '../design-system/icons';
 import { getApp } from '../design-system/appRegistry';
 
 export type AppId =
@@ -16,13 +17,14 @@ export type AppId =
   | 'ip-result'
   | 'url-result'
   | 'domain-result'
-  | 'hash-result';
+  | 'hash-result'
+  | 'extension-result';
 
 export interface WindowInstance {
   id: string;
   appId: AppId;
   title: string;
-  icon: string;
+  icon: React.FC<IconProps>;
   accentColor: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
@@ -66,7 +68,8 @@ interface DesktopContextType {
 
 const DesktopContext = createContext<DesktopContextType | undefined>(undefined);
 
-const FALLBACK_DEFAULTS = { icon: '\uD83D\uDD0D', accentColor: '#00d9ff', defaultSize: { width: 800, height: 600 } };
+import { SearchResultIcon } from '../design-system/icons';
+const FALLBACK_DEFAULTS = { icon: SearchResultIcon, accentColor: '#00d9ff', defaultSize: { width: 800, height: 600 } };
 const LAYOUT_STORAGE_KEY = 'thamos6-desktop-layout';
 
 interface SavedLayout {

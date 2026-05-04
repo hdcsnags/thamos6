@@ -28,7 +28,7 @@ export function DesktopIcons() {
             e.preventDefault();
             e.stopPropagation();
             showContextMenu(e.clientX, e.clientY, [
-              { label: `Open ${app.name}`, icon: app.icon, action: () => handleDoubleClick(app) },
+              { label: `Open ${app.name}`, icon: <app.icon size={14} />, action: () => handleDoubleClick(app) },
               { label: 'Open in Workspace 2', icon: '2', action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 2 }) },
               { label: 'Open in Workspace 3', icon: '3', action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 3 }) },
             ]);
@@ -37,10 +37,10 @@ export function DesktopIcons() {
           style={{ width: '76px' }}
         >
           <div
-            className="text-2xl transition-transform group-hover:scale-110"
-            style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.8))' }}
+            className="transition-transform group-hover:scale-110"
+            style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.8))', color: app.accentColor }}
           >
-            {app.icon}
+            <app.icon size={28} />
           </div>
           <div
             className="text-center leading-tight"

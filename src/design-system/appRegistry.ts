@@ -1,10 +1,25 @@
 import type { AppId } from '../contexts/DesktopContext';
 import { palette } from './tokens';
+import type { IconProps } from './icons';
+import {
+  TerminalIcon,
+  VpsTerminalIcon,
+  ScannerIcon,
+  BrowserIcon,
+  MaestroIcon,
+  IntelIcon,
+  CaseIcon,
+  FilesIcon,
+  EditorIcon,
+  MonitorIcon,
+  SettingsIcon,
+  SearchResultIcon,
+} from './icons';
 
 export interface AppDefinition {
   id: AppId;
   name: string;
-  icon: string;
+  icon: React.FC<IconProps>;
   description: string;
   accentColor: string;
   category: 'core' | 'intel' | 'tools' | 'system';
@@ -17,7 +32,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   terminal: {
     id: 'terminal',
     name: 'Terminal',
-    icon: '\u2318',
+    icon: TerminalIcon,
     description: 'Command line interface',
     accentColor: palette.green,
     category: 'core',
@@ -28,7 +43,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'vps-terminal': {
     id: 'vps-terminal',
     name: 'VPS Terminal',
-    icon: '>_',
+    icon: VpsTerminalIcon,
     description: 'Remote VPS shell access',
     accentColor: palette.amber,
     category: 'core',
@@ -39,7 +54,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   scanner: {
     id: 'scanner',
     name: 'Scanner',
-    icon: '\uD83D\uDD0D',
+    icon: ScannerIcon,
     description: 'Threat intelligence scanner',
     accentColor: palette.cyan,
     category: 'core',
@@ -50,7 +65,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   browser: {
     id: 'browser',
     name: 'Browser',
-    icon: '\uD83C\uDF10',
+    icon: BrowserIcon,
     description: 'Internal tools browser',
     accentColor: palette.cyan,
     category: 'core',
@@ -61,7 +76,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   workshop: {
     id: 'workshop',
     name: 'Maestro',
-    icon: '\uD83C\uDFBC',
+    icon: MaestroIcon,
     description: 'AI orchestra — brainstorm with Claude, GPT & Gemini',
     accentColor: palette.green,
     category: 'intel',
@@ -71,7 +86,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   intel: {
     id: 'intel',
     name: 'Intel Dashboard',
-    icon: '\uD83D\uDCE1',
+    icon: IntelIcon,
     description: 'Threat feeds and news',
     accentColor: palette.cyan,
     category: 'intel',
@@ -81,7 +96,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   cases: {
     id: 'cases',
     name: 'Case Manager',
-    icon: '\uD83D\uDCCB',
+    icon: CaseIcon,
     description: 'Incident case notes',
     accentColor: palette.green,
     category: 'tools',
@@ -91,7 +106,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   files: {
     id: 'files',
     name: 'File Manager',
-    icon: '\uD83D\uDCC1',
+    icon: FilesIcon,
     description: 'GitHub repository browser',
     accentColor: palette.teal,
     category: 'tools',
@@ -102,7 +117,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   editor: {
     id: 'editor',
     name: 'Code Editor',
-    icon: '\uD83D\uDCDD',
+    icon: EditorIcon,
     description: 'Code editing workspace',
     accentColor: palette.amber,
     category: 'tools',
@@ -113,7 +128,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   monitor: {
     id: 'monitor',
     name: 'System Monitor',
-    icon: '\uD83D\uDCCA',
+    icon: MonitorIcon,
     description: 'System status and metrics',
     accentColor: palette.amber,
     category: 'system',
@@ -123,7 +138,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   settings: {
     id: 'settings',
     name: 'Settings',
-    icon: '\u2699\uFE0F',
+    icon: SettingsIcon,
     description: 'Application settings',
     accentColor: palette.textSecondary,
     category: 'system',
@@ -134,7 +149,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'ip-result': {
     id: 'ip-result',
     name: 'IP Result',
-    icon: '\uD83D\uDD0D',
+    icon: SearchResultIcon,
     description: 'IP scan result',
     accentColor: palette.cyan,
     category: 'core',
@@ -144,7 +159,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'url-result': {
     id: 'url-result',
     name: 'URL Result',
-    icon: '\uD83D\uDD0D',
+    icon: SearchResultIcon({ size: 20 }),
     description: 'URL scan result',
     accentColor: palette.cyan,
     category: 'core',
@@ -154,7 +169,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'domain-result': {
     id: 'domain-result',
     name: 'Domain Result',
-    icon: '\uD83D\uDD0D',
+    icon: SearchResultIcon({ size: 20 }),
     description: 'Domain scan result',
     accentColor: palette.cyan,
     category: 'core',
@@ -164,7 +179,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'hash-result': {
     id: 'hash-result',
     name: 'Hash Result',
-    icon: '\uD83D\uDD0D',
+    icon: SearchResultIcon({ size: 20 }),
     description: 'Hash scan result',
     accentColor: palette.cyan,
     category: 'core',

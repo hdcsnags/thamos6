@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/themecontext';
 import { useToast } from './ToastNotifications';
 import { supabase } from '../../lib/supabase';
+import { WALLPAPERS, getSavedWallpaper, saveWallpaper } from '../../design-system/wallpapers';
 
 const P = {
   void: '#060610',
@@ -573,6 +574,40 @@ export function DesktopSettings() {
                 </div>
               </button>
             ))}
+
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-3 rounded-sm" style={{ backgroundColor: P.cyan }} />
+                <span className="text-xs font-medium tracking-wider" style={{ color: P.cyan }}>WALLPAPER</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {WALLPAPERS.map(wp => {
+                  const isActive = getSavedWallpaper() === wp.id;
+                  return (
+                    <button
+                      key={wp.id}
+                      onClick={() => {
+                        saveWallpaper(wp.id);
+                        addToast({ type: 'success', title: 'Wallpaper changed', message: `${wp.name} applied` });
+                        // Force re-render of desktop background by dispatching custom event
+                        window.dispatchEvent(new CustomEvent('thamos:wallpaper-changed'));
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all"
+                      style={{
+                        backgroundColor: isActive ? `${P.cyan}08` : P.surface,
+                        border: `1px solid ${isActive ? `${P.cyan}40` : P.border}`,
+                      }}
+                    >
+                      <div
+                        className="w-full h-10 rounded-md"
+                        style={{ background: wp.preview }}
+                      />
+                      <span className="text-[10px]" style={{ color: isActive ? P.cyan : P.dim }}>{wp.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="mt-6">
               <div className="flex items-center gap-2 mb-3">

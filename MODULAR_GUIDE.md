@@ -661,11 +661,119 @@ const VALID_SERVICES = [
 
 ---
 
+## Module: Desktop Theme
+
+**Purpose:** Full windowed operating system environment for immersive multi-tool threat intelligence workflows.
+
+**Status:** ✅ Most complete theme. Currently active in production.
+
+### Files Required
+```
+CORE FILES (see above) +
+
+# Desktop Infrastructure
+src/components/desktop/DesktopLayout.tsx
+src/components/desktop/DesktopWindow.tsx
+src/components/desktop/DesktopContext.tsx
+src/components/desktop/Taskbar.tsx
+src/components/desktop/DesktopIcons.tsx
+src/components/desktop/SpotlightSearch.tsx
+src/components/desktop/AppLauncher.tsx
+src/components/desktop/BootSequence.tsx
+src/components/desktop/ContextMenu.tsx
+src/components/desktop/NotificationCenter.tsx
+src/components/desktop/ToastNotifications.tsx
+src/components/desktop/ShortcutsOverlay.tsx (inline in DesktopLayout.tsx)
+
+# Desktop Apps
+src/components/desktop/DesktopTerminal.tsx
+src/components/desktop/DesktopVPSTerminal.tsx
+src/components/desktop/DesktopScanner.tsx
+src/components/desktop/DesktopBrowser.tsx
+src/components/desktop/DesktopWorkshop.tsx
+src/components/desktop/DesktopIntelDashboard.tsx
+src/components/desktop/DesktopCaseManager.tsx
+src/components/desktop/DesktopGitHub.tsx
+src/components/editor/DesktopCodeEditor.tsx
+src/components/desktop/DesktopSystemMonitor.tsx
+src/components/desktop/DesktopSettings.tsx
+src/components/desktop/DesktopClock.tsx
+
+# Design System
+src/design-system/tokens.ts
+src/design-system/appRegistry.ts
+
+# Contexts
+src/contexts/DesktopContext.tsx
+src/contexts/themecontext.tsx
+```
+
+### Desktop App Registry
+Apps are defined in `src/design-system/appRegistry.ts`. Each app specifies:
+- `id` — matches `AppId` type in `DesktopContext.tsx`
+- `name`, `icon`, `description`
+- `accentColor` — used for window border glow and taskbar highlight
+- `category` — 'core' | 'intel' | 'tools' | 'system'
+- `keywords` — for Spotlight/App Launcher search
+- `defaultSize` — initial window dimensions
+- `showOnDesktop` — whether to show as a desktop icon
+
+### Desktop Context API (Window Manager)
+```typescript
+interface DesktopContextType {
+  windows: Record<string, WindowInstance>;
+  activeWindowId: string | null;
+  activeWorkspace: number; // 1-4
+  bootComplete: boolean;
+  openWindow(config): string;     // Returns window ID
+  closeWindow(id): void;
+  minimizeWindow(id): void;
+  maximizeWindow(id): void;
+  restoreWindow(id): void;
+  focusWindow(id): void;          // Brings to front (zIndex++)
+  updateWindowPosition(id, pos): void;
+  updateWindowSize(id, size): void;
+  moveToWorkspace(id, workspaceId): void;
+  switchWorkspace(workspaceId): void;
+  togglePinWindow(id): void;      // Pin = visible on all workspaces
+  getVisibleWindows(): WindowInstance[];
+  restoreSavedLayout(): boolean;  // From localStorage
+}
+```
+
+### Layout Persistence
+- Auto-saves to `localStorage` key `thamos6-desktop-layout` every 500ms (debounced)
+- Restores on boot if `bootComplete` and no windows exist
+- Falls back to opening Terminal + System Monitor if no saved layout
+
+### Keyboard Shortcuts (Desktop Mode)
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+K` / `Ctrl+Space` | Spotlight Search |
+| `Ctrl+W` | Close active window |
+| `Ctrl+Shift+T` | Reopen last closed window |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle windows forward/backward |
+| `Ctrl+`` ` | Focus/jump to Terminal |
+| `Ctrl+1-4` | Switch workspace |
+| `Ctrl+Arrow` | Tile window (left/right/up=maximize/down=restore) |
+| `Ctrl+D` | Show Desktop / restore all |
+| `?` | Toggle shortcuts overlay |
+| `Escape` | Close overlays |
+
+### Integration Points
+- Desktop **reuses Tactical result pages** (`IPResult`, `URLResult`, etc.) inside windows
+- Desktop Terminal can open result windows via `scan` command
+- Desktop Settings can switch between all themes (tactical/terminal/desktop)
+- Spotlight Search can detect IOCs and open result windows directly
+- All desktop apps use `lib/threatIntel.ts` for API calls (same as Tactical)
+
+---
+
 ## Integration Points
 
 ### Main Data Flow Diagram
 ```
-User Input (Page)
+User Input (Page / Desktop Window)
     ↓
 lib/threatIntel.ts (API wrapper)
     ↓
@@ -675,7 +783,7 @@ External APIs (VirusTotal, AbuseIPDB, etc.)
     ↓
 Database Tables (persistence)
     ↓
-Page Display (results)
+Page Display / Desktop Window Content (results)
 ```
 
 ### Cross-Module Dependencies
@@ -707,6 +815,12 @@ Page Display (results)
 **History ← IP Lookup, URL Scanner**
 - All lookups stored in history tables
 - History page queries both tables
+
+**Desktop Theme → All Modules**
+- Desktop apps wrap existing Tactical/Terminal functionality
+- Desktop Terminal uses same CLI commands as Terminal mode
+- Desktop Scanner uses same `Scanner.tsx` entry point
+- Desktop result windows reuse Tactical `results/*` pages
 
 ### Shared Edge Function
 

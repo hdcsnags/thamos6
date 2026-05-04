@@ -3,7 +3,7 @@ import { palette, typography } from '../../design-system/tokens';
 
 interface MenuItem {
   label: string;
-  icon?: string;
+  icon?: React.ReactNode;
   shortcut?: string;
   action: () => void;
   danger?: boolean;

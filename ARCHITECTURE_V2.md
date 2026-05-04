@@ -471,6 +471,8 @@ Sources Used:
 
 ## Component Hierarchy
 
+### Tactical Mode
+
 ```
 App.tsx
 ├── Layout.tsx
@@ -501,6 +503,52 @@ App.tsx
 │
 └── results/ExtensionResult.tsx (NEW)
     └── Extension analysis display
+```
+
+### Desktop Mode ⭐ (Most Complete)
+
+```
+App.tsx
+└── DesktopProvider
+    └── DesktopLayout.tsx
+        ├── BootSequence (on first session load)
+        ├── Desktop Background (gradient + dot grid + vignette)
+        ├── DesktopIcons (top-left grid)
+        ├── DesktopClock (ambient, bottom-right)
+        ├── DesktopWindow[] (managed by DesktopContext)
+        │   ├── DesktopTerminal
+        │   ├── DesktopVPSTerminal
+        │   ├── DesktopScanner
+        │   ├── DesktopBrowser
+        │   ├── DesktopWorkshop (Maestro AI)
+        │   ├── DesktopIntelDashboard
+        │   ├── DesktopCaseManager
+        │   ├── DesktopGitHub (File Manager)
+        │   ├── DesktopCodeEditor
+        │   ├── DesktopSystemMonitor
+        │   ├── DesktopSettings
+        │   └── Tactical result pages (IPResult, URLResult, etc. — reused)
+        ├── SpotlightSearch (Ctrl+K)
+        ├── AppLauncher
+        ├── ShortcutsOverlay (? key)
+        └── Taskbar
+            ├── App Launcher button
+            ├── Workspace buttons (1-4)
+            ├── Window list
+            ├── Agent status dots (X/Y/Z)
+            ├── ServiceStatus
+            ├── Notification bell + NotificationCenter
+            └── Clock
+
+DesktopContext (Window Manager)
+├── openWindow() / closeWindow()
+├── minimizeWindow() / maximizeWindow() / restoreWindow()
+├── focusWindow() (z-index management)
+├── updateWindowPosition() / updateWindowSize()
+├── moveToWorkspace() / switchWorkspace()
+├── togglePinWindow()
+├── getVisibleWindows()
+└── restoreSavedLayout() (from localStorage)
 ```
 
 ---

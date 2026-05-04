@@ -180,10 +180,10 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
                 }}
               >
                 <div
-                  className="text-2xl mb-0.5 transition-transform group-hover:scale-110"
-                  style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }}
+                  className="mb-0.5 transition-transform group-hover:scale-110"
+                  style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))', color: app.accentColor }}
                 >
-                  {app.icon}
+                  <app.icon size={28} />
                 </div>
                 <div
                   style={{

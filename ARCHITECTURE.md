@@ -36,9 +36,9 @@ Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security 
 
 ---
 
-## Dual Interface System
+## Multi-Interface System
 
-Thamos6 features two distinct user interfaces that can be toggled on-the-fly:
+Thamos6 features **four distinct user interfaces** that can be toggled on-the-fly. The architecture docs were historically written when only two existed (Tactical and Terminal); Desktop and Mission Control were added later.
 
 ### 1. Tactical Mode (Default)
 **Visual Style**: Modern, card-based GUI with rich visualizations
@@ -114,6 +114,71 @@ scan -domain evil.com --network
 - `--json` provides machine-readable output
 - Flags can be combined for custom views
 - Terminal displays active flags during scan
+
+### 3. Desktop Mode ⭐ (Currently Active)
+**Visual Style**: Full windowed operating system environment — dark theme with macOS-style window chrome, sidebar dock, bottom taskbar, and workspace switching.
+**Purpose**: Immersive OS-like experience for power users who want multiple tools open simultaneously in a managed desktop environment.
+**Best For**: Multi-tasking investigations, persistent tool layouts, users who prefer a desktop metaphor over page-based navigation.
+**Current Status**: **Most complete of the four themes.** Active at t6.thamOS.ca.
+
+**Features**:
+- **Window Manager**: Draggable, resizable (8-direction), minimizable, maximizable, closable windows
+- **Snap-to-Edge**: Drag to top = maximize, left/right = half-screen, corners = quarter-screen with live preview overlay
+- **4 Virtual Workspaces**: Switch via Ctrl+1-4, pinned windows appear on all workspaces
+- **Desktop Icons**: Top-left grid, double-click to open, right-click context menu
+- **App Launcher**: Global app search with categories (All, Core, Intel, Tools, System)
+- **Spotlight Search**: Ctrl+K global search — apps, IOC auto-detection, recent history, AI agents
+- **Taskbar**: Workspace buttons (1-4), window list with active/minimized states, agent status dots, notification bell, live clock
+- **Boot Sequence**: Themed OS boot with typing effect, scanlines, progress bar (once per session)
+- **Context Menus**: Right-click on desktop, title bar, taskbar, icons
+- **Keyboard Shortcuts**: Extensive — Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+Tab cycle, Ctrl+` focus terminal, Ctrl+1-4 workspaces, Ctrl+Arrow tile, Ctrl+D show desktop, ? help overlay
+- **Layout Persistence**: Auto-saves window positions to `localStorage`, restores on reload
+- **Notification Center**: Toast system with history, severity levels, click actions
+
+**Desktop Apps** (11 functional apps):
+| App | File | Description |
+|-----|------|-------------|
+| Terminal | `DesktopTerminal.tsx` | Custom CLI with 22 commands, tab completion, history |
+| VPS Terminal | `DesktopVPSTerminal.tsx` | Real `xterm.js` terminal via WebSocket/Cloudflare Tunnel |
+| Scanner | `DesktopScanner.tsx` | Unified threat intel scanner |
+| Browser | `DesktopBrowser.tsx` | Internal `thamos://` protocol browser |
+| Maestro | `DesktopWorkshop.tsx` | Multi-AI chat (Claude/GPT/Gemini), Orchestra mode |
+| Intel Dashboard | `DesktopIntelDashboard.tsx` | RSS threat feed reader |
+| Case Manager | `DesktopCaseManager.tsx` | Full CRUD for case notes |
+| File Manager | `DesktopGitHub.tsx` | GitHub repo browser + file viewer |
+| Code Editor | `editor/DesktopCodeEditor.tsx` | CodeMirror-based with tabs, save, GitHub commit |
+| System Monitor | `DesktopSystemMonitor.tsx` | Session uptime, scan counts, live activity feed |
+| Settings | `DesktopSettings.tsx` | API keys, GitHub/VPS connections, theme switcher, accent colors |
+
+**Window Chrome**:
+- macOS-style traffic lights (close=#f43f5e, minimize=#f59e0b, maximize=#00ff9d)
+- Hover reveals icons (×, −, □)
+- Active window gets accent-colored glow border + stronger shadow
+- Inactive windows fade to `opacity: 0.85`
+- Title bar shows app icon + uppercase title
+- Double-click title bar to toggle maximize
+- Right-click title bar for context menu (maximize, minimize, pin, move workspace, close)
+
+**Architecture**:
+- `DesktopContext` — Central window manager state (windows, activeWindowId, activeWorkspace, maxZIndex)
+- `DesktopLayout` — Root desktop renderer (background, icons, windows, taskbar, overlays)
+- `DesktopWindow` — Individual window chrome (drag, resize, snap, title bar, transitions)
+- `appRegistry.ts` — App metadata (icon, accent color, default size, category, keywords)
+- `tokens.ts` — Design system (colors, typography, shadows, spacing)
+
+**Known Limitations**:
+- App icons are currently Unicode emojis (inconsistent across OSes) — needs custom SVG set
+- Browser only handles internal `thamos://` URLs — no real web rendering
+- No wallpaper customization (hardcoded gradient + dot grid)
+- No minimize/maximize animations (instant snap)
+- Window title bar shows pixel dimensions (`900x600`) — dev-facing clutter
+- Reuses Tactical-themed result pages (`IPResult`, `URLResult`) inside desktop windows
+- No Mission Control / window overview view
+
+### 4. Mission Control Mode
+**Visual Style**: Stub/experimental. Exists in `themecontext.tsx` type definition only.
+**Purpose**: Originally planned as an activities overview / exposé view for Desktop theme.
+**Current Status**: Not implemented. Type exists for future expansion.
 
 ---
 
@@ -251,7 +316,7 @@ switch (command.toLowerCase()) {
 ### Theme System (`src/contexts/themecontext.tsx`)
 
 ```typescript
-type Theme = 'tactical' | 'terminal';
+type Theme = 'tactical' | 'terminal' | 'desktop' | 'mission-control';
 
 const ThemeContext = createContext({
   theme: 'tactical',
@@ -264,9 +329,10 @@ const ThemeContext = createContext({
 - Persists across sessions
 - Synced with user profile table (`ui_theme` column)
 - Can be toggled via:
-  - Settings page (Tactical mode)
-  - `startx` command (Terminal → Tactical)
+  - Settings page (Tactical/Desktop mode)
+  - `startx` command (Terminal → Tactical/Desktop)
   - `killx` command (Tactical → Terminal)
+  - Desktop Settings app (switch between all themes)
 
 **Theme-Specific Rendering** (`App.tsx`):
 ```typescript
@@ -275,6 +341,14 @@ if (theme === 'terminal') {
     <TerminalLayout>
       {renderTerminalPage()}
     </TerminalLayout>
+  );
+}
+
+if (theme === 'desktop') {
+  return (
+    <DesktopProvider>
+      <DesktopLayout />
+    </DesktopProvider>
   );
 }
 
@@ -288,6 +362,8 @@ return (
 **Visual Differences**:
 - **Tactical**: Modern cards, charts, rich colors, visual threat scores
 - **Terminal**: Monospace fonts, ASCII art, limited color palette (cyan, green, red), CLI-style output
+- **Desktop**: Full OS environment with windows, taskbar, workspaces, glassmorphism, dark palette
+- **Mission Control**: Not implemented (stub only)
 
 ---
 
@@ -1603,7 +1679,8 @@ Before deploying to production:
 │   ├── contexts/         # React contexts
 │   │   ├── AuthContext.tsx       # Authentication state
 │   │   ├── AlertContext.tsx      # Alert notifications
-│   │   └── themecontext.tsx      # Theme state (terminal/tactical)
+│   │   ├── themecontext.tsx      # Theme state (tactical/terminal/desktop/mission-control)
+│   │   └── DesktopContext.tsx      # Desktop window manager state 
 │   ├── lib/              # Utility libraries
 │   │   ├── supabase.ts           # Supabase client config
 │   │   ├── threatIntel.ts        # API wrapper functions
@@ -1652,6 +1729,12 @@ Before deploying to production:
 3. Add navigation item
 4. Add route in `App.tsx`
 
+**Add a desktop app**:
+1. Create `src/components/desktop/DesktopMyApp.tsx`
+2. Register in `src/design-system/appRegistry.ts`
+3. Add to `AppId` type in `src/contexts/DesktopContext.tsx`
+4. Add case to `renderWindowContent` in `src/components/desktop/DesktopLayout.tsx`
+
 **Add a threat intel source**:
 1. Update `FREE_SOURCES` or `PAID_SOURCES` in `threat-intel/index.ts`
 2. Implement query function
@@ -1681,3 +1764,9 @@ For questions or improvements, contact the development team or refer to internal
 - Database Schema: `supabase/migrations/*.sql`
 - Main Navigation: `src/components/Layout.tsx`
 - API Client: `src/lib/threatIntel.ts`
+- Desktop Theme: `src/components/desktop/DesktopLayout.tsx`
+- Window Manager: `src/contexts/DesktopContext.tsx`
+- Design System: `src/design-system/tokens.ts`
+- App Registry: `src/design-system/appRegistry.ts`
+- Project State: `THAMOS_STATE.md`
+- Agent Standards: `AGENTS.md`
