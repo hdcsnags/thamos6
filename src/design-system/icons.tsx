@@ -127,3 +127,14 @@ export const SearchResultIcon: React.FC<IconProps> = ({ size = 24, className }) 
     <path d="M8 11h6" />
   </svg>
 );
+
+export const TopDeskIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <path d="M4.5 3h15a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+    <path d="M12 10v11" />
+    <path d="M8 21h8" />
+    <path d="M9 6h.01" strokeWidth={2.5} />
+    <path d="M12 6h.01" strokeWidth={2.5} />
+    <path d="M15 6h.01" strokeWidth={2.5} />
+  </svg>
+);

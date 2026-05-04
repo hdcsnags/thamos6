@@ -11,9 +11,10 @@
 2. [UI/UX Audit Findings](#uiux-audit-findings)
 3. [Completed Features](#completed-features)
 4. [Pending Work (Prioritized)](#pending-work-prioritized)
-5. [Known Bugs](#known-bugs)
-6. [Sprint Log](#sprint-log)
-7. [Agent Operating Notes](#agent-operating-notes)
+5. [Integration Roadmap](#integration-roadmap)
+6. [Known Bugs](#known-bugs)
+7. [Sprint Log](#sprint-log)
+8. [Agent Operating Notes](#agent-operating-notes)
 
 ---
 
@@ -163,6 +164,38 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ---
 
+## Integration Roadmap
+
+> See **`INTEGRATION_ROADMAP.md`** for the complete feasibility analysis and phased implementation plan.
+> 
+> **Summary:** Integration with TopDesk (ticketing), Entra ID (remediation), Sentinel (SIEM/playbooks), and Defender (email investigation) is **technically feasible**. TopDesk and Entra are the highest-ROI, lowest-effort integrations. Email deep-link analysis is the most complex.
+
+### 🔴 Phase 1 — TopDesk + Entra Guard (High Priority)
+- [ ] **TopDesk Desktop app** — Search incidents by UPN, deduplication, enrichment, close/update
+- [ ] **Entra Guard Desktop app** — Revoke sessions, force password reset, view sign-in logs, disable account
+- [ ] **Analyst API credential storage** — Encrypted `analyst_api_credentials` table in Supabase
+- [ ] **Supabase Edge Functions** — `topdesk/*`, `entra/*`
+- [ ] **Settings panel expansion** — API key/config forms for TopDesk and Entra
+
+### 🟡 Phase 2 — Sentinel Console (Medium Priority)
+- [ ] **Sentinel Desktop app** — Incident list, KQL query runner, playbook trigger
+- [ ] **Pre-built KQL library** — Adopt `security-investigator` query pattern with metadata headers
+- [ ] **Logic App webhook integration** — Trigger remediation playbooks from ThamOS UI
+
+### 🟢 Phase 3 — Email Investigator (Lower Priority)
+- [ ] **Email Investigator Desktop app** — Defender email search, detonation results
+- [ ] **Attachment extraction pipeline** — Fetch attachments from mailbox or eDiscovery
+- [ ] **URL extraction from PDF/DOCX** — Custom parser Edge Function
+- [ ] **Redirect chain follower** — Recursive HTTP hop tracker
+- [ ] **Third-party sandbox integration** — URLScan.io, VirusTotal for URL detonation
+
+### 🔵 Phase 4 — AI Summaries (Future)
+- [ ] **Ticket correlation narrative** — "This UPN has 3 tickets, 2 Sentinel incidents, flagged by AbuseIPDB"
+- [ ] **Auto-generated closure notes** — One-click generate TopDesk action note with reasoning
+- [ ] **KQL query explanation** — Plain English description of pre-built queries
+
+---
+
 ## Known Bugs
 
 | # | Bug | Location | Severity | Fix Strategy |
@@ -222,6 +255,44 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 1. Mission Control overlay + desktop icon drag-and-drop
 2. Desktop-styled result pages (IPResult/URLResult wrappers)
 3. System tray expansion (volume, network, battery)
+
+### Sprint 2026-05-04 — TopDesk Integration + Build Fixes
+**Agent:** Kimi Code CLI
+**Scope:** TopDesk Desktop App, build fixes, clean boot state, settings integration
+
+**Completed:**
+- Removed forced Terminal + System Monitor open on fresh boot → clean desktop by default
+- Fixed build error: `src/pages/DesktopScanner.tsx` imported deleted `DesktopLayout.tsx` — replaced with local AGENTS/P definitions
+- Fixed build error: `appRegistry.ts` had `SearchResultIcon({ size: 20 })` function calls instead of component references
+- Built `TopDeskIcon` SVG in `icons.tsx` (ticket/helpdesk style outline icon)
+- Added `topdesk` to `AppId` union type in `DesktopContext.tsx`
+- Registered `topdesk` app in `appRegistry.ts` with blue accent, desktop icon enabled
+- Created `DesktopTopDesk.tsx` with full mock-data UI:
+  - UPN search bar with loading state
+  - Incident list with status badges, duplicate markers, primary auto-selection
+  - Detail view with action notes, category, operator info
+  - Deduplication panel: shows duplicate tickets, [CLOSE DUPLICATES & MERGE] button
+  - [ENRICH] button for adding ThamOS scan results to primary ticket
+  - [CLOSE AS BENIGN] and [ESCALATE] action buttons
+  - Toast notifications for actions
+- Added TopDesk configuration UI in Settings > Connections:
+  - URL, username, application password fields
+  - Save to localStorage
+  - Visual active/inactive status indicator
+- Created Supabase Edge Function stubs:
+  - `supabase/functions/topdesk/search-incidents.ts`
+  - `supabase/functions/topdesk/update-incident.ts`
+  - `supabase/functions/topdesk/deduplicate.ts`
+
+**Decisions Made:**
+- TopDesk App uses mock data for now; Edge Functions are ready for real API integration
+- Credentials stored in localStorage for rapid iteration; will migrate to encrypted Supabase table when API integration is live
+- Primary ticket auto-selected as newest open ticket; duplicates flagged via `isDuplicate` property
+
+**Next Sprint Candidates:**
+1. Wire TopDesk App to real Edge Functions (needs school board TopDesk credentials)
+2. Entra Guard app (session revoke, password reset)
+3. Azure Web App sister project (secure proxy for Microsoft APIs)
 
 ---
 

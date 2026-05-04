@@ -357,6 +357,9 @@ export function DesktopSettings() {
               )}
             </div>
 
+            {/* TopDesk Configuration */}
+            <TopDeskSettings />
+
             <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
               <span className="text-xs" style={{ color: P.dim, lineHeight: '1.6' }}>
                 GitHub access enables the File Manager app to browse your repositories.
@@ -655,6 +658,94 @@ export function DesktopSettings() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function TopDeskSettings() {
+  const { addToast } = useToast();
+  const [config, setConfig] = useState(() => {
+    try {
+      return {
+        url: localStorage.getItem('topdesk-url') || '',
+        username: localStorage.getItem('topdesk-username') || '',
+        appPassword: localStorage.getItem('topdesk-password') || '',
+      };
+    } catch {
+      return { url: '', username: '', appPassword: '' };
+    }
+  });
+  const [saving, setSaving] = useState(false);
+  const isConfigured = config.url && config.username && config.appPassword;
+
+  const save = () => {
+    setSaving(true);
+    try {
+      localStorage.setItem('topdesk-url', config.url);
+      localStorage.setItem('topdesk-username', config.username);
+      localStorage.setItem('topdesk-password', config.appPassword);
+      addToast({ type: 'success', title: 'TopDesk configuration saved' });
+    } catch {
+      addToast({ type: 'error', title: 'Failed to save configuration' });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="p-3 rounded space-y-3" style={{ backgroundColor: isConfigured ? `${P.green}06` : P.surface, border: `1px solid ${isConfigured ? `${P.green}20` : P.border}` }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: isConfigured ? P.green : P.dim, boxShadow: isConfigured ? `0 0 6px ${P.green}40` : 'none' }} />
+          <div>
+            <span className="text-xs font-medium" style={{ color: isConfigured ? P.green : P.text }}>TopDesk</span>
+            <span className="text-xs ml-2" style={{ color: P.dim }}>
+              {isConfigured ? 'Configured' : 'Not configured'}
+            </span>
+          </div>
+        </div>
+        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: isConfigured ? `${P.green}15` : `${P.dim}15`, color: isConfigured ? P.green : P.dim, border: `1px solid ${isConfigured ? `${P.green}30` : `${P.dim}30`}` }}>
+          {isConfigured ? 'ACTIVE' : 'INACTIVE'}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        <input
+          type="text"
+          value={config.url}
+          onChange={e => setConfig({ ...config, url: e.target.value })}
+          placeholder="TopDesk URL (e.g. https://schoolboard.topdesk.net)"
+          className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+          style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+        />
+        <input
+          type="text"
+          value={config.username}
+          onChange={e => setConfig({ ...config, username: e.target.value })}
+          placeholder="Username / Application Name"
+          className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+          style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+        />
+        <input
+          type="password"
+          value={config.appPassword}
+          onChange={e => setConfig({ ...config, appPassword: e.target.value })}
+          placeholder="Application Password"
+          className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+          style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          className="w-full py-2 text-xs font-medium rounded transition-all"
+          style={{ backgroundColor: `${P.blue}15`, border: `1px solid ${P.blue}40`, color: P.blue }}
+        >
+          {saving ? 'SAVING...' : 'SAVE TOPDESK CONFIG'}
+        </button>
+      </div>
+
+      <div className="p-2 rounded text-[11px]" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}`, color: P.dim, lineHeight: '1.5' }}>
+        Create an Application Password in TopDesk under Settings → API → Application Passwords. This is more secure than using your regular login credentials.
       </div>
     </div>
   );

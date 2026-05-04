@@ -1,7 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../contexts/themecontext';
 import { parseFlags, type ScanFlags } from '../lib/cliFlags';
-import { AGENTS, DESKTOP_PALETTE as P } from '../components/DesktopLayout';
+
+const AGENTS = {
+  thamosx: { name: 'ThamOS-X', model: 'Claude Opus 4.6', color: '#00ff9d', icon: '\u25C6' },
+  thamosy: { name: 'ThamOS-Y', model: 'GPT-5', color: '#fbbf24', icon: '\u25C7' },
+  thamosz: { name: 'ThamOS-Z', model: 'Gemini Ultra', color: '#00d9ff', icon: '\u25CB' },
+};
+
+const P = {
+  green: '#00ff9d',
+  textLight: '#c8cde0',
+  pink: '#f43f5e',
+  dim: '#3a3f55',
+  amber: '#fbbf24',
+  cyan: '#00d9ff',
+  blue: '#00b4d8',
+  purple: '#a855f7',
+};
 
 interface DesktopScannerProps {
   onScan: (type: string, value: string, flags?: ScanFlags) => void;

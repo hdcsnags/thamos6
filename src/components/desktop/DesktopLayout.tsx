@@ -19,6 +19,7 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
+import { DesktopTopDesk } from './DesktopTopDesk';
 import { DesktopGitHub } from './DesktopGitHub';
 import { DesktopCodeEditor } from '../editor/DesktopCodeEditor';
 import { DesktopClock } from './DesktopClock';
@@ -45,24 +46,11 @@ function DesktopContent() {
     return () => window.removeEventListener('thamos:wallpaper-changed', handler);
   }, []);
 
-  // Restore layout on boot
+  // Restore layout on boot — clean desktop, no forced windows
   useEffect(() => {
     if (desktop.bootComplete && Object.keys(desktop.windows).length === 0) {
-      const restored = desktop.restoreSavedLayout();
-      if (!restored) {
-        desktop.openWindow({
-          appId: 'terminal',
-          title: 'Terminal',
-          position: { x: 100, y: 60 },
-          size: { width: 900, height: 550 },
-        });
-        desktop.openWindow({
-          appId: 'monitor',
-          title: 'System Monitor',
-          pinned: true,
-          position: { x: window.innerWidth - 420, y: 20 },
-        });
-      }
+      desktop.restoreSavedLayout();
+      // Intentionally blank: no fallback windows open on fresh load
     }
   }, [desktop.bootComplete]);
 
@@ -459,6 +447,8 @@ function renderWindowContent(appId: string, data?: any) {
       return <DesktopSystemMonitor />;
     case 'settings':
       return <DesktopSettings />;
+    case 'topdesk':
+      return <DesktopTopDesk />;
     case 'ip-result':
       return <IPResult ip={data?.value} />;
     case 'url-result':

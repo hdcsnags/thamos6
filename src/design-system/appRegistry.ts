@@ -14,6 +14,7 @@ import {
   MonitorIcon,
   SettingsIcon,
   SearchResultIcon,
+  TopDeskIcon,
 } from './icons';
 
 export interface AppDefinition {
@@ -146,6 +147,17 @@ export const appRegistry: Record<string, AppDefinition> = {
     defaultSize: { width: 800, height: 600 },
     showOnDesktop: true,
   },
+  topdesk: {
+    id: 'topdesk',
+    name: 'TopDesk',
+    icon: TopDeskIcon,
+    description: 'Ticket search, deduplication, and enrichment',
+    accentColor: palette.blue,
+    category: 'tools',
+    keywords: ['topdesk', 'ticket', 'incident', 'support', 'helpdesk'],
+    defaultSize: { width: 1000, height: 700 },
+    showOnDesktop: true,
+  },
   'ip-result': {
     id: 'ip-result',
     name: 'IP Result',
@@ -159,7 +171,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'url-result': {
     id: 'url-result',
     name: 'URL Result',
-    icon: SearchResultIcon({ size: 20 }),
+    icon: SearchResultIcon,
     description: 'URL scan result',
     accentColor: palette.cyan,
     category: 'core',
@@ -169,7 +181,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'domain-result': {
     id: 'domain-result',
     name: 'Domain Result',
-    icon: SearchResultIcon({ size: 20 }),
+    icon: SearchResultIcon,
     description: 'Domain scan result',
     accentColor: palette.cyan,
     category: 'core',
@@ -179,7 +191,7 @@ export const appRegistry: Record<string, AppDefinition> = {
   'hash-result': {
     id: 'hash-result',
     name: 'Hash Result',
-    icon: SearchResultIcon({ size: 20 }),
+    icon: SearchResultIcon,
     description: 'Hash scan result',
     accentColor: palette.cyan,
     category: 'core',
