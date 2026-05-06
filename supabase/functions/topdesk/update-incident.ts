@@ -20,6 +20,7 @@ serve(async (req) => {
       );
     }
 
+    const baseUrl = topdeskUrl.replace(/\/$/, '');
     const auth = btoa(`${username}:${appPassword}`);
     const body: Record<string, unknown> = {};
 
@@ -28,7 +29,7 @@ serve(async (req) => {
       body.processingStatus = { name: status };
     }
 
-    const response = await fetch(`${topdeskUrl}/tas/api/incidents/id/${incidentId}`, {
+    const response = await fetch(`${baseUrl}/tas/api/incidents/id/${incidentId}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Basic ${auth}`,
@@ -40,6 +41,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       const text = await response.text();
+      console.error('TopDesk API error:', response.status, text);
       return new Response(
         JSON.stringify({ error: `TopDesk API error: ${response.status}`, details: text }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -53,6 +55,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err) {
+    console.error('Edge function error:', err);
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

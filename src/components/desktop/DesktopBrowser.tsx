@@ -1,8 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopSettings } from './DesktopSettings';
+import { DesktopTopDesk } from './DesktopTopDesk';
+import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink } from 'lucide-react';
 
 const P = {
   void: '#060610',
@@ -16,53 +18,137 @@ const P = {
   green: '#00ff9d',
   amber: '#fbbf24',
   pink: '#ff0080',
+  blue: '#00b4d8',
 };
 
 interface BrowserTab {
   id: string;
   url: string;
   title: string;
+  history: string[];
+  historyIndex: number;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  iframeBlocked?: boolean;
 }
 
 const INTERNAL_PAGES: Record<string, { title: string; component: React.ComponentType }> = {
   'thamos://home': { title: 'Home', component: HomePage },
   'thamos://news': { title: 'Intel Stream', component: DesktopIntelDashboard },
   'thamos://cases': { title: 'Case Manager', component: DesktopCaseManager },
+  'thamos://topdesk': { title: 'TopDesk', component: DesktopTopDesk },
   'thamos://settings': { title: 'Settings', component: DesktopSettings },
   'thamos://history': { title: 'History', component: HistoryPage },
 };
 
-const BOOKMARKS = [
+const DEFAULT_BOOKMARKS = [
   { label: 'Home', url: 'thamos://home' },
   { label: 'Intel', url: 'thamos://news' },
   { label: 'Cases', url: 'thamos://cases' },
+  { label: 'TopDesk', url: 'thamos://topdesk' },
   { label: 'History', url: 'thamos://history' },
   { label: 'Settings', url: 'thamos://settings' },
 ];
 
+function isInternalUrl(url: string): boolean {
+  return url.startsWith('thamos://');
+}
+
+function isValidUrl(url: string): boolean {
+  return isInternalUrl(url) || /^https?:\/\//i.test(url);
+}
+
+function normalizeUrl(input: string): string {
+  const trimmed = input.trim();
+  if (isInternalUrl(trimmed)) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.includes('.') && !trimmed.includes(' ')) return `https://${trimmed}`;
+  return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
+}
+
 export function DesktopBrowser() {
   const [tabs, setTabs] = useState<BrowserTab[]>([
-    { id: 'tab-1', url: 'thamos://home', title: 'Home' },
+    { id: 'tab-1', url: 'thamos://home', title: 'Home', history: ['thamos://home'], historyIndex: 0, canGoBack: false, canGoForward: false },
   ]);
   const [activeTabId, setActiveTabId] = useState('tab-1');
   const [urlInput, setUrlInput] = useState('thamos://home');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
-  const navigate = useCallback((url: string, tabId?: string) => {
-    const page = INTERNAL_PAGES[url];
-    const title = page?.title || url;
-    const targetId = tabId || activeTabId;
+  const updateTab = useCallback((tabId: string, updates: Partial<BrowserTab>) => {
+    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, ...updates } : t));
+  }, []);
 
-    setTabs(prev => prev.map(t =>
-      t.id === targetId ? { ...t, url, title } : t
-    ));
+  const navigate = useCallback((rawUrl: string, tabId?: string, addToHistory = true) => {
+    const url = normalizeUrl(rawUrl);
+    const targetId = tabId || activeTabId;
+    const internal = INTERNAL_PAGES[url];
+    const title = internal?.title || url;
+
+    setTabs(prev => prev.map(t => {
+      if (t.id !== targetId) return t;
+      const newHistory = addToHistory
+        ? [...t.history.slice(0, t.historyIndex + 1), url]
+        : t.history;
+      const newIndex = addToHistory ? newHistory.length - 1 : t.historyIndex;
+      return {
+        ...t,
+        url,
+        title,
+        history: newHistory,
+        historyIndex: newIndex,
+        canGoBack: newIndex > 0,
+        canGoForward: newIndex < newHistory.length - 1,
+        iframeBlocked: false,
+      };
+    }));
     setUrlInput(url);
   }, [activeTabId]);
 
+  const goBack = useCallback(() => {
+    setTabs(prev => prev.map(t => {
+      if (t.id !== activeTabId || t.historyIndex <= 0) return t;
+      const newIndex = t.historyIndex - 1;
+      const url = t.history[newIndex];
+      return {
+        ...t,
+        url,
+        title: INTERNAL_PAGES[url]?.title || url,
+        historyIndex: newIndex,
+        canGoBack: newIndex > 0,
+        canGoForward: true,
+        iframeBlocked: false,
+      };
+    }));
+  }, [activeTabId]);
+
+  const goForward = useCallback(() => {
+    setTabs(prev => prev.map(t => {
+      if (t.id !== activeTabId || t.historyIndex >= t.history.length - 1) return t;
+      const newIndex = t.historyIndex + 1;
+      const url = t.history[newIndex];
+      return {
+        ...t,
+        url,
+        title: INTERNAL_PAGES[url]?.title || url,
+        historyIndex: newIndex,
+        canGoBack: true,
+        canGoForward: newIndex < t.history.length - 1,
+        iframeBlocked: false,
+      };
+    }));
+  }, [activeTabId]);
+
+  const reload = useCallback(() => {
+    if (iframeRef.current && !isInternalUrl(activeTab.url)) {
+      iframeRef.current.src = activeTab.url;
+    }
+  }, [activeTab.url]);
+
   const addTab = () => {
     const id = `tab-${Date.now()}`;
-    setTabs(prev => [...prev, { id, url: 'thamos://home', title: 'Home' }]);
+    setTabs(prev => [...prev, { id, url: 'thamos://home', title: 'Home', history: ['thamos://home'], historyIndex: 0, canGoBack: false, canGoForward: false }]);
     setActiveTabId(id);
     setUrlInput('thamos://home');
   };
@@ -90,11 +176,40 @@ export function DesktopBrowser() {
     navigate(urlInput);
   };
 
-  const PageComponent = INTERNAL_PAGES[activeTab?.url]?.component || NotFoundPage;
+  const handleIframeError = () => {
+    updateTab(activeTabId, { iframeBlocked: true });
+  };
+
+  const openExternal = () => {
+    window.open(activeTab.url, '_blank', 'noopener,noreferrer');
+  };
+
+  const PageComponent = INTERNAL_PAGES[activeTab?.url]?.component;
+  const showIframe = !isInternalUrl(activeTab.url) && !activeTab.iframeBlocked;
+  const showBlocked = !isInternalUrl(activeTab.url) && activeTab.iframeBlocked;
+
+  // Sync urlInput when switching tabs
+  useEffect(() => {
+    setUrlInput(activeTab.url);
+  }, [activeTab.url]);
+
+  // Listen for internal navigation events from HomePage
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.url) {
+        navigate(detail.url);
+      }
+    };
+    window.addEventListener('thamos:browser-navigate', handler);
+    return () => window.removeEventListener('thamos:browser-navigate', handler);
+  }, [navigate]);
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+      {/* Toolbar */}
       <div style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
+        {/* Tabs */}
         <div className="flex items-center" style={{ borderBottom: `1px solid ${P.border}` }}>
           <div className="flex-1 flex items-center overflow-x-auto">
             {tabs.map(tab => (
@@ -132,32 +247,66 @@ export function DesktopBrowser() {
           </button>
         </div>
 
+        {/* Navigation bar */}
         <div className="flex items-center gap-2 px-3 py-1.5">
           <button
-            onClick={() => navigate('thamos://home')}
-            className="text-xs px-2 py-1 rounded transition-all flex-shrink-0"
-            style={{ color: P.dim, border: `1px solid ${P.border}` }}
+            onClick={goBack}
+            disabled={!activeTab.canGoBack}
+            className="text-xs p-1 rounded transition-all"
+            style={{ color: activeTab.canGoBack ? P.textLight : P.dim, opacity: activeTab.canGoBack ? 1 : 0.4 }}
+            title="Back"
           >
-            &#8962;
+            <ArrowLeft size={13} />
           </button>
-          <form onSubmit={handleUrlSubmit} className="flex-1">
-            <input
-              type="text"
-              value={urlInput}
-              onChange={e => setUrlInput(e.target.value)}
-              className="w-full px-3 py-1 text-xs rounded focus:outline-none"
-              style={{
-                backgroundColor: P.surfaceLight,
-                border: `1px solid ${P.border}`,
-                color: P.cyan,
-                fontFamily: 'JetBrains Mono, monospace',
-              }}
-            />
+          <button
+            onClick={goForward}
+            disabled={!activeTab.canGoForward}
+            className="text-xs p-1 rounded transition-all"
+            style={{ color: activeTab.canGoForward ? P.textLight : P.dim, opacity: activeTab.canGoForward ? 1 : 0.4 }}
+            title="Forward"
+          >
+            <ArrowRight size={13} />
+          </button>
+          <button
+            onClick={reload}
+            className="text-xs p-1 rounded transition-all"
+            style={{ color: P.dim }}
+            title="Reload"
+          >
+            <RotateCcw size={12} />
+          </button>
+          <button
+            onClick={() => navigate('thamos://home')}
+            className="text-xs p-1 rounded transition-all"
+            style={{ color: P.dim }}
+            title="Home"
+          >
+            <Home size={12} />
+          </button>
+
+          <form onSubmit={handleUrlSubmit} className="flex-1 flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 px-3 py-1 rounded" style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}` }}>
+              {isInternalUrl(urlInput) ? (
+                <Home size={11} style={{ color: P.cyan, flexShrink: 0 }} />
+              ) : urlInput.startsWith('https') ? (
+                <Lock size={11} style={{ color: P.green, flexShrink: 0 }} />
+              ) : (
+                <Globe size={11} style={{ color: P.dim, flexShrink: 0 }} />
+              )}
+              <input
+                type="text"
+                value={urlInput}
+                onChange={e => setUrlInput(e.target.value)}
+                className="flex-1 text-xs bg-transparent border-none outline-none"
+                style={{ color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              />
+            </div>
           </form>
         </div>
 
+        {/* Bookmarks bar */}
         <div className="flex items-center gap-1 px-3 py-1" style={{ borderTop: `1px solid ${P.border}` }}>
-          {BOOKMARKS.map(bm => (
+          {DEFAULT_BOOKMARKS.map(bm => (
             <button
               key={bm.url}
               onClick={() => navigate(bm.url)}
@@ -173,43 +322,117 @@ export function DesktopBrowser() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        <PageComponent />
+      {/* Content area */}
+      <div className="flex-1 overflow-hidden relative">
+        {PageComponent ? (
+          <PageComponent />
+        ) : showIframe ? (
+          <iframe
+            ref={iframeRef}
+            src={activeTab.url}
+            onError={handleIframeError}
+            onLoad={(e) => {
+              // Some sites load but then block with X-Frame-Options
+              // We can't detect X-Frame-Options directly, but we can set a timeout
+              setTimeout(() => {
+                try {
+                  // If we can access contentWindow.location, it's not blocked
+                  const loc = (e.target as HTMLIFrameElement).contentWindow?.location.href;
+                  if (!loc) {
+                    updateTab(activeTabId, { iframeBlocked: true });
+                  }
+                } catch {
+                  // Cross-origin access blocked — this is normal for most sites
+                  // We assume the iframe loaded successfully unless onError fires
+                }
+              }, 2000);
+            }}
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"
+            style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#fff' }}
+            title={activeTab.title}
+          />
+        ) : showBlocked ? (
+          <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void }}>
+            <div className="text-center max-w-md">
+              <AlertTriangle size={32} style={{ color: P.amber, opacity: 0.6 }} className="mx-auto mb-3" />
+              <p className="text-sm font-medium mb-1" style={{ color: P.textLight }}>This site cannot be embedded</p>
+              <p className="text-xs mb-4" style={{ color: P.dim }}>
+                {activeTab.url} has restricted iframe embedding for security reasons.
+              </p>
+              <button
+                onClick={openExternal}
+                className="flex items-center gap-2 mx-auto px-4 py-2 text-xs font-medium rounded transition-all"
+                style={{ backgroundColor: `${P.blue}15`, border: `1px solid ${P.blue}40`, color: P.blue }}
+              >
+                <ExternalLink size={12} />
+                OPEN IN NEW TAB
+              </button>
+            </div>
+          </div>
+        ) : (
+          <NotFoundPage />
+        )}
       </div>
     </div>
   );
 }
 
 function HomePage() {
+  const [quickUrl, setQuickUrl] = useState('');
+
+  const navigateTo = (url: string) => {
+    // This is a bit hacky but works for internal navigation
+    window.dispatchEvent(new CustomEvent('thamos:browser-navigate', { detail: { url } }));
+  };
+
   return (
     <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void }}>
-      <div className="text-center max-w-md">
-        <div className="mb-6">
-          <span className="text-2xl font-bold" style={{ color: P.textLight }}>THAM</span>
-          <span className="text-2xl font-bold" style={{ color: P.cyan }}>OS</span>
+      <div className="text-center max-w-lg w-full px-6">
+        <div className="mb-8">
+          <span className="text-3xl font-bold" style={{ color: P.textLight }}>THAM</span>
+          <span className="text-3xl font-bold" style={{ color: P.cyan }}>OS</span>
+          <p className="text-xs mt-2 tracking-wider" style={{ color: P.dim }}>SECURE BROWSER ENVIRONMENT</p>
+        </div>
+
+        <div className="flex items-center gap-2 mb-8">
+          <input
+            type="text"
+            value={quickUrl}
+            onChange={e => setQuickUrl(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && quickUrl.trim()) {
+                window.dispatchEvent(new CustomEvent('thamos:browser-navigate', { detail: { url: normalizeUrl(quickUrl) } }));
+                setQuickUrl('');
+              }
+            }}
+            placeholder="Search or type a URL..."
+            className="flex-1 px-4 py-2.5 text-xs rounded focus:outline-none"
+            style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-2 mb-6">
           {[
-            { url: 'thamos://news', label: 'Intel Stream', color: P.cyan },
-            { url: 'thamos://cases', label: 'Case Manager', color: P.green },
-            { url: 'thamos://history', label: 'Scan History', color: P.amber },
-            { url: 'thamos://settings', label: 'Settings', color: P.text },
+            { url: 'thamos://news', label: 'Intel Stream', color: P.cyan, desc: 'Threat feeds' },
+            { url: 'thamos://cases', label: 'Case Manager', color: P.green, desc: 'Investigations' },
+            { url: 'thamos://topdesk', label: 'TopDesk', color: P.blue, desc: 'Tickets' },
+            { url: 'thamos://history', label: 'Scan History', color: P.amber, desc: 'Past lookups' },
+            { url: 'thamos://settings', label: 'Settings', color: P.text, desc: 'Configuration' },
           ].map(link => (
-            <a
+            <button
               key={link.url}
-              href={link.url}
-              onClick={(e) => { e.preventDefault(); }}
-              className="p-3 rounded text-left transition-all"
+              onClick={() => navigateTo(link.url)}
+              className="p-3 rounded text-left transition-all hover:opacity-80"
               style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}
             >
-              <span className="text-xs font-medium" style={{ color: link.color }}>{link.label}</span>
-            </a>
+              <span className="text-xs font-medium block" style={{ color: link.color }}>{link.label}</span>
+              <span className="text-[10px]" style={{ color: P.dim }}>{link.desc}</span>
+            </button>
           ))}
         </div>
 
         <p className="text-xs" style={{ color: P.dim }}>
-          Navigate using the address bar or bookmarks
+          Type a URL above or use the bookmarks bar to navigate
         </p>
       </div>
     </div>
