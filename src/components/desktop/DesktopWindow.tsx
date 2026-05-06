@@ -118,7 +118,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         const newY = e.clientY - dragStart.y;
 
         const viewportWidth = globalThis.window.innerWidth;
-        const viewportHeight = globalThis.window.innerHeight - 44;
+        const viewportHeight = globalThis.window.innerHeight - 48;
 
         if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
           setSnapPreview({ x: 0, y: 0, width: viewportWidth / 2, height: viewportHeight / 2 });
@@ -173,7 +173,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
     const handleMouseUp = (e: globalThis.MouseEvent) => {
       if (isDragging && snapPreview) {
         const viewportWidth = globalThis.window.innerWidth;
-        const viewportHeight = globalThis.window.innerHeight - 44;
+        const viewportHeight = globalThis.window.innerHeight - 48;
 
         if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
           desktop.updateWindowPosition(id, { x: 0, y: 0 });
@@ -213,7 +213,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         top: 0,
         left: 0,
         width: '100vw',
-        height: 'calc(100vh - 44px)',
+        height: 'calc(100vh - 48px)',
         zIndex: win.zIndex,
       }
     : {
@@ -256,7 +256,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         style={{
           ...style,
           borderRadius: win.maximized ? 0 : '12px',
-          backgroundColor: palette.elevated,
+          backgroundColor: 'rgba(17, 20, 26, 0.82)',
           border: `1px solid ${activeBorder}`,
           backdropFilter: 'blur(24px)',
           boxShadow: activeGlow,
@@ -274,8 +274,11 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           style={{
             height: '38px',
             background: isActive 
-              ? `linear-gradient(to bottom, ${palette.surface}, ${palette.elevated})`
-              : `linear-gradient(to bottom, ${palette.float}, ${palette.elevated})`,
+              ? 'linear-gradient(to bottom, rgba(30, 34, 43, 0.95), rgba(17, 20, 26, 0.88))'
+              : 'linear-gradient(to bottom, rgba(24, 27, 34, 0.88), rgba(17, 20, 26, 0.82))',
+            boxShadow: isActive 
+              ? `inset 0 1px 0 ${win.accentColor}15, inset 0 -1px 0 ${win.accentColor}08`
+              : 'none',
             borderBottom: `1px solid ${isActive ? accentBorder(win.accentColor, 0.1) : palette.borderSubtle}`,
             fontFamily: typography.ui,
           }}
@@ -285,22 +288,33 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           onMouseEnter={() => setTitleHovered(true)}
           onMouseLeave={() => setTitleHovered(false)}
         >
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                desktop.closeWindow(id);
+          <div className="flex items-center gap-2 pl-1">
+            <span style={{ color: isActive ? win.accentColor : palette.textSecondary }}>
+              <win.icon size={14} />
+            </span>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: isActive ? palette.textPrimary : palette.textSecondary,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                fontFamily: typography.mono,
               }}
-              className="w-3 h-3 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
-              style={{ backgroundColor: '#f43f5e', boxShadow: isActive ? '0 0 8px #f43f5e40' : 'none' }}
-              aria-label="Close"
             >
-              {titleHovered && (
-                <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-                  <path d="M1 1L5 5M5 1L1 5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round" />
+              {win.title}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {win.pinned && (
+              <span title="Pinned to all workspaces" style={{ color: palette.cyan }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
                 </svg>
-              )}
-            </button>
+              </span>
+            )}
+            <div className="w-px h-4 mx-1" style={{ backgroundColor: palette.borderSubtle }} />
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -335,35 +349,21 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
                 </svg>
               )}
             </button>
-          </div>
-
-          <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2 transition-all"
-               style={{ opacity: isActive ? 1 : 0.6 }}>
-            <span style={{ color: isActive ? win.accentColor : palette.textSecondary }}>
-              <win.icon size={14} />
-            </span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: isActive ? palette.textPrimary : palette.textSecondary,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                fontFamily: typography.mono,
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                desktop.closeWindow(id);
               }}
+              className="w-3 h-3 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ backgroundColor: '#f43f5e', boxShadow: isActive ? '0 0 8px #f43f5e40' : 'none' }}
+              aria-label="Close"
             >
-              {win.title}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3 pr-1">
-            {win.pinned && (
-              <span title="Pinned to all workspaces" style={{ color: palette.cyan }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+              {titleHovered && (
+                <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
+                  <path d="M1 1L5 5M5 1L1 5" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
-              </span>
-            )}
+              )}
+            </button>
           </div>
         </div>
 
@@ -374,35 +374,35 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         {!win.maximized && (
           <>
             <div
-              className="absolute top-0 left-0 w-full h-1 cursor-n-resize"
+              className="absolute top-0 left-0 w-full h-2 cursor-n-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'n')}
             />
             <div
-              className="absolute bottom-0 left-0 w-full h-1 cursor-s-resize"
+              className="absolute bottom-0 left-0 w-full h-2 cursor-s-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 's')}
             />
             <div
-              className="absolute top-0 left-0 h-full w-1 cursor-w-resize"
+              className="absolute top-0 left-0 h-full w-2 cursor-w-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'w')}
             />
             <div
-              className="absolute top-0 right-0 h-full w-1 cursor-e-resize"
+              className="absolute top-0 right-0 h-full w-2 cursor-e-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'e')}
             />
             <div
-              className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize"
+              className="absolute top-0 left-0 w-6 h-6 cursor-nw-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'nw')}
             />
             <div
-              className="absolute top-0 right-0 w-4 h-4 cursor-ne-resize"
+              className="absolute top-0 right-0 w-6 h-6 cursor-ne-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'ne')}
             />
             <div
-              className="absolute bottom-0 left-0 w-4 h-4 cursor-sw-resize"
+              className="absolute bottom-0 left-0 w-6 h-6 cursor-sw-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'sw')}
             />
             <div
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize"
               onMouseDown={(e) => handleResizeMouseDown(e, 'se')}
             />
           </>

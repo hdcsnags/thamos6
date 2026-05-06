@@ -58,7 +58,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   return (
     <div
       data-taskbar="true"
-      className="fixed bottom-0 left-0 right-0 h-11 flex items-center justify-between px-3 gap-3 backdrop-blur-xl z-50"
+      className="fixed bottom-0 left-0 right-0 h-12 flex items-center justify-between px-3 gap-2 backdrop-blur-xl z-50"
       style={{
         backgroundColor: `${palette.base}cc`,
         borderTop: `1px solid ${palette.borderSubtle}`,
@@ -71,52 +71,62 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         desktop.openWindow({ appId: 'terminal', title: 'Terminal' });
       }}
     >
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onOpenLauncher}
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-          style={{ color: palette.cyan }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}10`; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-          aria-label="Open App Launcher"
+      <div className="flex items-center gap-2">
+        {/* Zone 1: Launcher + Workspaces */}
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 rounded-xl"
+          style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
         >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" />
-          </svg>
-        </button>
+          <button
+            onClick={onOpenLauncher}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+            style={{ color: palette.cyan }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}10`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            aria-label="Open App Launcher"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" />
+            </svg>
+          </button>
 
-        <div className="flex items-center gap-1">
-          {[1, 2, 3, 4].map(num => {
-            const winCount = Object.values(desktop.windows).filter(w => w.workspaceId === num && !w.pinned).length;
-            const isActive = desktop.activeWorkspace === num;
-            const hasWindows = winCount > 0;
-            return (
-              <button
-                key={num}
-                onClick={() => desktop.switchWorkspace(num)}
-                className="relative flex items-center justify-center w-7 h-7 rounded-md text-xs font-medium transition-all"
-                style={{
-                  backgroundColor: isActive ? `${palette.cyan}15` : 'transparent',
-                  color: isActive ? palette.cyan : hasWindows ? palette.textSecondary : palette.textTertiary,
-                  border: isActive ? `1px solid ${palette.cyan}30` : '1px solid transparent',
-                }}
-                aria-label={`Switch to workspace ${num} (${winCount} windows)`}
-              >
-                {num}
-                {hasWindows && !isActive && (
-                  <span
-                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: palette.cyan, opacity: 0.6 }}
-                  />
-                )}
-              </button>
-            );
-          })}
+          <div className="w-px h-5" style={{ backgroundColor: palette.borderSubtle }} />
+
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4].map(num => {
+              const winCount = Object.values(desktop.windows).filter(w => w.workspaceId === num && !w.pinned).length;
+              const isActive = desktop.activeWorkspace === num;
+              const hasWindows = winCount > 0;
+              return (
+                <button
+                  key={num}
+                  onClick={() => desktop.switchWorkspace(num)}
+                  className="relative flex items-center justify-center w-7 h-7 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    backgroundColor: isActive ? `${palette.cyan}15` : 'transparent',
+                    color: isActive ? palette.cyan : hasWindows ? palette.textSecondary : palette.textTertiary,
+                    border: isActive ? `1px solid ${palette.cyan}30` : '1px solid transparent',
+                  }}
+                  aria-label={`Switch to workspace ${num} (${winCount} windows)`}
+                >
+                  {num}
+                  {hasWindows && !isActive && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: palette.cyan, opacity: 0.6 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="w-px h-5" style={{ backgroundColor: palette.borderDefault }} />
-
-        <div className="flex items-center gap-1.5 overflow-x-auto max-w-2xl">
+        {/* Zone 2: Window List */}
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 rounded-xl overflow-x-auto max-w-2xl"
+          style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
+        >
           {openWindows.map(win => (
             <button
               key={win.id}
@@ -139,7 +149,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 ];
                 showContextMenu(e.clientX, e.clientY, items);
               }}
-              className="flex items-center gap-2 px-2.5 h-7 rounded-md text-xs font-medium transition-all whitespace-nowrap"
+              className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
               style={{
                 backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : 'transparent',
                 color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary,
@@ -154,11 +164,20 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
               <span className="max-w-[100px] truncate">{win.title}</span>
             </button>
           ))}
+          {openWindows.length === 0 && (
+            <span className="text-xs italic px-2" style={{ color: palette.textTertiary, fontFamily: typography.mono }}>
+              No windows
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
+        {/* Zone 3: Agent + Service + Notifications */}
+        <div
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl"
+          style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
+        >
           <div className="flex items-center gap-1.5" title="Agent Status">
             {agents.map(agent => (
               <div key={agent.key} className="relative group">
@@ -185,11 +204,11 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
             ))}
           </div>
 
-          <div className="w-px h-4" style={{ backgroundColor: palette.borderDefault }} />
+          <div className="w-px h-4" style={{ backgroundColor: palette.borderSubtle }} />
 
           <ServiceStatus />
 
-          <div className="w-px h-4" style={{ backgroundColor: palette.borderDefault }} />
+          <div className="w-px h-4" style={{ backgroundColor: palette.borderSubtle }} />
 
           <div className="relative">
             <button
@@ -216,16 +235,25 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
           </div>
         </div>
 
+        {/* Zone 4: Clock */}
         <div
-          className="tabular-nums"
+          className="flex items-center justify-center px-3 py-1.5 rounded-xl min-w-[72px]"
           style={{
-            fontSize: '12px',
-            fontFamily: typography.mono,
-            color: palette.textTertiary,
-            fontWeight: 500,
+            backgroundColor: `${palette.surface}40`,
+            border: `1px solid ${palette.borderSubtle}`,
           }}
         >
-          {time.toLocaleTimeString('en-US', { hour12: false })}
+          <span
+            className="tabular-nums"
+            style={{
+              fontSize: '12px',
+              fontFamily: typography.mono,
+              color: palette.textSecondary,
+              fontWeight: 500,
+            }}
+          >
+            {time.toLocaleTimeString('en-US', { hour12: false })}
+          </span>
         </div>
       </div>
     </div>
