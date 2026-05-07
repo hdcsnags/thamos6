@@ -139,7 +139,7 @@ export default function DomainResult({ domain }: DomainResultProps) {
                 <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
                   result.isMalicious ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                 }`}>
-                  {result.isMalicious ? '⚠️ MALICIOUS' : '✓ CLEAN'}
+                  {result.isMalicious ? 'MALICIOUS' : 'CLEAN'}
                 </span>
                 <span className="text-slate-500 text-sm">•</span>
                 <span className="text-slate-400 text-sm">Score: {result.overallThreatScore}</span>
@@ -220,7 +220,7 @@ function OverviewSection({ result, whoisData, vtData, copySummary, copyJson, cop
       </div>
       {whoisData?.nameservers && whoisData.nameservers.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">🌐 NAMESERVERS</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">NAMESERVERS</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {whoisData.nameservers.map((ns: string, idx: number) => (
               <div key={idx} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50"><span className="text-sm font-medium text-cyan-400 font-mono">{ns}</span></div>
@@ -281,7 +281,7 @@ function SecuritySection({ vtData, whoisData, proMode }: any) {
       <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2"><Shield className="w-6 h-6 text-cyan-400" />SECURITY ANALYSIS</h2>
       {analysisStats && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">🛡️ VIRUSTOTAL SCAN</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">VIRUSTOTAL SCAN</h3>
           <div className="grid grid-cols-4 gap-4">
             <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-center"><div className="text-2xl font-bold text-rose-400 mb-1">{analysisStats.malicious || 0}</div><div className="text-xs text-slate-400 uppercase tracking-wider">Malicious</div></div>
             <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center"><div className="text-2xl font-bold text-amber-400 mb-1">{analysisStats.suspicious || 0}</div><div className="text-xs text-slate-400 uppercase tracking-wider">Suspicious</div></div>

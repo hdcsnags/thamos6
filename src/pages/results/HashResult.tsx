@@ -158,7 +158,7 @@ export default function HashResult({ hash }: HashResultProps) {
                     ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
                     : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                 }`}>
-                  {result.isMalicious ? '⚠️ MALICIOUS' : '✓ CLEAN'}
+                  {result.isMalicious ? 'MALICIOUS' : 'CLEAN'}
                 </span>
                 <span className="text-slate-500 text-sm">•</span>
                 <span className="text-slate-400 text-sm">Score: {result.overallThreatScore}</span>
@@ -349,7 +349,7 @@ function OverviewSection({ result, vtData, malwareBazaarData, copySummary, copyJ
       {/* File Names */}
       {vtData?.names && vtData.names.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">📄 KNOWN FILE NAMES</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">KNOWN FILE NAMES</h3>
           <div className="space-y-2">
             {vtData.names.slice(0, 5).map((name: string, idx: number) => (
               <div key={idx} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 font-mono text-sm text-slate-300">
@@ -401,7 +401,7 @@ function FileInfoSection({ vtData, proMode }: any) {
 
       {proMode && vtData?.tags && vtData.tags.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">🏷️ FILE TAGS</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">FILE TAGS</h3>
           <div className="flex flex-wrap gap-2">
             {vtData.tags.map((tag: string, idx: number) => (
               <span key={idx} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800/50 text-slate-300 border border-slate-700/50">
@@ -460,7 +460,7 @@ function DetectionsSection({ vtData, proMode }: any) {
       {malicious.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
           <h3 className="text-lg font-bold text-rose-400 mb-4 uppercase tracking-wider">
-            🚫 MALICIOUS DETECTIONS ({malicious.length})
+            MALICIOUS DETECTIONS ({malicious.length})
           </h3>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {malicious.slice(0, proMode ? undefined : 10).map(([engine, result]: any, idx) => (
@@ -480,7 +480,7 @@ function DetectionsSection({ vtData, proMode }: any) {
       {suspicious.length > 0 && proMode && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
           <h3 className="text-lg font-bold text-amber-400 mb-4 uppercase tracking-wider">
-            ⚠️ SUSPICIOUS DETECTIONS ({suspicious.length})
+            SUSPICIOUS DETECTIONS ({suspicious.length})
           </h3>
           <div className="space-y-2">
             {suspicious.map(([engine, result]: any, idx) => (
@@ -515,7 +515,7 @@ function BehaviorSection({ vtData, proMode }: any) {
       {Object.keys(sandboxVerdicts).length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
           <h3 className="text-lg font-bold text-amber-400 mb-4 uppercase tracking-wider">
-            🔬 SANDBOX RESULTS ({Object.keys(sandboxVerdicts).length})
+            SANDBOX RESULTS ({Object.keys(sandboxVerdicts).length})
           </h3>
           <div className="space-y-4">
             {Object.entries(sandboxVerdicts).map(([sandbox, verdict]: any, idx) => (
@@ -554,7 +554,7 @@ function BehaviorSection({ vtData, proMode }: any) {
       {proMode && sigmaResults.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
           <h3 className="text-lg font-bold text-violet-400 mb-4 uppercase tracking-wider">
-            📊 SIGMA RULE MATCHES ({sigmaResults.length})
+            SIGMA RULE MATCHES ({sigmaResults.length})
           </h3>
           <div className="space-y-3">
             {sigmaResults.map((rule: any, idx: number) => (

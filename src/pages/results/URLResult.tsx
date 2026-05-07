@@ -168,7 +168,7 @@ export default function URLResult({ url }: URLResultProps) {
                 <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
                   result.isMalicious ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                 }`}>
-                  {result.isMalicious ? '⚠️ MALICIOUS' : '✓ CLEAN'}
+                  {result.isMalicious ? 'MALICIOUS' : 'CLEAN'}
                 </span>
                 <span className="text-slate-500 text-sm">•</span>
                 <span className="text-slate-400 text-sm">Score: {result.overallThreatScore}</span>
@@ -260,7 +260,7 @@ function AnalysisSection({ vtData, urlscanData, proMode }: any) {
       )}
       {vtData?.html_meta && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">📄 META TAGS</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">META TAGS</h3>
           <div className="space-y-3">
             {vtData.html_meta.description && (
               <div><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Description</div><div className="text-sm text-slate-300">{vtData.html_meta.description[0]}</div></div>
@@ -292,7 +292,7 @@ function ThreatsSection({ vtData, proMode }: any) {
       )}
       {malicious.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
-          <h3 className="text-lg font-bold text-rose-400 mb-4 uppercase tracking-wider">🚫 MALICIOUS DETECTIONS ({malicious.length})</h3>
+          <h3 className="text-lg font-bold text-rose-400 mb-4 uppercase tracking-wider">MALICIOUS DETECTIONS ({malicious.length})</h3>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {malicious.slice(0, proMode ? undefined : 10).map(([engine, result]: any, idx) => (
               <div key={idx} className="p-3 rounded-lg bg-slate-900/50 border border-rose-500/20 flex items-center justify-between"><div className="flex-1"><div className="font-bold text-white text-sm">{engine}</div><div className="text-xs text-rose-400">{result.result}</div></div><span className="px-2 py-1 rounded text-xs font-bold bg-rose-500/20 text-rose-400">DETECTED</span></div>
@@ -302,7 +302,7 @@ function ThreatsSection({ vtData, proMode }: any) {
       )}
       {proMode && suspicious.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-          <h3 className="text-lg font-bold text-amber-400 mb-4 uppercase tracking-wider">⚠️ SUSPICIOUS DETECTIONS ({suspicious.length})</h3>
+          <h3 className="text-lg font-bold text-amber-400 mb-4 uppercase tracking-wider">SUSPICIOUS DETECTIONS ({suspicious.length})</h3>
           <div className="space-y-2">
             {suspicious.map(([engine, result]: any, idx) => (
               <div key={idx} className="p-3 rounded-lg bg-slate-900/50 border border-amber-500/20 flex items-center justify-between"><div className="flex-1"><div className="font-bold text-white text-sm">{engine}</div><div className="text-xs text-amber-400">{result.result}</div></div><span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/20 text-amber-400">SUSPICIOUS</span></div>

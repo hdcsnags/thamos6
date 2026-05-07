@@ -195,7 +195,7 @@ export default function IPResult({ ip }: IPResultProps) {
                     ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
                     : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                 }`}>
-                  {result.isMalicious ? '⚠️ MALICIOUS' : '✓ CLEAN'}
+                  {result.isMalicious ? 'MALICIOUS' : 'CLEAN'}
                 </span>
                 <span className="text-slate-500 text-sm">•</span>
                 <span className="text-slate-400 text-sm">Score: {result.overallThreatScore}</span>
@@ -325,7 +325,7 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
             <div>
               <div className="text-xs text-slate-500 uppercase tracking-wider">Status</div>
               <div className={`text-lg font-medium ${enrichment.isVPN || enrichment.isProxy ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {enrichment.isVPN ? '🔒 VPN Detected' : enrichment.isProxy ? '🌐 Proxy Detected' : '✓ Clean'}
+                {enrichment.isVPN ? 'VPN Detected' : enrichment.isProxy ? 'Proxy Detected' : 'Clean'}
               </div>
             </div>
             {enrichment.vpnService && (
@@ -357,7 +357,7 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
           <div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">Detection</div>
             <div className={`text-lg font-medium ${enrichment.isTor ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {enrichment.isTor ? '🕵️ Tor Exit Node' : '✓ Not Tor'}
+              {enrichment.isTor ? 'Tor Exit Node' : 'Not Tor'}
             </div>
           </div>
         </div>
@@ -427,7 +427,7 @@ function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, viru
              style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
           <AlertTriangle className="w-6 h-6 text-rose-400 flex-shrink-0" />
           <div>
-            <div className="font-bold text-rose-400">⚠️ SPAMHAUS BLOCKLIST DETECTED</div>
+            <div className="font-bold text-rose-400">SPAMHAUS BLOCKLIST DETECTED</div>
             <div className="text-sm text-slate-400">Listed in {spamhausData.listedIn.length} blocklist(s)</div>
           </div>
         </div>
@@ -508,7 +508,7 @@ function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode 
       {spamhausData?.listedIn && spamhausData.listedIn.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
           <h3 className="text-lg font-bold text-rose-400 mb-4 uppercase tracking-wider">
-            🚫 SPAMHAUS BLOCKLISTS ({spamhausData.listedIn.length})
+            SPAMHAUS BLOCKLISTS ({spamhausData.listedIn.length})
           </h3>
           <div className="space-y-3">
             {spamhausData.listedIn.slice(0, proMode ? undefined : 3).map((list: string, idx: number) => (
@@ -527,7 +527,7 @@ function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode 
       {proMode && alienVaultData?.pulse_info?.pulses && alienVaultData.pulse_info.pulses.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
           <h3 className="text-lg font-bold text-violet-400 mb-4 uppercase tracking-wider">
-            📡 THREAT PULSES ({alienVaultData.pulse_info.count})
+            THREAT PULSES ({alienVaultData.pulse_info.count})
           </h3>
           <div className="space-y-3">
             {alienVaultData.pulse_info.pulses.slice(0, 5).map((pulse: any, idx: number) => (
@@ -559,7 +559,7 @@ function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode 
       {/* VirusTotal */}
       {virusTotalData?.data?.attributes?.last_analysis_stats && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">🛡️ VIRUSTOTAL ANALYSIS</h3>
+          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">VIRUSTOTAL ANALYSIS</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-center">
               <div className="text-2xl font-bold text-rose-400 mb-1">
@@ -609,13 +609,13 @@ function VPNSection({ enrichment, proxyCheckData, proMode }: any) {
           <div>
             <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">VPN Status</div>
             <div className={`text-xl font-bold ${enrichment.isVPN ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {enrichment.isVPN ? '🔒 VPN Detected' : '✓ No VPN'}
+              {enrichment.isVPN ? 'VPN Detected' : 'No VPN'}
             </div>
           </div>
           <div>
             <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Proxy Status</div>
             <div className={`text-xl font-bold ${enrichment.isProxy ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {enrichment.isProxy ? '🌐 Proxy Detected' : '✓ No Proxy'}
+              {enrichment.isProxy ? 'Proxy Detected' : 'No Proxy'}
             </div>
           </div>
           {enrichment.vpnService && (
