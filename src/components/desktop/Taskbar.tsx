@@ -6,7 +6,7 @@ import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { NotificationCenter } from './NotificationCenter';
 import { ServiceStatus } from './ServiceStatus';
 import { supabase } from '../../lib/supabase';
-import { Bell } from 'lucide-react';
+import { Bell, Square, Minimize2, Pin, PinOff, X } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
 
 interface TaskbarProps {
@@ -141,11 +141,11 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 e.preventDefault();
                 const items: MenuEntry[] = [
                   win.minimized
-                    ? { label: 'Restore', icon: '\u2B1C', action: () => desktop.restoreWindow(win.id) }
-                    : { label: 'Minimize', icon: '\u2500', action: () => desktop.minimizeWindow(win.id) },
-                  { label: win.pinned ? 'Unpin' : 'Pin to All Workspaces', icon: '\uD83D\uDCCC', action: () => desktop.togglePinWindow(win.id) },
+                    ? { label: 'Restore', icon: <Square size={14} />, action: () => desktop.restoreWindow(win.id) }
+                    : { label: 'Minimize', icon: <Minimize2 size={14} />, action: () => desktop.minimizeWindow(win.id) },
+                  { label: win.pinned ? 'Unpin' : 'Pin to All Workspaces', icon: win.pinned ? <PinOff size={14} /> : <Pin size={14} />, action: () => desktop.togglePinWindow(win.id) },
                   { type: 'divider' },
-                  { label: 'Close', icon: '\u2717', action: () => desktop.closeWindow(win.id), danger: true },
+                  { label: 'Close', icon: <X size={14} />, action: () => desktop.closeWindow(win.id), danger: true },
                 ];
                 showContextMenu(e.clientX, e.clientY, items);
               }}

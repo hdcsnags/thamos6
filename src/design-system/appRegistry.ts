@@ -15,6 +15,12 @@ import {
   SettingsIcon,
   SearchResultIcon,
   TopDeskIcon,
+  DecoderIcon,
+  DefangIcon,
+  EmailAnalyzerIcon,
+  IOCExtractorIcon,
+  BulkLookupIcon,
+  ExtensionScannerIcon,
 } from './icons';
 
 export interface AppDefinition {

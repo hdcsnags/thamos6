@@ -19,7 +19,13 @@ export type AppId =
   | 'url-result'
   | 'domain-result'
   | 'hash-result'
-  | 'extension-result';
+  | 'extension-result'
+  | 'decoder'
+  | 'defang'
+  | 'email-analyzer'
+  | 'ioc-extractor'
+  | 'bulk-lookup'
+  | 'extension-scanner';
 
 export interface WindowInstance {
   id: string;

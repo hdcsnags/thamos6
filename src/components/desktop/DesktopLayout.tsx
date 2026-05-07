@@ -13,6 +13,11 @@ import URLResult from '../../pages/results/URLResult';
 import DomainResult from '../../pages/results/DomainResult';
 import HashResult from '../../pages/results/HashResult';
 import ExtensionScanner from '../../pages/ExtensionScanner';
+import DecoderTool from '../../pages/DecoderTool';
+import DefangTool from '../../pages/DefangTool';
+import EmailAnalyzer from '../../pages/EmailAnalyzer';
+import IOCExtractor from '../../pages/IOCExtractor';
+import BulkLookup from '../../pages/BulkLookup';
 import { DesktopWorkshop } from './DesktopWorkshop';
 import { DesktopSystemMonitor } from './DesktopSystemMonitor';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
@@ -28,6 +33,7 @@ import { ToastProvider } from './ToastNotifications';
 import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
 import { getSavedWallpaper, getWallpaperById } from '../../design-system/wallpapers';
+import { Terminal, Monitor, LayoutGrid, Settings, Undo2 } from 'lucide-react';
 
 function DesktopContent() {
   const desktop = useDesktop();
@@ -234,11 +240,11 @@ function DesktopContent() {
     e.preventDefault();
 
     const items: MenuEntry[] = [
-      { label: 'New Terminal', icon: '\u2318', shortcut: 'Ctrl+`', action: () => desktop.openWindow({ appId: 'terminal', title: 'Terminal' }) },
-      { label: 'VPS Terminal', icon: '\uD83D\uDDA5', action: () => desktop.openWindow({ appId: 'vps-terminal', title: 'VPS Terminal' }) },
+      { label: 'New Terminal', icon: <Terminal size={14} />, shortcut: 'Ctrl+`', action: () => desktop.openWindow({ appId: 'terminal', title: 'Terminal' }) },
+      { label: 'VPS Terminal', icon: <Monitor size={14} />, action: () => desktop.openWindow({ appId: 'vps-terminal', title: 'VPS Terminal' }) },
       { type: 'divider' },
-      { label: 'App Launcher', icon: '\u2630', shortcut: 'Ctrl+K', action: () => setShowLauncher(true) },
-      { label: 'Settings', icon: '\u2699', action: () => desktop.openWindow({ appId: 'settings', title: 'Settings' }) },
+      { label: 'App Launcher', icon: <LayoutGrid size={14} />, shortcut: 'Ctrl+K', action: () => setShowLauncher(true) },
+      { label: 'Settings', icon: <Settings size={14} />, action: () => desktop.openWindow({ appId: 'settings', title: 'Settings' }) },
       { type: 'divider' },
       { label: 'Workspace 1', action: () => desktop.switchWorkspace(1), shortcut: 'Ctrl+1' },
       { label: 'Workspace 2', action: () => desktop.switchWorkspace(2), shortcut: 'Ctrl+2' },
@@ -249,7 +255,7 @@ function DesktopContent() {
     if (closedHistory.length > 0) {
       items.splice(5, 0, {
         label: `Reopen: ${closedHistory[closedHistory.length - 1].title}`,
-        icon: '\u21A9',
+        icon: <Undo2 size={14} />,
         shortcut: 'Ctrl+Shift+T',
         action: reopenLastClosed,
       });
@@ -459,6 +465,18 @@ function renderWindowContent(appId: string, data?: any) {
       return <HashResult hash={data?.value} />;
     case 'extension-result':
       return <ExtensionScanner initialUrl={data?.value} />;
+    case 'decoder':
+      return <DecoderTool />;
+    case 'defang':
+      return <DefangTool />;
+    case 'email-analyzer':
+      return <EmailAnalyzer />;
+    case 'ioc-extractor':
+      return <IOCExtractor />;
+    case 'bulk-lookup':
+      return <BulkLookup />;
+    case 'extension-scanner':
+      return <ExtensionScanner />;
     default:
       return (
         <div

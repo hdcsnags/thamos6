@@ -1,17 +1,18 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from './ToastNotifications';
 import { palette, typography } from '../../design-system/tokens';
+import { Info, Check, AlertTriangle, X, Shield, Bell } from 'lucide-react';
 
 interface NotificationCenterProps {
   onClose: () => void;
 }
 
-const TOAST_COLORS: Record<string, { accent: string; icon: string }> = {
-  info: { accent: palette.cyan, icon: '\u24D8' },
-  success: { accent: palette.green, icon: '\u2713' },
-  warning: { accent: palette.amber, icon: '\u26A0' },
-  error: { accent: palette.rose, icon: '\u2717' },
-  incident: { accent: palette.rose, icon: '\u2623' },
+const TOAST_COLORS: Record<string, { accent: string; icon: React.ReactNode }> = {
+  info: { accent: palette.cyan, icon: <Info size={10} /> },
+  success: { accent: palette.green, icon: <Check size={10} /> },
+  warning: { accent: palette.amber, icon: <AlertTriangle size={10} /> },
+  error: { accent: palette.rose, icon: <X size={10} /> },
+  incident: { accent: palette.rose, icon: <Shield size={10} /> },
 };
 
 const SEVERITY_COLORS = {
@@ -104,7 +105,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
       <div className="overflow-y-auto" style={{ maxHeight: '420px' }}>
         {reversed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <span style={{ fontSize: '24px', opacity: 0.2 }}>{'\uD83D\uDD14'}</span>
+            <span style={{ opacity: 0.2 }}><Bell size={24} /></span>
             <span className="mt-2 text-xs" style={{ color: palette.textDisabled }}>No notifications</span>
           </div>
         ) : (
@@ -131,7 +132,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
                       color: toast.metadata?.severity ? SEVERITY_COLORS[toast.metadata.severity] : (TOAST_COLORS[toast.type]?.accent || palette.cyan)
                     }}
                   >
-                    {TOAST_COLORS[toast.type]?.icon || '\u24D8'}
+                    {TOAST_COLORS[toast.type]?.icon || <Info size={10} />}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">

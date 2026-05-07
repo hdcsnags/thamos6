@@ -68,7 +68,7 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
     if (query.toLowerCase().includes('agent') || query.toLowerCase().includes('ai') || query.toLowerCase().includes('claude')) {
        results.push({ 
         type: 'agent', 
-        data: { name: 'Claude-3.5-Sonnet', description: 'Advanced security reasoning', icon: '🤖' } 
+        data: { name: 'Claude-3.5-Sonnet', description: 'Advanced security reasoning', icon: Bot } 
       });
     }
 
@@ -189,7 +189,7 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
                     {result.type === 'app' && <span className="leading-none"><result.data.icon size={20} /></span>}
                     {result.type === 'command' && <result.data.icon className="w-5 h-5" />}
                     {result.type === 'history' && <Clock className="w-5 h-5" />}
-                    {result.type === 'agent' && <span className="text-xl leading-none">{result.data.icon}</span>}
+                    {result.type === 'agent' && <result.data.icon className="w-5 h-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

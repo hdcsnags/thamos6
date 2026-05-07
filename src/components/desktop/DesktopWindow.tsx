@@ -2,6 +2,7 @@ import { ReactNode, useRef, useState, useEffect, useCallback, MouseEvent } from 
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography, shadows, accentBorder } from '../../design-system/tokens';
+import { Maximize2, Minimize2, Square, Pin, PinOff, X } from 'lucide-react';
 
 interface DesktopWindowProps {
   id: string;
@@ -82,14 +83,14 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
     const items: MenuEntry[] = [
       win.maximized
-        ? { label: 'Restore', icon: '\u2750', action: () => desktop.restoreWindow(id) }
-        : { label: 'Maximize', icon: '\u2B1C', action: () => desktop.maximizeWindow(id) },
-      { label: 'Minimize', icon: '\u2500', action: () => desktop.minimizeWindow(id) },
+        ? { label: 'Restore', icon: <Square size={14} />, action: () => desktop.restoreWindow(id) }
+        : { label: 'Maximize', icon: <Maximize2 size={14} />, action: () => desktop.maximizeWindow(id) },
+      { label: 'Minimize', icon: <Minimize2 size={14} />, action: () => desktop.minimizeWindow(id) },
       { type: 'divider' },
-      { label: win.pinned ? 'Unpin from All Workspaces' : 'Pin to All Workspaces', icon: '\uD83D\uDCCC', action: () => desktop.togglePinWindow(id) },
+      { label: win.pinned ? 'Unpin from All Workspaces' : 'Pin to All Workspaces', icon: win.pinned ? <PinOff size={14} /> : <Pin size={14} />, action: () => desktop.togglePinWindow(id) },
       ...workspaceItems,
       { type: 'divider' },
-      { label: 'Close', icon: '\u2717', shortcut: 'Ctrl+W', action: () => desktop.closeWindow(id), danger: true },
+      { label: 'Close', icon: <X size={14} />, shortcut: 'Ctrl+W', action: () => desktop.closeWindow(id), danger: true },
     ];
 
     showContextMenu(e.clientX, e.clientY, items);

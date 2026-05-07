@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode, useRef } from 'react';
 import { palette, typography } from '../../design-system/tokens';
+import { Info, Check, AlertTriangle, X, Shield } from 'lucide-react';
 
 type ToastType = 'info' | 'success' | 'warning' | 'error' | 'incident';
 
@@ -36,12 +37,12 @@ export function useToast() {
   return context;
 }
 
-const TOAST_COLORS: Record<ToastType, { accent: string; icon: string }> = {
-  info: { accent: palette.cyan, icon: '\u24D8' },
-  success: { accent: palette.green, icon: '\u2713' },
-  warning: { accent: palette.amber, icon: '\u26A0' },
-  error: { accent: palette.rose, icon: '\u2717' },
-  incident: { accent: palette.rose, icon: '\u2623' },
+const TOAST_COLORS: Record<ToastType, { accent: string; icon: React.ReactNode }> = {
+  info: { accent: palette.cyan, icon: <Info size={12} /> },
+  success: { accent: palette.green, icon: <Check size={12} /> },
+  warning: { accent: palette.amber, icon: <AlertTriangle size={12} /> },
+  error: { accent: palette.rose, icon: <X size={12} /> },
+  incident: { accent: palette.rose, icon: <Shield size={12} /> },
 };
 
 const SEVERITY_COLORS = {

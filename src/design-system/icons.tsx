@@ -138,3 +138,58 @@ export const TopDeskIcon: React.FC<IconProps> = ({ size = 24, className }) => (
     <path d="M15 6h.01" strokeWidth={2.5} />
   </svg>
 );
+
+export const DecoderIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <polyline points="16 18 22 12 16 6" />
+    <polyline points="8 6 2 12 8 18" />
+    <path d="M10 12h4" />
+  </svg>
+);
+
+export const DefangIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="M4.5 4.5l15 15" />
+  </svg>
+);
+
+export const EmailAnalyzerIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+    <polyline points="22,6 12,13 2,6" />
+    <path d="M9 12l-4 4" />
+    <path d="M15 12l4 4" />
+  </svg>
+);
+
+export const IOCExtractorIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.2-3.2" />
+    <circle cx="11" cy="11" r="1" fill="currentColor" stroke="none" />
+    <circle cx="7" cy="8" r="0.75" fill="currentColor" stroke="none" />
+    <circle cx="14" cy="14" r="0.75" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const BulkLookupIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <rect x="2" y="3" width="20" height="6" rx="1" />
+    <rect x="2" y="11" width="20" height="6" rx="1" />
+    <path d="M6 6h.01" strokeWidth={2.5} />
+    <path d="M6 14h.01" strokeWidth={2.5} />
+  </svg>
+);
+
+export const ExtensionScannerIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <path d="M4 7V4h3" />
+    <path d="M17 4h3v3" />
+    <path d="M20 17v3h-3" />
+    <path d="M7 20H4v-3" />
+    <path d="M9 9h6v6H9z" />
+    <path d="M15 12h3" />
+    <path d="M6 12H3" />
+  </svg>
+);
