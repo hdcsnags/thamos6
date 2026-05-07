@@ -97,15 +97,51 @@ export const WALLPAPERS: Wallpaper[] = [
     },
     preview: 'radial-gradient(circle at 50% 50%, rgba(0,180,216,0.3), transparent 60%), #050508',
   },
+  {
+    id: 'dragon-dark',
+    name: 'Nightwatch',
+    style: {
+      backgroundColor: '#050508',
+      backgroundImage: 'url(/wallpapers/dragon-dark.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    },
+    preview: 'radial-gradient(circle at 70% 50%, rgba(0,180,216,0.2), transparent 60%), #050508',
+  },
+  {
+    id: 'dragon-eye',
+    name: 'Sentinel',
+    style: {
+      backgroundColor: '#050508',
+      backgroundImage: 'url(/wallpapers/dragon-eye.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    },
+    preview: 'radial-gradient(circle at 60% 50%, rgba(0,180,216,0.25), transparent 55%), #050508',
+  },
+  {
+    id: 'thamos-type',
+    name: 'Cascade',
+    style: {
+      backgroundColor: '#050508',
+      backgroundImage: 'url(/wallpapers/thamos-type.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    },
+    preview: 'radial-gradient(circle at 50% 50%, rgba(0,180,216,0.3), transparent 60%), #050508',
+  },
 ];
 
 export const WALLPAPER_STORAGE_KEY = 'thamos6-wallpaper';
 
 export function getSavedWallpaper(): string {
   try {
-    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'dragon-circuit';
+    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'dragon-dark';
   } catch {
-    return 'dragon-circuit';
+    return 'dragon-dark';
   }
 }
 
