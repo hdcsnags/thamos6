@@ -4,7 +4,7 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopSettings } from './DesktopSettings';
 import { DesktopTopDesk } from './DesktopTopDesk';
-import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const P = {
   void: '#060610',
@@ -72,7 +72,11 @@ export function DesktopBrowser() {
   ]);
   const [activeTabId, setActiveTabId] = useState('tab-1');
   const [urlInput, setUrlInput] = useState('thamos://home');
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
@@ -171,6 +175,56 @@ export function DesktopBrowser() {
     if (tab) setUrlInput(tab.url);
   };
 
+  const reorderTabs = useCallback((draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    setTabs(prev => {
+      const draggedIdx = prev.findIndex(t => t.id === draggedId);
+      const targetIdx = prev.findIndex(t => t.id === targetId);
+      if (draggedIdx === -1 || targetIdx === -1) return prev;
+      const newTabs = [...prev];
+      const [removed] = newTabs.splice(draggedIdx, 1);
+      newTabs.splice(targetIdx, 0, removed);
+      return newTabs;
+    });
+  }, []);
+
+  const checkScroll = useCallback(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  const scrollTabs = useCallback((direction: 'left' | 'right') => {
+    const el = tabsRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction === 'left' ? -150 : 150, behavior: 'smooth' });
+    setTimeout(checkScroll, 300);
+  }, [checkScroll]);
+
+  // Check scroll on mount and tab changes
+  useEffect(() => {
+    checkScroll();
+    const el = tabsRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkScroll);
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [tabs.length, checkScroll]);
+
+  // Scroll active tab into view
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const activeTabEl = el.querySelector(`[data-tab-id="${activeTabId}"]`) as HTMLElement;
+    if (activeTabEl) {
+      activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeTabId]);
+
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     navigate(urlInput);
@@ -211,17 +265,42 @@ export function DesktopBrowser() {
       <div style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
         {/* Tabs */}
         <div className="flex items-center" style={{ borderBottom: `1px solid ${P.border}` }}>
-          <div className="flex-1 flex items-center overflow-x-auto pr-2">
+          {canScrollLeft && (
+            <button
+              onClick={() => scrollTabs('left')}
+              className="flex-shrink-0 px-1 py-1.5 transition-colors hover:text-white"
+              style={{ color: P.dim }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+          )}
+          <div
+            ref={tabsRef}
+            className="flex-1 flex items-center overflow-x-auto pr-2"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            onDragOver={(e) => e.preventDefault()}
+          >
             {tabs.map(tab => (
               <div
                 key={tab.id}
-                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all flex-shrink-0 max-w-[180px] group"
+                data-tab-id={tab.id}
+                draggable
+                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all flex-shrink-0 max-w-[180px] group select-none"
                 style={{
                   backgroundColor: tab.id === activeTabId ? P.surfaceLight : 'transparent',
                   borderRight: `1px solid ${P.border}`,
                   borderBottom: tab.id === activeTabId ? `2px solid ${P.cyan}` : '2px solid transparent',
+                  opacity: draggedTabId === tab.id ? 0.4 : 1,
                 }}
                 onClick={() => switchTab(tab.id)}
+                onDragStart={() => setDraggedTabId(tab.id)}
+                onDragEnd={() => setDraggedTabId(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedTabId) reorderTabs(draggedTabId, tab.id);
+                  setDraggedTabId(null);
+                }}
+                onDragOver={(e) => e.preventDefault()}
               >
                 <span className="text-xs truncate" style={{ color: tab.id === activeTabId ? P.textLight : P.dim }}>
                   {tab.title}
@@ -243,6 +322,15 @@ export function DesktopBrowser() {
               </div>
             ))}
           </div>
+          {canScrollRight && (
+            <button
+              onClick={() => scrollTabs('right')}
+              className="flex-shrink-0 px-1 py-1.5 transition-colors hover:text-white"
+              style={{ color: P.dim }}
+            >
+              <ChevronRight size={14} />
+            </button>
+          )}
           <button
             onClick={addTab}
             className="px-3 py-1.5 text-xs transition-all flex-shrink-0 hover:text-white"
