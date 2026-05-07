@@ -139,9 +139,9 @@ export const WALLPAPER_STORAGE_KEY = 'thamos6-wallpaper';
 
 export function getSavedWallpaper(): string {
   try {
-    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'dragon-dark';
+    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'thamos-type';
   } catch {
-    return 'dragon-dark';
+    return 'thamos-type';
   }
 }
 
