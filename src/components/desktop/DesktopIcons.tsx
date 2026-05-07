@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useContextMenu } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
@@ -8,6 +8,7 @@ const GRID_COL = 84;
 const GRID_ROW = 92;
 const MARGIN_X = 16;
 const MARGIN_Y = 16;
+const DRAG_THRESHOLD = 5;
 const POSITIONS_KEY = 'thamos6-desktop-icon-positions';
 
 interface IconPos {
@@ -36,20 +37,24 @@ export function DesktopIcons() {
   const icons = getDesktopIcons();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Default positions: column on the left
   const defaultPositions = Object.fromEntries(
     icons.map((app, i) => [app.id, { col: 0, row: i }])
   );
 
   const [positions, setPositions] = useState<Record<string, IconPos>>(() => {
     const saved = loadPositions();
-    // Merge saved with defaults for any new icons
     return { ...defaultPositions, ...saved };
   });
 
   const [dragging, setDragging] = useState<string | null>(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const dragStartPos = useRef({ x: 0, y: 0 });
+  const dragState = useRef<{
+    appId: string;
+    offsetX: number;
+    offsetY: number;
+    startX: number;
+    startY: number;
+    hasDragged: boolean;
+  } | null>(null);
 
   const handleDoubleClick = (app: ReturnType<typeof getDesktopIcons>[number]) => {
     desktop.openWindow({
@@ -73,48 +78,73 @@ export function DesktopIcons() {
     if (e.button !== 0) return;
     const el = e.currentTarget as HTMLElement;
     const rect = el.getBoundingClientRect();
-    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    dragStartPos.current = { x: e.clientX, y: e.clientY };
-    setDragging(appId);
-    e.preventDefault();
-  }, []);
 
-  useEffect(() => {
-    if (!dragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const el = containerRef.current?.querySelector(`[data-icon-id="${dragging}"]`) as HTMLElement;
-      if (!el) return;
-      el.style.left = `${e.clientX - dragOffset.current.x}px`;
-      el.style.top = `${e.clientY - dragOffset.current.y}px`;
-      el.style.zIndex = '100';
+    dragState.current = {
+      appId,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      startX: e.clientX,
+      startY: e.clientY,
+      hasDragged: false,
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
-      const snapped = snapToGrid(e.clientX - dragOffset.current.x + GRID_COL / 2, e.clientY - dragOffset.current.y + GRID_ROW / 2);
+    const handleMouseMove = (ev: MouseEvent) => {
+      const state = dragState.current;
+      if (!state) return;
 
-      setPositions(prev => {
-        const next = { ...prev, [dragging]: snapped };
-        savePositions(next);
-        return next;
-      });
+      const dx = Math.abs(ev.clientX - state.startX);
+      const dy = Math.abs(ev.clientY - state.startY);
 
-      const el = containerRef.current?.querySelector(`[data-icon-id="${dragging}"]`) as HTMLElement;
+      if (!state.hasDragged && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
+        state.hasDragged = true;
+        setDragging(appId);
+      }
+
+      if (state.hasDragged) {
+        const el = containerRef.current?.querySelector(`[data-icon-id="${appId}"]`) as HTMLElement;
+        if (el) {
+          el.style.left = `${ev.clientX - state.offsetX}px`;
+          el.style.top = `${ev.clientY - state.offsetY}px`;
+          el.style.zIndex = '100';
+        }
+      }
+    };
+
+    const handleMouseUp = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      const state = dragState.current;
+      dragState.current = null;
+
+      if (!state) return;
+
+      const el = containerRef.current?.querySelector(`[data-icon-id="${appId}"]`) as HTMLElement;
       if (el) {
         el.style.left = '';
         el.style.top = '';
         el.style.zIndex = '';
       }
-      setDragging(null);
+
+      if (state.hasDragged) {
+        const snapped = snapToGrid(
+          ev.clientX - state.offsetX + GRID_COL / 2,
+          ev.clientY - state.offsetY + GRID_ROW / 2
+        );
+        setPositions(prev => {
+          const next = { ...prev, [appId]: snapped };
+          savePositions(next);
+          return next;
+        });
+        setDragging(null);
+      }
+      // If !hasDragged, this was just a click — do nothing, let onDoubleClick handle it
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [dragging, snapToGrid]);
+    e.preventDefault();
+  }, [snapToGrid]);
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-10 pointer-events-none">
