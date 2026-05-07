@@ -211,7 +211,7 @@ export function DesktopBrowser() {
       <div style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
         {/* Tabs */}
         <div className="flex items-center" style={{ borderBottom: `1px solid ${P.border}` }}>
-          <div className="flex-1 flex items-center overflow-x-auto">
+          <div className="flex-1 flex items-center overflow-x-auto pr-2">
             {tabs.map(tab => (
               <div
                 key={tab.id}
@@ -229,10 +229,15 @@ export function DesktopBrowser() {
                 {tabs.length > 1 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                    className="text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    className="flex items-center justify-center w-5 h-5 rounded text-xs transition-all opacity-60 hover:opacity-100 flex-shrink-0"
                     style={{ color: P.dim }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${P.pink}20`; e.currentTarget.style.color = P.pink; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = P.dim; }}
+                    title="Close tab"
                   >
-                    x
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
                   </button>
                 )}
               </div>
@@ -240,10 +245,13 @@ export function DesktopBrowser() {
           </div>
           <button
             onClick={addTab}
-            className="px-3 py-1.5 text-xs transition-all flex-shrink-0"
+            className="px-3 py-1.5 text-xs transition-all flex-shrink-0 hover:text-white"
             style={{ color: P.dim, borderLeft: `1px solid ${P.border}` }}
+            title="New tab"
           >
-            +
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
 
