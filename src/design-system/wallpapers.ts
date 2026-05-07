@@ -103,9 +103,9 @@ export const WALLPAPER_STORAGE_KEY = 'thamos6-wallpaper';
 
 export function getSavedWallpaper(): string {
   try {
-    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'default';
+    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'dragon-circuit';
   } catch {
-    return 'default';
+    return 'dragon-circuit';
   }
 }
 
