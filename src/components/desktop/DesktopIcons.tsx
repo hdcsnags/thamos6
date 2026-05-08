@@ -8,7 +8,7 @@ const GRID_COL = 84;
 const GRID_ROW = 92;
 const MARGIN_X = 16;
 const MARGIN_Y = 16;
-const DRAG_THRESHOLD = 5;
+const DRAG_THRESHOLD = 8; // pixels before a click becomes a drag (was 5, too easy to trigger accidentally)
 const POSITIONS_KEY = 'thamos6-desktop-icon-positions';
 
 interface IconPos {
@@ -35,7 +35,6 @@ export function DesktopIcons() {
   const desktop = useDesktop();
   const { showContextMenu } = useContextMenu();
   const icons = getDesktopIcons();
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const defaultPositions = Object.fromEntries(
     icons.map((app, i) => [app.id, { col: 0, row: i }])
@@ -46,7 +45,11 @@ export function DesktopIcons() {
     return { ...defaultPositions, ...saved };
   });
 
-  const [dragging, setDragging] = useState<string | null>(null);
+  // Tracks the actively-dragged icon's live pixel position.
+  // Using React state (not direct DOM manipulation) prevents the icon from
+  // briefly jumping to (0,0) when React removes left/top during a re-render.
+  const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
+
   const dragState = useRef<{
     appId: string;
     offsetX: number;
@@ -65,20 +68,17 @@ export function DesktopIcons() {
     });
   };
 
-  const snapToGrid = useCallback((clientX: number, clientY: number) => {
-    const col = Math.round((clientX - MARGIN_X) / GRID_COL);
-    const row = Math.round((clientY - MARGIN_Y) / GRID_ROW);
-    return {
-      col: Math.max(0, col),
-      row: Math.max(0, row),
-    };
+  const snapToGrid = useCallback((iconLeft: number, iconTop: number): IconPos => {
+    // Snap the icon's top-left corner to the nearest grid cell origin.
+    const col = Math.round((iconLeft - MARGIN_X) / GRID_COL);
+    const row = Math.round((iconTop - MARGIN_Y) / GRID_ROW);
+    return { col: Math.max(0, col), row: Math.max(0, row) };
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, appId: string) => {
     if (e.button !== 0) return;
-    const el = e.currentTarget as HTMLElement;
-    const rect = el.getBoundingClientRect();
 
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     dragState.current = {
       appId,
       offsetX: e.clientX - rect.left,
@@ -97,16 +97,16 @@ export function DesktopIcons() {
 
       if (!state.hasDragged && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
         state.hasDragged = true;
-        setDragging(appId);
       }
 
       if (state.hasDragged) {
-        const el = containerRef.current?.querySelector(`[data-icon-id="${appId}"]`) as HTMLElement;
-        if (el) {
-          el.style.left = `${ev.clientX - state.offsetX}px`;
-          el.style.top = `${ev.clientY - state.offsetY}px`;
-          el.style.zIndex = '100';
-        }
+        // Update position through React state — no direct DOM manipulation.
+        // This avoids the fight between React renders and el.style.left/top.
+        setDragPos({
+          id: appId,
+          x: ev.clientX - state.offsetX,
+          y: ev.clientY - state.offsetY,
+        });
       }
     };
 
@@ -116,29 +116,23 @@ export function DesktopIcons() {
 
       const state = dragState.current;
       dragState.current = null;
+      setDragPos(null);
 
-      if (!state) return;
+      if (!state || !state.hasDragged) return;
 
-      const el = containerRef.current?.querySelector(`[data-icon-id="${appId}"]`) as HTMLElement;
-      if (el) {
-        el.style.left = '';
-        el.style.top = '';
-        el.style.zIndex = '';
-      }
+      // Snap the icon's top-left corner to the nearest grid cell.
+      // Note: do NOT add GRID_COL/2 here — that offset was the source of
+      // the consistent +1 column drift on every accidental drag.
+      const snapped = snapToGrid(
+        ev.clientX - state.offsetX,
+        ev.clientY - state.offsetY,
+      );
 
-      if (state.hasDragged) {
-        const snapped = snapToGrid(
-          ev.clientX - state.offsetX + GRID_COL / 2,
-          ev.clientY - state.offsetY + GRID_ROW / 2
-        );
-        setPositions(prev => {
-          const next = { ...prev, [appId]: snapped };
-          savePositions(next);
-          return next;
-        });
-        setDragging(null);
-      }
-      // If !hasDragged, this was just a click — do nothing, let onDoubleClick handle it
+      setPositions(prev => {
+        const next = { ...prev, [appId]: snapped };
+        savePositions(next);
+        return next;
+      });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -147,10 +141,10 @@ export function DesktopIcons() {
   }, [snapToGrid]);
 
   return (
-    <div ref={containerRef} className="fixed inset-0 z-10 pointer-events-none">
+    <div className="fixed inset-0 z-10 pointer-events-none">
       {icons.map(app => {
-        const pos = positions[app.id] || { col: 0, row: 0 };
-        const isDragging = dragging === app.id;
+        const pos = positions[app.id] ?? { col: 0, row: 0 };
+        const isDragging = dragPos?.id === app.id;
 
         return (
           <button
@@ -163,19 +157,39 @@ export function DesktopIcons() {
               e.preventDefault();
               e.stopPropagation();
               showContextMenu(e.clientX, e.clientY, [
-                { label: `Open ${app.name}`, icon: <app.icon size={14} />, action: () => handleDoubleClick(app) },
-                { label: 'Open in Workspace 2', icon: <span className="text-[10px] font-mono">2</span>, action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 2 }) },
-                { label: 'Open in Workspace 3', icon: <span className="text-[10px] font-mono">3</span>, action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 3 }) },
+                {
+                  label: `Open ${app.name}`,
+                  icon: <app.icon size={14} />,
+                  action: () => handleDoubleClick(app),
+                },
+                {
+                  label: 'Open in Workspace 2',
+                  icon: <span className="text-[10px] font-mono">2</span>,
+                  action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 2 }),
+                },
+                {
+                  label: 'Open in Workspace 3',
+                  icon: <span className="text-[10px] font-mono">3</span>,
+                  action: () => desktop.openWindow({ appId: app.id, title: app.name, icon: app.icon, accentColor: app.accentColor, workspaceId: 3 }),
+                },
               ]);
             }}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all hover:bg-white/5 pointer-events-auto group absolute"
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl pointer-events-auto group absolute"
             style={{
               width: `${GRID_COL - 8}px`,
-              left: isDragging ? undefined : `${MARGIN_X + pos.col * GRID_COL}px`,
-              top: isDragging ? undefined : `${MARGIN_Y + pos.row * GRID_ROW}px`,
+              // Position is always explicitly set — never undefined — so the icon
+              // never jumps to (0,0) when React re-renders mid-drag.
+              left: isDragging ? `${dragPos!.x}px` : `${MARGIN_X + pos.col * GRID_COL}px`,
+              top: isDragging ? `${dragPos!.y}px` : `${MARGIN_Y + pos.row * GRID_ROW}px`,
+              zIndex: isDragging ? 100 : undefined,
               cursor: isDragging ? 'grabbing' : 'grab',
               userSelect: 'none',
+              // Disable ALL transitions while dragging so the icon tracks the cursor precisely.
+              transition: isDragging ? 'none' : 'background-color 150ms ease',
+              backgroundColor: 'transparent',
             }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.05)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
           >
             <div
               className="transition-transform group-hover:scale-110"
