@@ -130,6 +130,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
           {openWindows.map(win => (
             <button
               key={win.id}
+              data-window-tab={win.id}
               onClick={() => {
                 if (win.minimized) {
                   desktop.restoreWindow(win.id);
