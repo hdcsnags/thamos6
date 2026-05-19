@@ -1,4 +1,4 @@
-export type IOCType = 'ip' | 'url' | 'domain' | 'hash' | 'extension' | 'unknown';
+export type IOCType = 'ip' | 'url' | 'domain' | 'hash' | 'extension' | 'cve' | 'wallet' | 'email' | 'unknown';
 
 export interface IOCDetectionResult {
   type: IOCType;
@@ -13,6 +13,12 @@ const sha1Regex = /^[a-fA-F0-9]{40}$/;
 const sha256Regex = /^[a-fA-F0-9]{64}$/;
 const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
 const chromeExtensionIdRegex = /^[a-z]{32}$/;
+const cveRegex = /^CVE-\d{4}-\d{4,}$/i;
+const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+// BTC: P2PKH (1...), P2SH (3...), bech32 (bc1...)
+const btcAddressRegex = /^(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[ac-hj-np-z02-9]{6,87}$/;
+// ETH: 0x followed by 40 hex chars
+const ethAddressRegex = /^0x[a-fA-F0-9]{40}$/;
 
 function normalizeInput(input: string): string {
   return input.trim().toLowerCase();
@@ -43,6 +49,24 @@ function isDomain(value: string): boolean {
 
 function isChromeExtensionId(value: string): boolean {
   return chromeExtensionIdRegex.test(value);
+}
+
+function isCVE(value: string): boolean {
+  return cveRegex.test(value);
+}
+
+function isEmail(value: string): boolean {
+  return emailRegex.test(value);
+}
+
+function isWallet(value: string): boolean {
+  return btcAddressRegex.test(value) || ethAddressRegex.test(value);
+}
+
+export function getWalletCurrency(address: string): 'btc' | 'eth' | 'unknown' {
+  if (ethAddressRegex.test(address)) return 'eth';
+  if (btcAddressRegex.test(address)) return 'btc';
+  return 'unknown';
 }
 
 function extractChromeExtensionId(url: string): string | null {
@@ -89,6 +113,22 @@ export function detectIOCType(input: string): IOCDetectionResult {
     };
   }
 
+  if (isCVE(trimmed)) {
+    return {
+      type: 'cve',
+      value: trimmed.toUpperCase(),
+      normalizedValue: trimmed.toUpperCase(),
+    };
+  }
+
+  if (isEmail(trimmed)) {
+    return {
+      type: 'email',
+      value: trimmed,
+      normalizedValue: normalized,
+    };
+  }
+
   if (isURL(trimmed)) {
     return {
       type: 'url',
@@ -118,6 +158,14 @@ export function detectIOCType(input: string): IOCDetectionResult {
       type: 'extension',
       value: trimmed,
       normalizedValue: normalized,
+    };
+  }
+
+  if (isWallet(trimmed)) {
+    return {
+      type: 'wallet',
+      value: trimmed,
+      normalizedValue: trimmed,
     };
   }
 

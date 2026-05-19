@@ -341,6 +341,23 @@ const RULE_DEFINITIONS: Record<string, Rule> = {
   }
 };
 
+async function checkCRXcavator(extensionId: string): Promise<Record<string, unknown>> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`https://crxcavator.io/api/v1/report/${extensionId}`, {
+      headers: { "Accept": "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return { available: false, error: `HTTP ${response.status}` };
+    const data = await response.json();
+    return { available: true, data };
+  } catch (e) {
+    return { available: false, error: String(e) };
+  }
+}
+
 const SUSPICIOUS_TLDS = ['.xyz', '.top', '.tk', '.ml', '.ga', '.cf', '.gq', '.pw', '.cc'];
 const WHITELISTED_DOMAINS = [
   'google-analytics.com', 'googleapis.com', 'gstatic.com',
@@ -455,6 +472,8 @@ Deno.serve(async (req: Request) => {
     const manifest = JSON.parse(new TextDecoder().decode(manifestFile));
     console.log(`Manifest parsed: ${manifest.name} v${manifest.version}`);
 
+    const crxcavatorData = await checkCRXcavator(extensionId);
+
     const findings: SecurityFinding[] = [];
     const iocs: IOC[] = [];
     const behaviorFlags: BehaviorFlag[] = [];
@@ -509,7 +528,8 @@ Deno.serve(async (req: Request) => {
         total_files_scanned: files.size,
         skipped_files: skippedFiles,
         scan_duration_ms: scanDuration,
-        files_skipped_count: skippedFiles.length
+        files_skipped_count: skippedFiles.length,
+        crxcavator_data: crxcavatorData,
       })
       .select()
       .single();
@@ -550,6 +570,54 @@ Deno.serve(async (req: Request) => {
     }
 
     await storeFileContents(supabase, analysis.id, files);
+
+    // Fan out extracted IOCs to the threat-intel pipeline for enrichment
+    const functionBaseUrl = `${supabaseUrl}/functions/v1/threat-intel`;
+    const forwardAuth = req.headers.get("Authorization") ?? `Bearer ${supabaseKey}`;
+    const uniqueIocUrls = [...new Set(iocs.filter(i => i.ioc_type === "url").map(i => i.ioc_value))].slice(0, 3);
+    const uniqueHashes = [...new Set(iocs.filter(i => i.ioc_type === "hash" && i.ioc_value.length >= 32).map(i => i.ioc_value))].slice(0, 2);
+
+    if (uniqueIocUrls.length > 0 || uniqueHashes.length > 0) {
+      const enrichmentJobs = [
+        ...uniqueIocUrls.map(url => {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), 8000);
+          return fetch(`${functionBaseUrl}/url`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": forwardAuth },
+            body: JSON.stringify({ url }),
+            signal: controller.signal,
+          }).then(r => { clearTimeout(t); return r.ok ? r.json() : null; })
+            .catch(() => null)
+            .then(result => ({ type: "url", value: url, result }));
+        }),
+        ...uniqueHashes.map(hash => {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), 8000);
+          return fetch(`${functionBaseUrl}/hash`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": forwardAuth },
+            body: JSON.stringify({ hash }),
+            signal: controller.signal,
+          }).then(r => { clearTimeout(t); return r.ok ? r.json() : null; })
+            .catch(() => null)
+            .then(result => ({ type: "hash", value: hash, result }));
+        }),
+      ];
+
+      const settled = await Promise.allSettled(enrichmentJobs);
+      const iocEnrichments = settled
+        .filter((r): r is PromiseFulfilledResult<{ type: string; value: string; result: unknown }> => r.status === "fulfilled")
+        .map(r => r.value)
+        .filter(e => e.result !== null);
+
+      if (iocEnrichments.length > 0) {
+        await supabase
+          .from("extension_analyses")
+          .update({ ioc_enrichments: iocEnrichments })
+          .eq("id", analysis.id);
+      }
+    }
 
     // Vault delta computation
     const { data: vaultEntry } = await supabase
@@ -612,7 +680,8 @@ Deno.serve(async (req: Request) => {
         behavior_flags: behaviorFlags.length,
         obfuscation_score: obfuscationScore,
         scan_duration_ms: scanDuration,
-        files_skipped: skippedFiles.length
+        files_skipped: skippedFiles.length,
+        crxcavator: crxcavatorData.available ? (crxcavatorData.data ?? null) : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone *)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "PowerShell(Get-ChildItem \"C:\\\\New folder\\\\t62026\\\\supabase\\\\migrations\" | Where-Object { $_.Name -match 'rss|news|feed|bookmark|history|browser' } | Select-Object Name)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(node_modules/.bin/vite build *)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -21,11 +21,27 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   const [time, setTime] = useState(new Date());
   const [agentStatus, setAgentStatus] = useState({ x: false, y: false, z: false });
   const [showNotifications, setShowNotifications] = useState(false);
+  const [intelUnread, setIntelUnread] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchIntelUnread = async () => {
+      const { count } = await supabase
+        .from('user_feed_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+      setIntelUnread(count ?? 0);
+    };
+    fetchIntelUnread();
+    const timer = setInterval(fetchIntelUnread, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -163,6 +179,14 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 <win.icon size={14} />
               </span>
               <span className="max-w-[100px] truncate">{win.title}</span>
+              {win.appId === 'intel' && intelUnread > 0 && (
+                <span
+                  className="ml-0.5 px-1 rounded-full text-[9px] font-bold"
+                  style={{ backgroundColor: palette.cyan, color: palette.base }}
+                >
+                  {intelUnread > 99 ? '99+' : intelUnread}
+                </span>
+              )}
             </button>
           ))}
           {openWindows.length === 0 && (

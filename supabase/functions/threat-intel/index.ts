@@ -80,11 +80,23 @@ interface IPEnrichment {
 }
 
 const FREE_SOURCES = [
-  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru", "blocklistde", "malwarebazaar"
+  "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru", "blocklistde", "malwarebazaar",
+  "phishtank", "openphish", "tranco",
+  // Phase 1 — new IOC types
+  "nvd", "cisa_kev", "epss",
+  "blockchain_info", "ethplorer",
+  "emailrep", "email_dns",
+  // Phase 2 — passive DNS + cert transparency
+  "circl_pdns", "mnemonic_pdns", "crtsh",
 ];
 
 const PAID_SOURCES = [
-  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy", "iphub", "vpnapi", "hybrid_analysis"
+  "virustotal", "abuseipdb", "shodan", "ipqualityscore", "proxycheck", "greynoise", "urlscan", "ip2proxy", "iphub", "vpnapi", "hybrid_analysis",
+  "google_safebrowsing",
+  // Phase 1 — paid sources for new IOC types
+  "hibp", "misttrack",
+  // Phase 2 — paid pDNS + scan sources
+  "securitytrails", "censys",
 ];
 
 const CACHE_DURATION_HOURS = 6;
@@ -147,6 +159,13 @@ async function getOrgApiKeys(): Promise<Record<string, string>> {
     iphub: Deno.env.get("IPHUB_API_KEY") ?? "",
     vpnapi: Deno.env.get("VPNAPI_API_KEY") ?? "",
     hybrid_analysis: Deno.env.get("HYBRID_ANALYSIS_API_KEY") ?? "",
+    google_safebrowsing: Deno.env.get("GOOGLE_SAFEBROWSING_API_KEY") ?? "",
+    hibp: Deno.env.get("HIBP_API_KEY") ?? "",
+    misttrack: Deno.env.get("MISTTRACK_API_KEY") ?? "",
+    nvd: Deno.env.get("NVD_API_KEY") ?? "",
+    securitytrails: Deno.env.get("SECURITYTRAILS_API_KEY") ?? "",
+    censys: Deno.env.get("CENSYS_API_KEY") ?? "", // format: "app_id:api_secret"
+    circl_pdns: Deno.env.get("CIRCL_PDNS_AUTH") ?? "", // optional, format: "user:pass" base64
   };
 }
 
@@ -1372,6 +1391,683 @@ async function checkAlienVaultHash(ctx: TierContext, hash: string, apiKey: strin
   }
 }
 
+// ── Phase 2: Passive DNS + cert transparency ──────────────────────────────────
+
+interface PDNSRecord {
+  rrtype: string;
+  rrname: string;
+  rdata: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  count: number | null;
+  source: string;
+}
+
+async function checkCIRCLPDNS(ctx: TierContext, target: string, authB64: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "circl_pdns", target);
+  if (cached) return { source: "circl_pdns", data: cached };
+  try {
+    const headers: Record<string, string> = { "Accept": "application/json" };
+    if (authB64) headers["Authorization"] = `Basic ${authB64}`;
+    const response = await fetchWithTimeout(
+      `https://www.circl.lu/pdns/query/${encodeURIComponent(target)}`,
+      { headers }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    const records: PDNSRecord[] = text.trim().split("\n")
+      .filter(Boolean)
+      .flatMap(line => {
+        try {
+          const r = JSON.parse(line);
+          return [{
+            rrtype: (r.rrtype ?? "A").toUpperCase(),
+            rrname: (r.rrname ?? "").replace(/\.$/, ""),
+            rdata: (r.rdata ?? "").replace(/\.$/, ""),
+            first_seen: r.time_first ? new Date(r.time_first * 1000).toISOString() : null,
+            last_seen: r.time_last ? new Date(r.time_last * 1000).toISOString() : null,
+            count: r.count ?? null,
+            source: "CIRCL",
+          }];
+        } catch { return []; }
+      });
+    const data = { records, total: records.length, source: "CIRCL Passive DNS" };
+    await setCachedResponse(ctx, "circl_pdns", target, data);
+    return { source: "circl_pdns", data };
+  } catch (e) {
+    return { source: "circl_pdns", data: {}, error: String(e) };
+  }
+}
+
+async function checkMnemonicPDNS(ctx: TierContext, target: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "mnemonic_pdns", target);
+  if (cached) return { source: "mnemonic_pdns", data: cached };
+  try {
+    const response = await fetchWithTimeout(
+      `https://api.mnemonic.no/pdns/v3/${encodeURIComponent(target)}`,
+      { headers: { "Accept": "application/json" } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const records: PDNSRecord[] = (json?.data ?? []).map((r: any) => ({
+      rrtype: (r.rrtype ?? "a").toUpperCase(),
+      rrname: (r.query ?? "").replace(/\.$/, ""),
+      rdata: (r.answer ?? "").replace(/\.$/, ""),
+      first_seen: r.firstSeenTimestamp ? new Date(r.firstSeenTimestamp).toISOString() : null,
+      last_seen: r.lastSeenTimestamp ? new Date(r.lastSeenTimestamp).toISOString() : null,
+      count: r.count ?? null,
+      source: "Mnemonic",
+    }));
+    const data = { records, total: records.length, source: "Mnemonic Passive DNS" };
+    await setCachedResponse(ctx, "mnemonic_pdns", target, data);
+    return { source: "mnemonic_pdns", data };
+  } catch (e) {
+    return { source: "mnemonic_pdns", data: {}, error: String(e) };
+  }
+}
+
+async function checkSecurityTrailsPDNS(ctx: TierContext, domain: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "securitytrails_pdns", data: {}, error: "API key not configured" };
+  const cacheKey = `pdns:${domain}`;
+  const cached = await getCachedResponse(ctx, "securitytrails", cacheKey);
+  if (cached) return { source: "securitytrails_pdns", data: cached };
+  try {
+    const response = await fetchWithTimeout(
+      `https://api.securitytrails.com/v1/history/${encodeURIComponent(domain)}/dns/a`,
+      { headers: { "APIKEY": apiKey, "Accept": "application/json" } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const records: PDNSRecord[] = (json?.records ?? []).flatMap((r: any) =>
+      (r.values ?? []).map((v: any) => ({
+        rrtype: "A",
+        rrname: domain,
+        rdata: v.ip ?? "",
+        first_seen: r.first_seen ? `${r.first_seen}T00:00:00Z` : null,
+        last_seen: r.last_seen ? `${r.last_seen}T00:00:00Z` : null,
+        count: r.count ?? null,
+        source: "SecurityTrails",
+      }))
+    ).filter((r: PDNSRecord) => r.rdata);
+    const data = { records, total: records.length, source: "SecurityTrails pDNS" };
+    await setCachedResponse(ctx, "securitytrails", cacheKey, data);
+    return { source: "securitytrails_pdns", data };
+  } catch (e) {
+    return { source: "securitytrails_pdns", data: {}, error: String(e) };
+  }
+}
+
+async function checkCrtSh(ctx: TierContext, domain: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "crtsh", domain);
+  if (cached) return { source: "crtsh", data: cached };
+  try {
+    const response = await fetchWithTimeout(
+      `https://crt.sh/?q=%.${encodeURIComponent(domain)}&output=json`,
+      { headers: { "Accept": "application/json" } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const certs: any[] = await response.json();
+
+    const subdomainSet = new Set<string>();
+    const recentCerts: any[] = [];
+
+    for (const cert of certs.slice(0, 300)) {
+      const names = (cert.name_value ?? "").split(/[\n\r]+/).map((s: string) => s.trim());
+      for (const name of names) {
+        const clean = name.replace(/^\*\./, "").toLowerCase();
+        if (clean !== domain && clean.endsWith(`.${domain}`)) subdomainSet.add(clean);
+      }
+      if (recentCerts.length < 10) {
+        recentCerts.push({
+          logged_at: cert.entry_timestamp ?? null,
+          not_before: cert.not_before ?? null,
+          not_after: cert.not_after ?? null,
+          common_name: cert.common_name ?? null,
+          issuer: cert.issuer_name
+            ?.split(",")
+            .find((p: string) => p.trim().startsWith("O="))
+            ?.replace(/^.*O=/, "").trim() ?? null,
+        });
+      }
+    }
+
+    const data = {
+      domain,
+      subdomains: [...subdomainSet].slice(0, 150),
+      subdomain_count: subdomainSet.size,
+      cert_count: certs.length,
+      recent_certs: recentCerts,
+      source: "crt.sh Certificate Transparency",
+    };
+    await setCachedResponse(ctx, "crtsh", domain, data);
+    return { source: "crtsh", data };
+  } catch (e) {
+    return { source: "crtsh", data: {}, error: String(e) };
+  }
+}
+
+async function checkCensys(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "censys", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "censys", ip);
+  if (cached) return { source: "censys", data: cached };
+  try {
+    const encoded = btoa(apiKey); // apiKey = "app_id:api_secret"
+    const response = await fetchWithTimeout(
+      `https://search.censys.io/api/v2/hosts/${encodeURIComponent(ip)}`,
+      { headers: { "Authorization": `Basic ${encoded}`, "Accept": "application/json" } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const host = json?.result ?? {};
+    const data = {
+      ip: host.ip,
+      services: (host.services ?? []).slice(0, 20).map((s: any) => ({
+        port: s.port,
+        transport: s.transport_protocol,
+        service: s.service_name,
+        extended_service: s.extended_service_name,
+      })),
+      autonomous_system: host.autonomous_system ?? null,
+      location: host.location ?? null,
+      labels: host.labels ?? [],
+      last_updated: host.last_updated_at ?? null,
+      source: "Censys",
+    };
+    await setCachedResponse(ctx, "censys", ip, data);
+    return { source: "censys", data };
+  } catch (e) {
+    return { source: "censys", data: {}, error: String(e) };
+  }
+}
+
+function aggregatePDNS(results: ThreatResult[]): PDNSRecord[] {
+  const pDNSSources = new Set(["circl_pdns", "mnemonic_pdns", "securitytrails_pdns"]);
+  const all: PDNSRecord[] = [];
+
+  for (const r of results) {
+    if (pDNSSources.has(r.source)) {
+      all.push(...((r.data as any)?.records ?? []));
+    }
+  }
+
+  // Fold in VT resolutions (already fetched by Phase 0)
+  const vtRes = results.find(r => r.source === "virustotal_resolutions");
+  if (vtRes && !vtRes.error) {
+    for (const item of (vtRes.data as any)?.data ?? []) {
+      const attrs = item?.attributes ?? {};
+      if (attrs.ip_address || attrs.host_name) {
+        all.push({
+          rrtype: "A",
+          rrname: attrs.host_name ?? "",
+          rdata: attrs.ip_address ?? "",
+          first_seen: attrs.date ? new Date(attrs.date * 1000).toISOString() : null,
+          last_seen: attrs.date ? new Date(attrs.date * 1000).toISOString() : null,
+          count: null,
+          source: "VirusTotal",
+        });
+      }
+    }
+  }
+
+  // Deduplicate on (rrtype, rrname, rdata)
+  const seen = new Set<string>();
+  return all.filter(r => {
+    if (!r.rrname || !r.rdata) return false;
+    const key = `${r.rrtype}:${r.rrname}:${r.rdata}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function savePDNSEdges(records: PDNSRecord[]): Promise<void> {
+  const edges = records
+    .filter(r => r.rrname && r.rdata && (r.rrtype === "A" || r.rrtype === "AAAA"))
+    .map(r => ({
+      source_type: "domain",
+      source_value: r.rrname.toLowerCase(),
+      target_type: "ip",
+      target_value: r.rdata.toLowerCase(),
+      edge_type: "resolves_to",
+      first_seen: r.first_seen ?? null,
+      last_seen: r.last_seen ?? null,
+      observation_count: r.count ?? 1,
+      confidence: "high",
+      source_dataset: r.source.toLowerCase().replace(/[^a-z0-9]/g, "_"),
+      metadata: { rrtype: r.rrtype },
+      updated_at: new Date().toISOString(),
+    }));
+
+  if (edges.length === 0) return;
+  await serviceClient.from("ioc_relationships")
+    .upsert(edges, { onConflict: "source_type,source_value,target_type,target_value,edge_type,source_dataset" })
+    .catch(e => console.error("savePDNSEdges:", e));
+}
+
+async function saveCertEdges(domain: string, subdomains: string[]): Promise<void> {
+  if (subdomains.length === 0) return;
+  const edges = subdomains.map(sub => ({
+    source_type: "domain",
+    source_value: domain.toLowerCase(),
+    target_type: "domain",
+    target_value: sub.toLowerCase(),
+    edge_type: "cert_san",
+    observation_count: 1,
+    confidence: "high",
+    source_dataset: "crtsh",
+    metadata: {},
+    updated_at: new Date().toISOString(),
+  }));
+  await serviceClient.from("ioc_relationships")
+    .upsert(edges, { onConflict: "source_type,source_value,target_type,target_value,edge_type,source_dataset" })
+    .catch(e => console.error("saveCertEdges:", e));
+}
+
+// ── Phase 1: CVE sources ──────────────────────────────────────────────────────
+
+async function checkNVD(ctx: TierContext, cveId: string, apiKey: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "nvd", cveId);
+  if (cached) return { source: "nvd", data: cached };
+  try {
+    const headers: Record<string, string> = { "Accept": "application/json" };
+    if (apiKey) headers["apiKey"] = apiKey;
+    const response = await fetchWithTimeout(
+      `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${encodeURIComponent(cveId)}`,
+      { headers }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "nvd", cveId, data);
+    return { source: "nvd", data };
+  } catch (e) {
+    return { source: "nvd", data: {}, error: String(e) };
+  }
+}
+
+async function checkCISAKEV(ctx: TierContext, cveId: string): Promise<ThreatResult> {
+  const kevCacheKey = "cisa:kev:catalog:v1";
+  try {
+    const { data: kevCache } = await serviceClient
+      .from("api_cache")
+      .select("response")
+      .eq("cache_key", kevCacheKey)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    let vulns: any[];
+    if (kevCache?.response?.vulnerabilities) {
+      vulns = kevCache.response.vulnerabilities as any[];
+    } else {
+      const response = await fetchWithTimeout("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const catalog = await response.json();
+      vulns = catalog.vulnerabilities ?? [];
+      const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+      await serviceClient.from("api_cache").upsert(
+        { cache_key: kevCacheKey, source: "cisa_kev", query: "catalog", response: { vulnerabilities: vulns }, expires_at: expiresAt, context: "global" },
+        { onConflict: "cache_key" }
+      );
+    }
+
+    const entry = vulns.find((v: any) => v.cveID?.toUpperCase() === cveId.toUpperCase());
+    const isKEV = !!entry;
+    return {
+      source: "cisa_kev",
+      data: {
+        is_kev: isKEV,
+        date_added: entry?.dateAdded ?? null,
+        due_date: entry?.dueDate ?? null,
+        ransomware_use: entry?.knownRansomwareCampaignUse ?? null,
+        vendor_project: entry?.vendorProject ?? null,
+        product: entry?.product ?? null,
+        required_action: entry?.requiredAction ?? null,
+        vulnerability_name: entry?.vulnerabilityName ?? null,
+        catalog_size: vulns.length,
+        source: "CISA KEV Catalog",
+      },
+      isMalicious: isKEV,
+    };
+  } catch (e) {
+    return { source: "cisa_kev", data: {}, error: String(e) };
+  }
+}
+
+async function checkEPSS(ctx: TierContext, cveId: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "epss", cveId);
+  if (cached) return { source: "epss", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://api.first.org/data/v1/epss?cve=${encodeURIComponent(cveId)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const entry = json?.data?.[0] ?? null;
+    const data = {
+      cve: cveId,
+      epss_score: entry ? parseFloat(entry.epss) : null,
+      epss_percentile: entry ? parseFloat(entry.percentile) : null,
+      date: entry?.date ?? null,
+      source: "FIRST EPSS",
+    };
+    await setCachedResponse(ctx, "epss", cveId, data);
+    return { source: "epss", data };
+  } catch (e) {
+    return { source: "epss", data: {}, error: String(e) };
+  }
+}
+
+function parseCVEUnified(nvdResult: ThreatResult, kevResult: ThreatResult, epssResult: ThreatResult) {
+  const vuln = (nvdResult.data as any)?.vulnerabilities?.[0]?.cve;
+  const description = vuln?.descriptions?.find((d: any) => d.lang === "en")?.value ?? null;
+  const metrics = vuln?.metrics;
+  const cvssV3 = metrics?.cvssMetricV31?.[0]?.cvssData ?? metrics?.cvssMetricV30?.[0]?.cvssData ?? null;
+  const cvssV2 = metrics?.cvssMetricV2?.[0]?.cvssData ?? null;
+  const cwe = vuln?.weaknesses?.[0]?.description?.[0]?.value ?? null;
+  const refs = (vuln?.references ?? []).map((r: any) => r.url).filter(Boolean).slice(0, 10);
+  const kev = kevResult.data as any;
+  const epss = epssResult.data as any;
+
+  return {
+    description,
+    cvss_v3_score: cvssV3?.baseScore ?? null,
+    cvss_v3_severity: cvssV3?.baseSeverity ?? null,
+    cvss_v2_score: cvssV2?.baseScore ?? null,
+    cwe: cwe !== "NVD-CWE-Other" && cwe !== "NVD-CWE-noinfo" ? cwe : null,
+    published: vuln?.published ?? null,
+    last_modified: vuln?.lastModified ?? null,
+    vuln_status: vuln?.vulnStatus ?? null,
+    is_kev: kev?.is_kev ?? false,
+    kev_date_added: kev?.date_added ?? null,
+    kev_due_date: kev?.due_date ?? null,
+    kev_ransomware_use: kev?.ransomware_use ?? null,
+    epss_score: epss?.epss_score ?? null,
+    epss_percentile: epss?.epss_percentile ?? null,
+    references: refs,
+  };
+}
+
+// ── Phase 1: Wallet sources ───────────────────────────────────────────────────
+
+async function checkBlockchainInfo(ctx: TierContext, address: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "blockchain_info", address);
+  if (cached) return { source: "blockchain_info", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://blockchain.info/rawaddr/${address}?limit=3`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const raw = await response.json();
+    const data = {
+      address: raw.address,
+      balance_satoshi: raw.final_balance,
+      balance_btc: (raw.final_balance ?? 0) / 1e8,
+      total_received_btc: (raw.total_received ?? 0) / 1e8,
+      total_sent_btc: (raw.total_sent ?? 0) / 1e8,
+      tx_count: raw.n_tx,
+      first_seen: raw.txs?.at(-1)?.time ? new Date((raw.txs.at(-1).time) * 1000).toISOString() : null,
+      last_seen: raw.txs?.[0]?.time ? new Date(raw.txs[0].time * 1000).toISOString() : null,
+      source: "Blockchain.info",
+    };
+    await setCachedResponse(ctx, "blockchain_info", address, data);
+    return { source: "blockchain_info", data };
+  } catch (e) {
+    return { source: "blockchain_info", data: {}, error: String(e) };
+  }
+}
+
+async function checkEthplorer(ctx: TierContext, address: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "ethplorer", address);
+  if (cached) return { source: "ethplorer", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://api.ethplorer.io/getAddressInfo/${address}?apiKey=freekey`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const raw = await response.json();
+    const data = {
+      address,
+      eth_balance: raw.ETH?.balance ?? null,
+      tx_count: raw.countTxs ?? null,
+      tokens_held: (raw.tokens ?? []).length,
+      top_tokens: (raw.tokens ?? []).slice(0, 5).map((t: any) => ({
+        symbol: t.tokenInfo?.symbol,
+        name: t.tokenInfo?.name,
+        balance: t.balance,
+      })),
+      source: "Ethplorer",
+    };
+    await setCachedResponse(ctx, "ethplorer", address, data);
+    return { source: "ethplorer", data };
+  } catch (e) {
+    return { source: "ethplorer", data: {}, error: String(e) };
+  }
+}
+
+async function checkMisttrack(ctx: TierContext, address: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "misttrack", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "misttrack", address);
+  if (cached) {
+    const isSanctioned = (cached as any)?.risk_level === "high" || (cached as any)?.is_sanctioned === true;
+    return { source: "misttrack", data: cached, isMalicious: isSanctioned };
+  }
+  try {
+    const response = await fetchWithTimeout(
+      `https://openapi.misttrack.io/v1/address/risk_score?address=${encodeURIComponent(address)}&api_key=${apiKey}`
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "misttrack", address, data);
+    const isSanctioned = data?.risk_level === "high" || data?.is_sanctioned === true;
+    return { source: "misttrack", data, isMalicious: isSanctioned };
+  } catch (e) {
+    return { source: "misttrack", data: {}, error: String(e) };
+  }
+}
+
+// ── Phase 1: Email sources ────────────────────────────────────────────────────
+
+async function checkEmailRep(ctx: TierContext, email: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "emailrep", email);
+  if (cached) {
+    const suspicious = (cached as any)?.suspicious === true;
+    return { source: "emailrep", data: cached, isMalicious: suspicious };
+  }
+  try {
+    const response = await fetchWithTimeout(`https://emailrep.io/${encodeURIComponent(email)}`, {
+      headers: { "Accept": "application/json", "User-Agent": "ThamOS/1.0" },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "emailrep", email, data);
+    const suspicious = data?.suspicious === true;
+    return { source: "emailrep", data, isMalicious: suspicious };
+  } catch (e) {
+    return { source: "emailrep", data: {}, error: String(e) };
+  }
+}
+
+async function checkHIBP(ctx: TierContext, email: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "hibp", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "hibp", email);
+  if (cached) {
+    const isBreached = Array.isArray(cached) && (cached as any[]).length > 0;
+    return { source: "hibp", data: { breaches: cached, breach_count: (cached as any[]).length }, isMalicious: isBreached };
+  }
+  try {
+    const response = await fetchWithTimeout(
+      `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`,
+      { headers: { "hibp-api-key": apiKey, "User-Agent": "ThamOS/1.0" } }
+    );
+    if (response.status === 404) {
+      await setCachedResponse(ctx, "hibp", email, []);
+      return { source: "hibp", data: { breaches: [], breach_count: 0 }, isMalicious: false };
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "hibp", email, data);
+    return { source: "hibp", data: { breaches: data, breach_count: data.length }, isMalicious: data.length > 0 };
+  } catch (e) {
+    return { source: "hibp", data: {}, error: String(e) };
+  }
+}
+
+async function checkEmailDNS(_ctx: TierContext, email: string): Promise<ThreatResult> {
+  const domain = email.split("@")[1];
+  if (!domain) return { source: "email_dns", data: {}, error: "Invalid email format" };
+  try {
+    const [mxRes, txtRes, dmarcRes] = await Promise.allSettled([
+      fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${domain}&type=MX`, { headers: { "Accept": "application/dns-json" } }),
+      fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=${domain}&type=TXT`, { headers: { "Accept": "application/dns-json" } }),
+      fetchWithTimeout(`https://cloudflare-dns.com/dns-query?name=_dmarc.${domain}&type=TXT`, { headers: { "Accept": "application/dns-json" } }),
+    ]);
+
+    const mx = mxRes.status === "fulfilled" && mxRes.value.ok ? (await mxRes.value.json())?.Answer ?? [] : [];
+    const txt = txtRes.status === "fulfilled" && txtRes.value.ok ? (await txtRes.value.json())?.Answer ?? [] : [];
+    const dmarc = dmarcRes.status === "fulfilled" && dmarcRes.value.ok ? (await dmarcRes.value.json())?.Answer ?? [] : [];
+
+    const spf = txt.find((r: any) => (r.data ?? "").includes("v=spf1"))?.data ?? null;
+    const dmarcRecord = dmarc.find((r: any) => (r.data ?? "").includes("v=DMARC1"))?.data ?? null;
+
+    return {
+      source: "email_dns",
+      data: {
+        domain,
+        has_mx: mx.length > 0,
+        mx_records: mx.slice(0, 3).map((r: any) => r.data),
+        has_spf: !!spf,
+        spf,
+        has_dmarc: !!dmarcRecord,
+        dmarc: dmarcRecord,
+        source: "DNS (Cloudflare DoH)",
+      },
+    };
+  } catch (e) {
+    return { source: "email_dns", data: {}, error: String(e) };
+  }
+}
+
+async function checkPhishTank(ctx: TierContext, url: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "phishtank", url);
+  if (cached) {
+    const isMalicious = (cached as any)?.in_database === true;
+    return { source: "phishtank", data: cached, isMalicious };
+  }
+  try {
+    const body = new URLSearchParams({ url, format: "json" });
+    const response = await fetchWithTimeout("https://checkurl.phishtank.com/checkurl/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const results = data?.results ?? data;
+    await setCachedResponse(ctx, "phishtank", url, results);
+    const isMalicious = results?.in_database === true;
+    return { source: "phishtank", data: results, isMalicious };
+  } catch (e) {
+    return { source: "phishtank", data: {}, error: String(e) };
+  }
+}
+
+async function checkOpenPhish(ctx: TierContext, url: string): Promise<ThreatResult> {
+  const feedCacheKey = "openphish:feed:v1";
+  try {
+    const { data: feedCache } = await serviceClient
+      .from("api_cache")
+      .select("response")
+      .eq("cache_key", feedCacheKey)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    let phishUrls: string[];
+    if (feedCache?.response?.urls) {
+      phishUrls = feedCache.response.urls as string[];
+    } else {
+      const response = await fetchWithTimeout("https://openphish.com/feed.txt");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text = await response.text();
+      phishUrls = text.split("\n").map((u: string) => u.trim()).filter(Boolean);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      await serviceClient.from("api_cache").upsert(
+        { cache_key: feedCacheKey, source: "openphish", query: "feed", response: { urls: phishUrls }, expires_at: expiresAt, context: "global" },
+        { onConflict: "cache_key" }
+      );
+    }
+
+    const normalizedUrl = url.replace(/\/$/, "").toLowerCase();
+    const isMalicious = phishUrls.some(phish => {
+      const n = phish.replace(/\/$/, "").toLowerCase();
+      return normalizedUrl === n || normalizedUrl.startsWith(n + "/");
+    });
+
+    return { source: "openphish", data: { in_feed: isMalicious, feed_size: phishUrls.length, source: "OpenPhish Community" }, isMalicious };
+  } catch (e) {
+    return { source: "openphish", data: {}, error: String(e) };
+  }
+}
+
+async function checkGoogleSafeBrowsing(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "google_safebrowsing", data: {}, error: "API key not configured" };
+  const cached = await getCachedResponse(ctx, "google_safebrowsing", url);
+  if (cached) {
+    const isMalicious = Array.isArray((cached as any)?.matches) && (cached as any).matches.length > 0;
+    return { source: "google_safebrowsing", data: cached, isMalicious };
+  }
+  try {
+    const body = {
+      client: { clientId: "thamos6", clientVersion: "1.0" },
+      threatInfo: {
+        threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+        platformTypes: ["ANY_PLATFORM"],
+        threatEntryTypes: ["URL"],
+        threatEntries: [{ url }],
+      },
+    };
+    const response = await fetchWithTimeout(
+      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${apiKey}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "google_safebrowsing", url, data);
+    const isMalicious = Array.isArray(data?.matches) && data.matches.length > 0;
+    return { source: "google_safebrowsing", data, isMalicious };
+  } catch (e) {
+    return { source: "google_safebrowsing", data: {}, error: String(e) };
+  }
+}
+
+async function checkTrancoRank(_ctx: TierContext, domain: string): Promise<ThreatResult> {
+  try {
+    const { data, error } = await serviceClient
+      .from("tranco_rankings")
+      .select("rank, domain")
+      .eq("domain", domain)
+      .maybeSingle();
+    if (error) throw error;
+    return {
+      source: "tranco",
+      data: { domain, rank: data?.rank ?? null, in_top_1m: data !== null, source: "Tranco Top 1M" },
+    };
+  } catch (e) {
+    return { source: "tranco", data: {}, error: String(e) };
+  }
+}
+
+async function checkVTResolutions(ctx: TierContext, target: string, type: "domain" | "ip", apiKey: string): Promise<ThreatResult> {
+  if (!apiKey) return { source: "virustotal_resolutions", data: {}, error: "API key not configured" };
+  const cacheKey = `resolutions:${type}:${target}`;
+  const cached = await getCachedResponse(ctx, "virustotal", cacheKey);
+  if (cached) return { source: "virustotal_resolutions", data: cached };
+  try {
+    const endpoint = type === "domain"
+      ? `https://www.virustotal.com/api/v3/domains/${encodeURIComponent(target)}/resolutions?limit=10`
+      : `https://www.virustotal.com/api/v3/ip_addresses/${encodeURIComponent(target)}/resolutions?limit=10`;
+    const response = await fetchWithTimeout(endpoint, { headers: { "x-apikey": apiKey } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    await setCachedResponse(ctx, "virustotal", cacheKey, data);
+    return { source: "virustotal_resolutions", data };
+  } catch (e) {
+    return { source: "virustotal_resolutions", data: {}, error: String(e) };
+  }
+}
+
 function extractEnrichment(results: ThreatResult[]): IPEnrichment {
   const enrichment: IPEnrichment = {};
 
@@ -1612,6 +2308,10 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("iphub")) sourcePromises.push(checkIPHub(ctx, ip, apiKeys.iphub ?? ""));
       if (allowedSources.includes("teamcymru")) sourcePromises.push(checkTeamCymru(ctx, ip));
       if (allowedSources.includes("vpnapi")) sourcePromises.push(checkVPNAPI(ctx, ip, apiKeys.vpnapi ?? ""));
+      if (allowedSources.includes("virustotal")) sourcePromises.push(checkVTResolutions(ctx, ip, "ip", apiKeys.virustotal ?? ""));
+      if (allowedSources.includes("circl_pdns")) sourcePromises.push(checkCIRCLPDNS(ctx, ip, apiKeys.circl_pdns ?? ""));
+      if (allowedSources.includes("mnemonic_pdns")) sourcePromises.push(checkMnemonicPDNS(ctx, ip));
+      if (allowedSources.includes("censys")) sourcePromises.push(checkCensys(ctx, ip, apiKeys.censys ?? ""));
 
       const settledResults = await Promise.allSettled(sourcePromises);
       const results: ThreatResult[] = settledResults
@@ -1623,6 +2323,8 @@ Deno.serve(async (req: Request) => {
       const org = ipapi?.org;
       const vpnCheck = await checkVPNProvider(asn, org);
       results.push(vpnCheck);
+
+      const pdnsRecords = aggregatePDNS(results);
 
       const enrichment = extractEnrichment(results);
       const scores = results.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
@@ -1656,6 +2358,8 @@ Deno.serve(async (req: Request) => {
         sources: normalizedSources,
         detectionSources,
         detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        pdns: pdnsRecords,
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
@@ -1671,6 +2375,7 @@ Deno.serve(async (req: Request) => {
           context: ctx.cacheContext,
         });
 
+        savePDNSEdges(pdnsRecords).catch(e => console.error("ip savePDNSEdges:", e));
         await logAuditEvent(req, ctx, "ip_lookup", "ip", ip, { sources: results.map(r => r.source), threat_score: aggregated.overallThreatScore });
       }
 
@@ -1689,6 +2394,13 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotalURL(ctx, targetUrl, apiKeys.virustotal ?? ""));
       if (allowedSources.includes("urlscan")) sourcePromises.push(checkURLScan(ctx, targetUrl, apiKeys.urlscan ?? ""));
       if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhausURL(ctx, targetUrl));
+      if (allowedSources.includes("phishtank")) sourcePromises.push(checkPhishTank(ctx, targetUrl));
+      if (allowedSources.includes("openphish")) sourcePromises.push(checkOpenPhish(ctx, targetUrl));
+      if (allowedSources.includes("google_safebrowsing")) sourcePromises.push(checkGoogleSafeBrowsing(ctx, targetUrl, apiKeys.google_safebrowsing ?? ""));
+      try {
+        const urlDomain = new URL(targetUrl).hostname;
+        if (allowedSources.includes("tranco")) sourcePromises.push(checkTrancoRank(ctx, urlDomain));
+      } catch (_) {}
 
       const settledResults = await Promise.allSettled(sourcePromises);
       const results: ThreatResult[] = settledResults
@@ -1698,6 +2410,16 @@ Deno.serve(async (req: Request) => {
       const isMalicious = results.some(r => r.isMalicious);
       const threatTypes: string[] = [];
       if (results.find(r => r.source === "urlhaus_url")?.isMalicious) threatTypes.push("malware");
+      if (results.find(r => r.source === "phishtank")?.isMalicious) threatTypes.push("phishing");
+      if (results.find(r => r.source === "openphish")?.isMalicious) threatTypes.push("phishing");
+      if (results.find(r => r.source === "google_safebrowsing")?.isMalicious) {
+        const sbMatches = (results.find(r => r.source === "google_safebrowsing")?.data as any)?.matches ?? [];
+        for (const m of sbMatches) {
+          if (m.threatType === "MALWARE" && !threatTypes.includes("malware")) threatTypes.push("malware");
+          if (m.threatType === "SOCIAL_ENGINEERING" && !threatTypes.includes("phishing")) threatTypes.push("phishing");
+          if (m.threatType === "UNWANTED_SOFTWARE" && !threatTypes.includes("unwanted_software")) threatTypes.push("unwanted_software");
+        }
+      }
 
       const aggregated = {
         url: targetUrl,
@@ -1838,6 +2560,26 @@ Deno.serve(async (req: Request) => {
           spamhaus: true,
           teamcymru: true,
           blocklistde: true,
+          phishtank: true,
+          openphish: true,
+          tranco: true,
+          google_safebrowsing: ctx.tier === "dsbn" ? !!orgKeys.google_safebrowsing : !!apiKeysResult.keys.google_safebrowsing,
+          // Phase 1
+          nvd: true,
+          cisa_kev: true,
+          epss: true,
+          blockchain_info: true,
+          ethplorer: true,
+          emailrep: true,
+          email_dns: true,
+          hibp: ctx.tier === "dsbn" ? !!orgKeys.hibp : !!apiKeysResult.keys.hibp,
+          misttrack: ctx.tier === "dsbn" ? !!orgKeys.misttrack : !!apiKeysResult.keys.misttrack,
+          // Phase 2
+          circl_pdns: true,
+          mnemonic_pdns: true,
+          crtsh: true,
+          securitytrails: ctx.tier === "dsbn" ? !!orgKeys.securitytrails : !!apiKeysResult.keys.securitytrails,
+          censys: ctx.tier === "dsbn" ? !!orgKeys.censys : !!apiKeysResult.keys.censys,
         },
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
@@ -1962,11 +2704,21 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotalDomain(ctx, domain, apiKeys.virustotal ?? ""));
       if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhausURL(ctx, `http://${domain}`));
       if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, domain, apiKeys.alienvault ?? ""));
+      if (allowedSources.includes("tranco")) sourcePromises.push(checkTrancoRank(ctx, domain));
+      if (allowedSources.includes("virustotal")) sourcePromises.push(checkVTResolutions(ctx, domain, "domain", apiKeys.virustotal ?? ""));
+      if (allowedSources.includes("circl_pdns")) sourcePromises.push(checkCIRCLPDNS(ctx, domain, apiKeys.circl_pdns ?? ""));
+      if (allowedSources.includes("mnemonic_pdns")) sourcePromises.push(checkMnemonicPDNS(ctx, domain));
+      if (allowedSources.includes("securitytrails")) sourcePromises.push(checkSecurityTrailsPDNS(ctx, domain, apiKeys.securitytrails ?? ""));
+      if (allowedSources.includes("crtsh")) sourcePromises.push(checkCrtSh(ctx, domain));
 
       const settledResults = await Promise.allSettled(sourcePromises);
       const results: ThreatResult[] = settledResults
         .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
         .map(r => r.value);
+
+      const pdnsRecords = aggregatePDNS(results);
+      const crtshResult = results.find(r => r.source === "crtsh")?.data as any;
+      const certSubdomains: string[] = crtshResult?.subdomains ?? [];
 
       const isMalicious = results.some(r => r.isMalicious);
       const scores = results.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
@@ -1996,6 +2748,10 @@ Deno.serve(async (req: Request) => {
         whois: whoisData?.parsed || null,
         reputation: vtData?.data?.attributes?.reputation || null,
         categories: vtData?.data?.attributes?.categories || null,
+        tranco: results.find(r => r.source === "tranco")?.data ?? null,
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        pdns: pdnsRecords,
+        certSubdomains,
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
         sourcesAvailable: allowedSources,
@@ -2012,13 +2768,193 @@ Deno.serve(async (req: Request) => {
           context: ctx.cacheContext,
         });
 
+        savePDNSEdges(pdnsRecords).catch(e => console.error("domain savePDNSEdges:", e));
+        saveCertEdges(domain, certSubdomains).catch(e => console.error("domain saveCertEdges:", e));
         await logAuditEvent(req, ctx, "domain_lookup", "domain", domain, { sources: results.map(r => r.source), is_malicious: isMalicious, threat_score: aggregated.overallThreatScore });
       }
 
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/hash", "/domain", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (path === "/cve" || path === "/cve/") {
+      const body = await req.json();
+      const cveId = (body.cve ?? "").trim().toUpperCase();
+      if (!cveId || !/^CVE-\d{4}-\d{4,}$/.test(cveId)) {
+        return new Response(JSON.stringify({ error: "Valid CVE ID required (e.g. CVE-2021-44228)" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const sourcePromises: Promise<ThreatResult>[] = [
+        checkNVD(ctx, cveId, apiKeys.nvd ?? ""),
+        checkCISAKEV(ctx, cveId),
+        checkEPSS(ctx, cveId),
+      ];
+
+      const settledResults = await Promise.allSettled(sourcePromises);
+      const results: ThreatResult[] = settledResults
+        .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
+        .map(r => r.value);
+
+      const nvdResult = results.find(r => r.source === "nvd") ?? { source: "nvd", data: {} };
+      const kevResult = results.find(r => r.source === "cisa_kev") ?? { source: "cisa_kev", data: {} };
+      const epssResult = results.find(r => r.source === "epss") ?? { source: "epss", data: {} };
+
+      const unified = parseCVEUnified(nvdResult, kevResult, epssResult);
+      const isKEV = unified.is_kev;
+      const cvssScore = unified.cvss_v3_score ?? unified.cvss_v2_score ?? 0;
+
+      const aggregated = {
+        cve_id: cveId,
+        ...unified,
+        is_malicious: isKEV || cvssScore >= 9.0,
+        overall_threat_score: Math.min(
+          Math.round(
+            (cvssScore / 10) * 60 +
+            (isKEV ? 30 : 0) +
+            ((unified.epss_score ?? 0) * 10)
+          ),
+          100
+        ),
+        sources: Object.fromEntries(results.map(r => [r.source, { data: r.data, error: r.error }])),
+        checked_at: new Date().toISOString(),
+        tier: ctx.tier,
+      };
+
+      if (canPersist) {
+        await serviceClient.from("cve_lookups").insert({
+          cve_id: cveId,
+          results: aggregated,
+          cvss_v3_score: unified.cvss_v3_score,
+          is_kev: isKEV,
+          epss_score: unified.epss_score,
+          sources_checked: results.map(r => r.source),
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
+        await logAuditEvent(req, ctx, "cve_lookup", "cve", cveId, { is_kev: isKEV, cvss_v3_score: unified.cvss_v3_score });
+      }
+
+      return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (path === "/wallet" || path === "/wallet/") {
+      const body = await req.json();
+      const address = (body.address ?? "").trim();
+      if (!address) {
+        return new Response(JSON.stringify({ error: "Wallet address required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const ethRegex = /^0x[a-fA-F0-9]{40}$/;
+      const btcRegex = /^(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[ac-hj-np-z02-9]{6,87}$/;
+      const currency = ethRegex.test(address) ? "eth" : btcRegex.test(address) ? "btc" : "unknown";
+
+      if (currency === "unknown") {
+        return new Response(JSON.stringify({ error: "Unrecognised wallet address format (expected BTC or ETH)" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const sourcePromises: Promise<ThreatResult>[] = [];
+      if (currency === "btc") {
+        if (allowedSources.includes("blockchain_info")) sourcePromises.push(checkBlockchainInfo(ctx, address));
+      } else {
+        if (allowedSources.includes("ethplorer")) sourcePromises.push(checkEthplorer(ctx, address));
+      }
+      if (allowedSources.includes("misttrack")) sourcePromises.push(checkMisttrack(ctx, address, apiKeys.misttrack ?? ""));
+
+      const settledResults = await Promise.allSettled(sourcePromises);
+      const results: ThreatResult[] = settledResults
+        .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
+        .map(r => r.value);
+
+      const isSanctioned = results.some(r => r.isMalicious);
+      const chainData = results.find(r => r.source === "blockchain_info" || r.source === "ethplorer")?.data as any;
+
+      const aggregated = {
+        address,
+        currency,
+        is_sanctioned: isSanctioned,
+        balance: currency === "btc" ? chainData?.balance_btc ?? null : chainData?.eth_balance ?? null,
+        tx_count: chainData?.tx_count ?? null,
+        sources: Object.fromEntries(results.map(r => [r.source, { data: r.data, error: r.error }])),
+        checked_at: new Date().toISOString(),
+        tier: ctx.tier,
+      };
+
+      if (canPersist) {
+        await serviceClient.from("wallet_lookups").insert({
+          address,
+          currency,
+          results: aggregated,
+          is_sanctioned: isSanctioned,
+          sources_checked: results.map(r => r.source),
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
+        await logAuditEvent(req, ctx, "wallet_lookup", "wallet", address, { currency, is_sanctioned: isSanctioned });
+      }
+
+      return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (path === "/email" || path === "/email/") {
+      const body = await req.json();
+      const email = (body.email ?? "").trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return new Response(JSON.stringify({ error: "Valid email address required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const sourcePromises: Promise<ThreatResult>[] = [
+        checkEmailDNS(ctx, email),
+      ];
+      if (allowedSources.includes("emailrep")) sourcePromises.push(checkEmailRep(ctx, email));
+      if (allowedSources.includes("hibp")) sourcePromises.push(checkHIBP(ctx, email, apiKeys.hibp ?? ""));
+
+      const settledResults = await Promise.allSettled(sourcePromises);
+      const results: ThreatResult[] = settledResults
+        .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
+        .map(r => r.value);
+
+      const emailRepData = results.find(r => r.source === "emailrep")?.data as any;
+      const dnsData = results.find(r => r.source === "email_dns")?.data as any;
+      const hibpData = results.find(r => r.source === "hibp")?.data as any;
+
+      const isBreached = (hibpData?.breach_count ?? 0) > 0;
+      const isSuspicious = emailRepData?.suspicious === true;
+      const reputation = emailRepData?.reputation ?? null;
+      const hasValidMX = dnsData?.has_mx === true;
+
+      const aggregated = {
+        email,
+        reputation,
+        is_suspicious: isSuspicious,
+        is_breached: isBreached,
+        breach_count: hibpData?.breach_count ?? null,
+        has_valid_mx: hasValidMX,
+        has_spf: dnsData?.has_spf ?? null,
+        has_dmarc: dnsData?.has_dmarc ?? null,
+        is_disposable: emailRepData?.details?.disposable ?? null,
+        is_free_provider: emailRepData?.details?.free_provider ?? null,
+        sources: Object.fromEntries(results.map(r => [r.source, { data: r.data, error: r.error }])),
+        checked_at: new Date().toISOString(),
+        tier: ctx.tier,
+      };
+
+      if (canPersist) {
+        await serviceClient.from("email_lookups").insert({
+          email,
+          results: aggregated,
+          reputation,
+          is_breached: isBreached,
+          has_valid_mx: hasValidMX,
+          sources_checked: results.map(r => r.source),
+          user_id: ctx.userId,
+          context: ctx.cacheContext,
+        });
+        await logAuditEvent(req, ctx, "email_lookup", "email", email, { reputation, is_breached: isBreached });
+      }
+
+      return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/hash", "/domain", "/cve", "/wallet", "/email", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }

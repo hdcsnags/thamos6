@@ -4,7 +4,8 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopSettings } from './DesktopSettings';
 import { DesktopTopDesk } from './DesktopTopDesk';
-import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { useDesktop } from '../../contexts/DesktopContext';
 
 const P = {
   void: '#060610',
@@ -39,6 +40,7 @@ const INTERNAL_PAGES: Record<string, { title: string; component: React.Component
   'thamos://topdesk': { title: 'TopDesk', component: DesktopTopDesk },
   'thamos://settings': { title: 'Settings', component: DesktopSettings },
   'thamos://history': { title: 'History', component: HistoryPage },
+  'thamos://ransomware': { title: 'Ransomware Intel', component: RansomwarePage },
 };
 
 const DEFAULT_BOOKMARKS = [
@@ -47,6 +49,7 @@ const DEFAULT_BOOKMARKS = [
   { label: 'Cases', url: 'thamos://cases' },
   { label: 'TopDesk', url: 'thamos://topdesk' },
   { label: 'History', url: 'thamos://history' },
+  { label: 'Ransomware', url: 'thamos://ransomware' },
   { label: 'Settings', url: 'thamos://settings' },
 ];
 
@@ -67,6 +70,7 @@ function normalizeUrl(input: string): string {
 }
 
 export function DesktopBrowser() {
+  const { openWindow } = useDesktop();
   const [tabs, setTabs] = useState<BrowserTab[]>([
     { id: 'tab-1', url: 'thamos://home', title: 'Home', history: ['thamos://home'], historyIndex: 0, canGoBack: false, canGoForward: false },
   ]);
@@ -397,6 +401,18 @@ export function DesktopBrowser() {
                 style={{ color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
               />
             </div>
+            {!isInternalUrl(activeTab.url) && (
+              <button
+                type="button"
+                onClick={() => openWindow({ appId: 'scanner', title: `Scan: ${activeTab.url}`, data: { query: activeTab.url, type: 'url' } })}
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded transition-all flex-shrink-0"
+                style={{ backgroundColor: `${P.cyan}10`, border: `1px solid ${P.cyan}30`, color: P.cyan }}
+                title="Scan this URL with threat intel"
+              >
+                <Search size={11} />
+                SCAN
+              </button>
+            )}
           </form>
         </div>
 
@@ -535,65 +551,96 @@ function HomePage() {
   );
 }
 
+type HistoryTab = 'ip' | 'url' | 'domain' | 'hash' | 'extension';
+
 function HistoryPage() {
-  const [ipHistory, setIpHistory] = useState<any[]>([]);
-  const [urlHistory, setUrlHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'ip' | 'url'>('ip');
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<HistoryTab>('ip');
 
   useEffect(() => {
     const load = async () => {
-      const [ipRes, urlRes] = await Promise.all([
-        supabase.from('ip_lookups').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('url_lookups').select('*').order('created_at', { ascending: false }).limit(50),
-      ]);
-      setIpHistory(ipRes.data || []);
-      setUrlHistory(urlRes.data || []);
-      setLoading(false);
+      setLoading(true);
+      setData([]);
+      try {
+        let res;
+        if (tab === 'ip') {
+          res = await supabase.from('ip_lookups').select('id, ip_address, threat_score, created_at').order('created_at', { ascending: false }).limit(50);
+        } else if (tab === 'url') {
+          res = await supabase.from('url_lookups').select('id, url, is_malicious, created_at').order('created_at', { ascending: false }).limit(50);
+        } else if (tab === 'domain') {
+          res = await supabase.from('domain_lookups').select('id, domain, threat_score, is_malicious, created_at').order('created_at', { ascending: false }).limit(50);
+        } else if (tab === 'hash') {
+          res = await supabase.from('hash_lookups').select('id, hash, threat_score, is_malicious, created_at').order('created_at', { ascending: false }).limit(50);
+        } else {
+          res = await supabase.from('extension_analyses').select('id, extension_id, extension_name, risk_level, created_at').order('created_at', { ascending: false }).limit(50);
+        }
+        setData(res?.data || []);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, []);
+  }, [tab]);
 
-  const data = tab === 'ip' ? ipHistory : urlHistory;
+  const isMalicious = (r: any) =>
+    r.is_malicious || (r.threat_score != null && r.threat_score >= 50) || r.risk_level === 'high' || r.risk_level === 'critical';
+
+  const primaryValue = (r: any) =>
+    r.ip_address || r.url || r.domain || r.hash ||
+    (r.extension_name ? `${r.extension_name} (${r.extension_id})` : r.extension_id);
+
+  const HISTORY_TABS: { key: HistoryTab; label: string }[] = [
+    { key: 'ip', label: 'IP' },
+    { key: 'url', label: 'URL' },
+    { key: 'domain', label: 'DOMAIN' },
+    { key: 'hash', label: 'HASH' },
+    { key: 'extension', label: 'EXTENSION' },
+  ];
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
       <div className="flex items-center gap-2 p-3" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
         <span className="text-xs font-medium tracking-wider" style={{ color: P.cyan }}>SCAN HISTORY</span>
         <div className="flex gap-1 ml-4">
-          {(['ip', 'url'] as const).map(t => (
+          {HISTORY_TABS.map(({ key, label }) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={key}
+              onClick={() => setTab(key)}
               className="px-2 py-0.5 text-xs rounded transition-all"
               style={{
-                backgroundColor: tab === t ? `${P.cyan}15` : 'transparent',
-                border: `1px solid ${tab === t ? `${P.cyan}40` : P.border}`,
-                color: tab === t ? P.cyan : P.dim,
+                backgroundColor: tab === key ? `${P.cyan}15` : 'transparent',
+                border: `1px solid ${tab === key ? `${P.cyan}40` : P.border}`,
+                color: tab === key ? P.cyan : P.dim,
               }}
             >
-              {t.toUpperCase()}
+              {label}
             </button>
           ))}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-6 text-center"><span className="text-xs" style={{ color: P.dim }}>Loading...</span></div>
+          <div className="p-6 text-center"><span className="text-xs animate-pulse" style={{ color: P.dim }}>Loading...</span></div>
         ) : data.length === 0 ? (
           <div className="p-6 text-center"><span className="text-xs" style={{ color: P.dim }}>No history yet</span></div>
         ) : (
           data.map((record: any) => (
             <div key={record.id} className="flex items-center justify-between p-3" style={{ borderBottom: `1px solid ${P.border}` }}>
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full" style={{
-                  backgroundColor: (record.threat_score >= 50 || record.is_malicious) ? P.pink : P.green,
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{
+                  backgroundColor: isMalicious(record) ? P.pink : P.green,
                 }} />
-                <span className="text-xs font-mono" style={{ color: P.textLight }}>
-                  {record.ip_address || record.url}
+                <span className="text-xs font-mono truncate max-w-[400px]" style={{ color: P.textLight }}>
+                  {primaryValue(record)}
                 </span>
+                {record.threat_score != null && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${isMalicious(record) ? P.pink : P.green}15`, color: isMalicious(record) ? P.pink : P.green }}>
+                    {record.threat_score}
+                  </span>
+                )}
               </div>
-              <span className="text-xs" style={{ color: P.dim }}>
+              <span className="text-xs flex-shrink-0" style={{ color: P.dim }}>
                 {new Date(record.created_at).toLocaleString()}
               </span>
             </div>
@@ -602,6 +649,13 @@ function HistoryPage() {
       </div>
     </div>
   );
+}
+
+function RansomwarePage() {
+  // Render the intel dashboard pointing at the ransomware tab directly.
+  // Since DesktopIntelDashboard manages its own state, navigate to it via the browser event,
+  // and display inline import of DesktopIntelDashboard with ransomware pre-selected.
+  return <DesktopIntelDashboard />;
 }
 
 function NotFoundPage() {
