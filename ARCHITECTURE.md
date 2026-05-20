@@ -16,11 +16,11 @@
 
 ## System Overview
 
-Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security Operations Center) teams. It aggregates data from 13+ threat intelligence sources, provides analysis tools, and includes case management capabilities.
+Thamos6 is a multi-tier threat intelligence platform designed for SOC (Security Operations Center) teams. It aggregates data from 19+ threat intelligence sources, provides analysis tools, and includes case management capabilities.
 
 **Core Value Propositions:**
 - Unified interface for multiple threat intelligence APIs
-- Comprehensive IOC lookup support (IPs, domains, URLs, file hashes, Chrome extensions)
+- Comprehensive IOC lookup support (IPs, domains, URLs, file hashes, Chrome extensions, emails, CVEs, crypto wallets)
 - Smart caching to reduce API costs and rate limiting
 - Tiered access system (Anonymous, DSBN internal, External authenticated)
 - Team-shared history and case notes
@@ -135,20 +135,28 @@ scan -domain evil.com --network
 - **Layout Persistence**: Auto-saves window positions to `localStorage`, restores on reload
 - **Notification Center**: Toast system with history, severity levels, click actions
 
-**Desktop Apps** (11 functional apps):
+**Desktop Apps** (20 functional apps):
 | App | File | Description |
 |-----|------|-------------|
-| Terminal | `DesktopTerminal.tsx` | Custom CLI with 22 commands, tab completion, history |
+| Terminal | `DesktopTerminal.tsx` | Custom CLI with commands, tab completion, history |
 | VPS Terminal | `DesktopVPSTerminal.tsx` | Real `xterm.js` terminal via WebSocket/Cloudflare Tunnel |
-| Scanner | `DesktopScanner.tsx` | Unified threat intel scanner |
+| Scanner | `DesktopScanner.tsx` | Unified threat intel scanner (IP, domain, URL, hash, CVE, wallet, email, extension) |
 | Browser | `DesktopBrowser.tsx` | Internal `thamos://` protocol browser |
 | Maestro | `DesktopWorkshop.tsx` | Multi-AI chat (Claude/GPT/Gemini), Orchestra mode |
-| Intel Dashboard | `DesktopIntelDashboard.tsx` | RSS threat feed reader |
-| Case Manager | `DesktopCaseManager.tsx` | Full CRUD for case notes |
+| Intel Dashboard | `DesktopIntelDashboard.tsx` | RSS threat feed reader with ransomware panel |
+| Case Manager | `DesktopCaseManager.tsx` | Full CRUD for case notes with IOC attachment |
 | File Manager | `DesktopGitHub.tsx` | GitHub repo browser + file viewer |
 | Code Editor | `editor/DesktopCodeEditor.tsx` | CodeMirror-based with tabs, save, GitHub commit |
 | System Monitor | `DesktopSystemMonitor.tsx` | Session uptime, scan counts, live activity feed |
-| Settings | `DesktopSettings.tsx` | API keys, GitHub/VPS connections, theme switcher, accent colors |
+| Settings | `DesktopSettings.tsx` | API keys, GitHub/VPS connections, theme switcher, wallpaper selection |
+| TopDesk | `DesktopTopDesk.tsx` | TopDesk ticket search, deduplication, enrichment |
+| Email Analyzer | `pages/EmailAnalyzer.tsx` | Parse email headers, SPF/DKIM/DMARC, extract + enrich IOCs via edge function |
+| Doc Analyzer | `pages/DocAnalyzer.tsx` | Static analysis of PDF/Office docs — macros, dangerous objects, URL extraction |
+| IOC Extractor | `pages/IOCExtractor.tsx` | Bulk extract IPs, domains, hashes, URLs from raw text |
+| Bulk Lookup | `pages/BulkLookup.tsx` | Scan multiple IOCs at once |
+| Extension Scanner | `pages/ExtensionScanner.tsx` | Analyze Chrome extensions for malicious behavior |
+| Decoder | `pages/DecoderTool.tsx` | Base64, hex, URL decode/encode |
+| Defang / Refang | `pages/DefangTool.tsx` | Safely defang or refang IOCs for sharing |
 
 **Window Chrome**:
 - macOS-style traffic lights (close=#f43f5e, minimize=#f59e0b, maximize=#00ff9d)
@@ -167,18 +175,14 @@ scan -domain evil.com --network
 - `tokens.ts` — Design system (colors, typography, shadows, spacing)
 
 **Known Limitations**:
-- App icons are currently Unicode emojis (inconsistent across OSes) — needs custom SVG set
 - Browser only handles internal `thamos://` URLs — no real web rendering
-- No wallpaper customization (hardcoded gradient + dot grid)
-- No minimize/maximize animations (instant snap)
-- Window title bar shows pixel dimensions (`900x600`) — dev-facing clutter
-- Reuses Tactical-themed result pages (`IPResult`, `URLResult`) inside desktop windows
-- No Mission Control / window overview view
+- Result windows (`IPResult`, `URLResult`, etc.) are Tactical-themed pages, not Desktop-native designs
 
 ### 4. Mission Control Mode
-**Visual Style**: Stub/experimental. Exists in `themecontext.tsx` type definition only.
-**Purpose**: Originally planned as an activities overview / exposé view for Desktop theme.
-**Current Status**: Not implemented. Type exists for future expansion.
+**Visual Style**: Full-screen blur overlay showing all open windows grouped by workspace.
+**Purpose**: Exposé-style overview — see and switch to any window across all workspaces.
+**Current Status**: Fully implemented. Toggle with `Ctrl+Shift+M`.
+**Features**: Windows grouped by workspace (+ Pinned group), shows MIN/MAX/PIN badges, click to focus/restore/switch workspace.
 
 ---
 
@@ -207,9 +211,9 @@ scan -domain evil.com --network
   - RDAP/WHOIS (domain registration data - always available)
   - TEOH.IO (Tor exit nodes)
   - Spamhaus (blocklists)
-  - AlienVault OTX (community threat intel - requires free API key)
+  - Team Cymru / Blocklist.de / Tor exit list
 
-- **Paid/API Key Sources** (6+):
+- **Paid/API Key Sources** (12+):
   - VirusTotal
   - AbuseIPDB
   - Shodan
@@ -217,6 +221,11 @@ scan -domain evil.com --network
   - ProxyCheck
   - GreyNoise
   - URLScan
+  - AlienVault OTX
+  - IP2Proxy
+  - IPHub
+  - VPNAPI
+  - Hybrid Analysis
 
 ### Deployment
 - Static hosting (via Vite build)
@@ -733,14 +742,26 @@ return (
 #### Extras (Secondary Tools)
 
 **Email Analyzer** (`src/pages/EmailAnalyzer.tsx`)
-- **Input**: Raw email headers
+- **Input**: Raw email headers + optional email body
 - **Output**:
-  - Parsed headers (From, To, Subject, etc.)
-  - SPF/DKIM/DMARC results (if present)
-  - Originating IP extraction
-  - Suspicious header detection
-- **Features**: One-click IP lookup from headers
-- **No Backend**: Client-side parsing
+  - Parsed headers (From, To, Subject, Return-Path, Reply-To, Message-ID)
+  - SPF/DKIM/DMARC authentication status
+  - Routing hops from Received headers with origin IP extraction
+  - Suspicious indicators: spoofing (Return-Path/Reply-To mismatch), IDN/punycode domains, auth failures
+  - Extracted IOCs: URLs, domains, IPs, email addresses
+- **Tabs**: Headers | Auth | Hops | IOCs | Raw JSON
+- **Enrichment**: "ENRICH ALL" calls `analyze-email` edge function → per-IOC threat scores + MALICIOUS/SUSPICIOUS/IDN badges + EmailRep.io reputation for email addresses
+- **Edge Function**: `analyze-email` (fans out to threat-intel + EmailRep.io, free, no key required for EmailRep)
+
+**Doc Analyzer** (`src/pages/DocAnalyzer.tsx`)
+- **Input**: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX (drag-and-drop or click, max 10MB)
+- **Detection**: Magic bytes → PDF (`%PDF-`), OOXML (PK zip header), OLE (D0CF11E0)
+- **PDF analysis**: Scans for `/JS`, `/JavaScript`, `/OpenAction`, `/Launch`, `/EmbeddedFile`, `/URI`, `/AA`, `/AcroForm` objects; eval/unescape calls; high stream counts
+- **OOXML analysis**: VBA macro presence (`vbaProject.bin`), auto-open triggers, external relationships
+- **OLE analysis**: Legacy format flag, Shell/COM invocations, auto-open macros
+- **URL enrichment**: Extracts embedded URLs (up to 5), enriches via `threat-intel/url`
+- **Tabs**: Findings (severity-tagged) | IOCs | Raw JSON
+- **Edge Function**: `analyze-doc`
 
 **URL Scanner** (`src/pages/URLScanner.tsx`)
 - **Input**: Full URL
@@ -1041,6 +1062,28 @@ Tracks user activity for statistics
 ```
 **Purpose**: Powers admin dashboard statistics and usage analytics
 
+#### `ioc_relationships`
+IOC pivot graph — relationships between IOCs built automatically during scans
+```sql
+- id (uuid, PK)
+- source_type (text) - 'ip' | 'domain' | 'hash' | 'url'
+- source_value (text, lowercased)
+- target_type (text) - 'ip' | 'domain' | 'hash' | 'url'
+- target_value (text, lowercased)
+- edge_type (text) - 'resolves_to' | 'cert_san' | 'hosted_on' | 'signed_by' | 'seen_with' | 'related_hash'
+- first_seen (timestamptz, nullable)
+- last_seen (timestamptz, nullable)
+- observation_count (integer, default 1)
+- confidence (text) - 'high' | 'medium' | 'low'
+- source_dataset (text) - Which pDNS/TI source provided this edge
+- metadata (jsonb) - Extra data (e.g., DNS record type)
+- updated_at (timestamptz)
+```
+**RLS**: Read for all, write for service role only
+**Unique constraint**: `(source_type, source_value, target_type, target_value, edge_type, source_dataset)`
+**Populated by**: Every IP and domain scan — `savePDNSEdges()` writes `resolves_to` edges from passive DNS history, `saveCertEdges()` writes `cert_san` edges from crt.sh certificate transparency
+**Used by**: `RelatedIOCs` component shown in all result windows — queries outbound (source) and inbound (target) edges and renders a pivot graph with direction filters and SCAN → buttons
+
 ---
 
 ## Authentication & Authorization
@@ -1255,6 +1298,37 @@ CREATE POLICY "Admins can update user status"
 - `SUPABASE_SERVICE_ROLE_KEY` - Auto-populated
 - `API_KEY_ENCRYPTION_KEY` - Set manually for encryption
 - `ADMIN_EMAIL` - DSBN admin email for org key management
+
+### `/functions/analyze-email`
+**Purpose**: Email header IOC enrichment — extracts URLs, domains, IPs, emails from raw headers/body, fans out to threat-intel and EmailRep.io, returns per-IOC scores with IDN detection
+- `POST /analyze-email` — Input: `{ headers, emailBody }`, Output: IOC enrichment map + summary (totalScore, isMalicious, idnDomains)
+
+### `/functions/analyze-doc`
+**Purpose**: Static analysis of PDF, OOXML, and OLE documents
+- `POST /analyze-doc` — Input: `{ file (base64), filename }`, Output: findings (severity-tagged), extracted URL IOCs with enrichment, risk score
+
+### `/functions/analyze-extension`
+**Purpose**: Deep static analysis of Chrome extensions (by ID or uploaded .crx/.zip)
+- Analyzes manifest permissions, dangerous APIs, external connections, obfuscation, code injection patterns
+
+### `/functions/ai-chat`
+**Purpose**: Multi-model AI routing for Maestro — fans the same prompt to Claude, GPT, and Gemini simultaneously and returns all three responses
+
+### `/functions/topdesk`
+**Purpose**: TopDesk ITSM integration — ticket search, deduplication, and incident enrichment
+- Routes: `search-incidents`, `deduplicate`, `update-incident`
+
+### `/functions/ransomware-intel`
+**Purpose**: Aggregates ransomware campaign data (ransomware.live feed + group tracking)
+
+### `/functions/tor-list-refresh`
+**Purpose**: Scheduled refresh of Tor exit node list into the database
+
+### `/functions/ip2proxy-refresh`
+**Purpose**: Scheduled refresh of IP2Proxy VPN/proxy database
+
+### `/functions/github-proxy`
+**Purpose**: Authenticated GitHub API proxy for the File Manager / Code Editor
 
 ### `/functions/api-keys`
 **Purpose**: Secure API key storage and retrieval

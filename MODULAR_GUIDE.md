@@ -143,8 +143,8 @@ Currently no persistence - lookups are not stored
 
 ### Integration Points
 - **Entry**: User types hash → validates format (MD5/SHA1/SHA256)
-- **Edge Function**: `POST /threat-intel/hash` (to be implemented)
-- **Response**: Returns malware detection status
+- **Edge Function**: `POST /threat-intel/hash`
+- **Response**: Returns malware detection status, AV engine results
 - **Connected To**: Smart IOC Intake
 
 ### API Keys Used
@@ -177,10 +177,10 @@ CORE FILES +
 Currently no persistence
 
 ### Integration Points
-- **Entry**: User types domain → calls RDAP/WHOIS
-- **Edge Function**: `POST /threat-intel/domain` (to be implemented)
-- **Response**: Registration data, reputation
-- **Connected To**: Smart IOC Intake, URL Scanner
+- **Entry**: User types domain → calls `lookupDomain()` from `lib/threatIntel.ts`
+- **Edge Function**: `POST /threat-intel/domain`
+- **Response**: WHOIS/RDAP data, reputation scores, threat categories, pDNS edges written to `ioc_relationships`
+- **Connected To**: Smart IOC Intake, URL Scanner, RelatedIOCs pivot graph
 
 ### API Keys Used
 - RDAP (free), VirusTotal, AlienVault
@@ -347,7 +347,7 @@ Uses same `ip_lookups` table as IP Lookup module
 
 ## Module: Email Analyzer
 
-**Purpose**: Parse email headers and extract threat indicators
+**Purpose**: Parse email headers, authenticate SPF/DKIM/DMARC, extract IOCs, and enrich them via threat-intel + EmailRep.io.
 
 ### Files Required
 ```
@@ -356,18 +356,62 @@ CORE FILES +
 # Page Component
 /src/pages/EmailAnalyzer.tsx
 
-# No additional libs (pure client-side parsing)
+# Supabase client (for auth token forwarding to edge function)
+/src/lib/supabase.ts
+
+# Edge Function
+/supabase/functions/analyze-email/index.ts
 ```
 
 ### Database Schema
-No database usage - client-side only
+No dedicated tables — enrichment results returned in-memory, not persisted.
 
 ### Integration Points
-- **Entry**: User pastes raw email headers
-- **Processing**: Regex parsing in browser
-- **Output**: Parsed headers, SPF/DKIM/DMARC, originating IP
-- **One-Click**: "Lookup IP" button calls IP Lookup module
-- **Connected To**: IP Lookup
+- **Entry**: User pastes raw email headers (+ optional body) → instant local parse
+- **Local Parse**: Headers, hops, SPF/DKIM/DMARC status, Return-Path/Reply-To spoofing check, IDN/punycode domain detection, IOC extraction (URLs, domains, IPs, emails)
+- **Enrichment**: "ENRICH ALL" calls `analyze-email` edge function:
+  - URLs → `threat-intel/url`
+  - Domains → `threat-intel/domain` (+ IDN flag)
+  - IPs → `threat-intel/ip`
+  - Emails → EmailRep.io (free, no API key needed)
+- **Display**: Per-IOC threat scores + MALICIOUS/SUSPICIOUS/IDN badges; re-enrich button
+- **SCAN →**: Opens ip-result/domain-result/url-result/email-result window for any IOC
+- **Connected To**: `analyze-email` edge function, all result window types
+
+---
+
+## Module: Doc Analyzer
+
+**Purpose**: Static analysis of PDF and Office documents for macros, dangerous objects, and embedded URLs.
+
+### Files Required
+```
+CORE FILES +
+
+# Page Component
+/src/pages/DocAnalyzer.tsx
+
+# Supabase client (for auth token)
+/src/lib/supabase.ts
+
+# Edge Function
+/supabase/functions/analyze-doc/index.ts
+```
+
+### Database Schema
+No dedicated tables — results returned in-memory only.
+
+### Integration Points
+- **Entry**: User drops or uploads a file (PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX, ≤10MB)
+- **File reading**: `FileReader.readAsDataURL()` → strip data URL prefix → base64 sent to edge function
+- **Edge Function**: Detects file type from magic bytes, runs format-specific analysis:
+  - PDF: dangerous object scan + eval/unescape detection
+  - OOXML: VBA macro presence, auto-open triggers, external relationships
+  - OLE: legacy format flag, Shell/COM, auto-open macros
+- **URL Enrichment**: Up to 5 extracted URLs sent to `threat-intel/url`
+- **Output Tabs**: Findings (severity-tagged) | IOCs (with threat scores) | Raw JSON
+- **SCAN →**: Opens url-result window for any extracted URL
+- **Connected To**: `analyze-doc` edge function, `url-result` windows
 
 ---
 
@@ -685,7 +729,7 @@ src/components/desktop/NotificationCenter.tsx
 src/components/desktop/ToastNotifications.tsx
 src/components/desktop/ShortcutsOverlay.tsx (inline in DesktopLayout.tsx)
 
-# Desktop Apps
+# Desktop Apps — windowed components
 src/components/desktop/DesktopTerminal.tsx
 src/components/desktop/DesktopVPSTerminal.tsx
 src/components/desktop/DesktopScanner.tsx
@@ -697,7 +741,26 @@ src/components/desktop/DesktopGitHub.tsx
 src/components/editor/DesktopCodeEditor.tsx
 src/components/desktop/DesktopSystemMonitor.tsx
 src/components/desktop/DesktopSettings.tsx
+src/components/desktop/DesktopTopDesk.tsx
 src/components/desktop/DesktopClock.tsx
+
+# Page-based apps (mounted directly in windows via renderWindowContent)
+src/pages/EmailAnalyzer.tsx
+src/pages/DocAnalyzer.tsx
+src/pages/IOCExtractor.tsx
+src/pages/BulkLookup.tsx
+src/pages/ExtensionScanner.tsx
+src/pages/DecoderTool.tsx
+src/pages/DefangTool.tsx
+
+# Shared result pages (opened by Scanner + SCAN → buttons)
+src/pages/results/IPResult.tsx
+src/pages/results/URLResult.tsx
+src/pages/results/DomainResult.tsx
+src/pages/results/HashResult.tsx
+
+# Shared component used in all result windows
+src/components/RelatedIOCs.tsx
 
 # Design System
 src/design-system/tokens.ts
@@ -1019,6 +1082,7 @@ curl -X GET https://aufxheaofpzbovgqwcdr.supabase.co/functions/v1/api-keys \
 | `src/pages/HashLookup.tsx` | Hash Lookup |
 | `src/pages/DomainIntel.tsx` | Domain Intel |
 | `src/pages/EmailAnalyzer.tsx` | Email Analyzer |
+| `src/pages/DocAnalyzer.tsx` | Doc Analyzer |
 | `src/pages/DefangTool.tsx` | Defang Tool |
 | `src/pages/DecoderTool.tsx` | Decoder Tool |
 | `src/pages/History.tsx` | History |
@@ -1026,7 +1090,10 @@ curl -X GET https://aufxheaofpzbovgqwcdr.supabase.co/functions/v1/api-keys \
 | `src/lib/iocAnalysis.ts` | Smart IOC Intake |
 | `src/components/ThreatScore.tsx` | IP Lookup, Bulk Lookup, History, Smart IOC |
 | `src/components/SourceCard.tsx` | IP Lookup, URL Scanner, Hash Lookup |
+| `src/components/RelatedIOCs.tsx` | IP Lookup, Domain Intel (IOC pivot graph) |
 | `supabase/functions/threat-intel/index.ts` | IP Lookup, URL Scanner, Bulk Lookup, Hash, Domain |
+| `supabase/functions/analyze-email/index.ts` | Email Analyzer |
+| `supabase/functions/analyze-doc/index.ts` | Doc Analyzer |
 | `supabase/functions/api-keys/index.ts` | Settings & API Keys |
 | `supabase/functions/news-feeds/index.ts` | News Feed |
 
