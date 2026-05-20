@@ -1,18 +1,19 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Globe, AlertTriangle, Shield, Database, MapPin, Server, Wifi,
-  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search
+  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search, GitBranch
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
 import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
+import { RelatedIOCs } from '../../components/RelatedIOCs';
 
 interface IPResultProps {
   ip: string;
 }
 
-type MenuItem = 'overview' | 'network' | 'threats' | 'vpn' | 'location' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'network' | 'threats' | 'vpn' | 'location' | 'pivot' | 'sources' | 'raw';
 
 export default function IPResult({ ip }: IPResultProps) {
   const { theme } = useTheme();
@@ -112,6 +113,7 @@ export default function IPResult({ ip }: IPResultProps) {
     { id: 'threats' as MenuItem, label: 'Threats', icon: AlertTriangle },
     { id: 'vpn' as MenuItem, label: 'VPN/Proxy', icon: Wifi },
     { id: 'location' as MenuItem, label: 'Location', icon: MapPin },
+    { id: 'pivot' as MenuItem, label: 'Pivot Graph', icon: GitBranch },
     { id: 'sources' as MenuItem, label: 'Sources', icon: Database },
     { id: 'raw' as MenuItem, label: 'Raw JSON', icon: FileJson },
   ];
@@ -244,6 +246,16 @@ export default function IPResult({ ip }: IPResultProps) {
 
           {activeMenu === 'location' && (
             <LocationSection enrichment={enrichment} proMode={proMode} />
+          )}
+
+          {activeMenu === 'pivot' && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <GitBranch className="w-6 h-6 text-cyan-400" />
+                IOC PIVOT GRAPH
+              </h2>
+              <RelatedIOCs iocType="ip" iocValue={ip} />
+            </div>
           )}
 
           {activeMenu === 'sources' && (

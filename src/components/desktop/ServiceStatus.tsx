@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Shield, Zap, Ticket, Globe } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
 
@@ -12,31 +11,15 @@ export interface ServiceState {
   color: string;
 }
 
-export function ServiceStatus() {
-  const [services, setServices] = useState<ServiceState[]>([
-    { id: 'sentinel', name: 'Microsoft Sentinel', status: 'online', icon: Shield, color: palette.cyan },
-    { id: 'defender', name: 'Microsoft Defender', status: 'online', icon: Zap, color: palette.blue },
-    { id: 'topdesk', name: 'TopDesk', status: 'online', icon: Ticket, color: palette.teal },
-    { id: 'entra', name: 'Entra ID / SSO', status: 'online', icon: Globe, color: palette.green },
-  ]);
+const SERVICES: ServiceState[] = [
+  { id: 'sentinel', name: 'Microsoft Sentinel', status: 'online', icon: Shield, color: palette.cyan },
+  { id: 'defender', name: 'Microsoft Defender', status: 'online', icon: Zap, color: palette.blue },
+  { id: 'topdesk', name: 'TopDesk', status: 'online', icon: Ticket, color: palette.teal },
+  { id: 'entra', name: 'Entra ID / SSO', status: 'online', icon: Globe, color: palette.green },
+];
 
-  // Simulate status monitoring
-  useEffect(() => {
-    const timer = setInterval(() => {
-      // Small chance to flicker warning for realism
-      if (Math.random() > 0.98) {
-        const idx = Math.floor(Math.random() * services.length);
-        const newServices = [...services];
-        newServices[idx].status = 'warning';
-        setServices(newServices);
-        
-        setTimeout(() => {
-          setServices(prev => prev.map(s => s.id === services[idx].id ? { ...s, status: 'online' } : s));
-        }, 3000);
-      }
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [services]);
+export function ServiceStatus() {
+  const services = SERVICES;
 
   return (
     <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/5">
@@ -70,7 +53,7 @@ export function ServiceStatus() {
               STATUS: <span style={{ color: service.status === 'online' ? palette.green : palette.amber }}>{service.status.toUpperCase()}</span>
             </div>
             <div className="text-[9px] text-slate-500 mt-0.5">
-              LATENCY: {Math.floor(Math.random() * 40) + 10}ms
+              INTEGRATION: not yet configured
             </div>
           </div>
         </div>

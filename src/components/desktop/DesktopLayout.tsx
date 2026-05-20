@@ -465,6 +465,12 @@ function renderWindowContent(appId: string, data?: any) {
       return <HashResult hash={data?.value} />;
     case 'extension-result':
       return <ExtensionScanner initialUrl={data?.value} />;
+    case 'cve-result':
+      return <DesktopScanner initialScan={data?.value ? { type: 'cve', value: data.value } : undefined} />;
+    case 'wallet-result':
+      return <DesktopScanner initialScan={data?.value ? { type: 'wallet', value: data.value } : undefined} />;
+    case 'email-result':
+      return <DesktopScanner initialScan={data?.value ? { type: 'email', value: data.value } : undefined} />;
     case 'decoder':
       return <DecoderTool />;
     case 'defang':

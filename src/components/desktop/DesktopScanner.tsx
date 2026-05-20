@@ -12,8 +12,12 @@ interface ScanState {
   value: string;
 }
 
-export function DesktopScanner() {
-  const [scanState, setScanState] = useState<ScanState | null>(null);
+interface DesktopScannerProps {
+  initialScan?: ScanState;
+}
+
+export function DesktopScanner({ initialScan }: DesktopScannerProps = {}) {
+  const [scanState, setScanState] = useState<ScanState | null>(initialScan ?? null);
 
   const handleScan = useCallback((type: string, value: string) => {
     setScanState({ type, value });
@@ -60,17 +64,22 @@ export function DesktopScanner() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {scanState.type === 'ip' && (
-          <IPResult ip={scanState.value} />
-        )}
-        {scanState.type === 'url' && (
-          <URLResult url={scanState.value} />
-        )}
-        {scanState.type === 'domain' && (
-          <DomainResult domain={scanState.value} />
-        )}
-        {scanState.type === 'hash' && (
-          <HashResult hash={scanState.value} />
+        {scanState.type === 'ip' && <IPResult ip={scanState.value} />}
+        {scanState.type === 'url' && <URLResult url={scanState.value} />}
+        {scanState.type === 'domain' && <DomainResult domain={scanState.value} />}
+        {scanState.type === 'hash' && <HashResult hash={scanState.value} />}
+        {!['ip', 'url', 'domain', 'hash'].includes(scanState.type) && (
+          <div className="h-full flex items-center justify-center" style={{ backgroundColor: palette.void }}>
+            <div className="text-center space-y-2">
+              <div className="text-2xl opacity-20">⬡</div>
+              <p style={{ fontSize: '12px', fontFamily: typography.mono, color: palette.textTertiary }}>
+                {scanState.type.toUpperCase()} scan: {scanState.value}
+              </p>
+              <p style={{ fontSize: '11px', color: palette.textTertiary }}>
+                Result page for this IOC type is coming soon
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </div>

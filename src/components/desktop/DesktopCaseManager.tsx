@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useDesktop } from '../../contexts/DesktopContext';
+import { detectIOCType } from '../../lib/iocDetection';
 
 const P = {
   void: '#060610',
@@ -45,13 +47,17 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 export function DesktopCaseManager() {
+  const { openWindow } = useDesktop();
   const [cases, setCases] = useState<CaseNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState<CaseNote | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [filterTag, setFilterTag] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '', description: '', status: 'open' as const, priority: 'medium' as const,
     notes: '', tags: '', iocs: '',
@@ -75,10 +81,21 @@ export function DesktopCaseManager() {
 
   const parseIOCs = (text: string) => {
     return text.split('\n').filter(l => l.trim()).map(line => {
-      const parts = line.split(':');
-      return parts.length >= 2
-        ? { type: parts[0].trim(), value: parts.slice(1).join(':').trim() }
-        : { type: 'unknown', value: line.trim() };
+      const trimmed = line.trim();
+      // Try explicit "type: value" format first
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx > 0) {
+        const maybeType = trimmed.slice(0, colonIdx).trim().toLowerCase();
+        const knownTypes = ['ip', 'domain', 'hash', 'url', 'email', 'cve', 'wallet', 'extension'];
+        if (knownTypes.includes(maybeType)) {
+          return { type: maybeType, value: trimmed.slice(colonIdx + 1).trim() };
+        }
+      }
+      // Auto-classify using IOC detection
+      const detected = detectIOCType(trimmed);
+      return detected.type !== 'unknown'
+        ? { type: detected.type, value: detected.value }
+        : { type: 'unknown', value: trimmed };
     });
   };
 
@@ -106,7 +123,35 @@ export function DesktopCaseManager() {
   const handleDelete = async (id: string) => {
     await supabase.from('case_notes').delete().eq('id', id);
     if (selectedCase?.id === id) setSelectedCase(null);
+    setConfirmDeleteId(null);
     fetchCases();
+  };
+
+  const handleExport = (c: CaseNote) => {
+    const json = JSON.stringify(c, null, 2);
+    navigator.clipboard.writeText(json).catch(() => {});
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `case-${c.id.slice(0, 8)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleScanIOC = (ioc: { type: string; value: string }) => {
+    const scannable = ['ip', 'domain', 'hash', 'url', 'email', 'cve', 'wallet', 'extension'];
+    if (!scannable.includes(ioc.type)) return;
+    const appIdMap: Record<string, string> = {
+      ip: 'ip-result', domain: 'domain-result', hash: 'hash-result',
+      url: 'url-result', email: 'email-result', cve: 'cve-result',
+      wallet: 'wallet-result', extension: 'extension-result',
+    };
+    openWindow({
+      appId: appIdMap[ioc.type] as any,
+      title: `${ioc.type.toUpperCase()}: ${ioc.value}`,
+      data: { value: ioc.value },
+    });
   };
 
   const openEdit = (c: CaseNote) => {
@@ -127,7 +172,9 @@ export function DesktopCaseManager() {
   const filtered = cases.filter(c => {
     const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase()) || c.tags?.some(t => t.toLowerCase().includes(search.toLowerCase()));
     const matchStatus = filterStatus === 'all' || c.status === filterStatus;
-    return matchSearch && matchStatus;
+    const matchPriority = filterPriority === 'all' || c.priority === filterPriority;
+    const matchTag = !filterTag || c.tags?.some(t => t.toLowerCase() === filterTag.toLowerCase());
+    return matchSearch && matchStatus && matchPriority && matchTag;
   });
 
   if (showForm) {
@@ -171,7 +218,35 @@ export function DesktopCaseManager() {
   }
 
   return (
-    <div className="h-full flex" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+    <div className="h-full flex relative" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+      {/* Delete confirmation modal */}
+      {confirmDeleteId && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="rounded-xl p-6 space-y-4 w-72" style={{ backgroundColor: P.surface, border: `1px solid ${P.pink}40` }}>
+            <p className="text-xs font-medium tracking-wider" style={{ color: P.pink }}>DELETE CASE</p>
+            <p className="text-xs leading-relaxed" style={{ color: P.textLight }}>
+              This action is irreversible. All notes and IOCs will be permanently deleted.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-2 text-xs rounded transition-all"
+                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.text }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeleteId)}
+                className="flex-1 py-2 text-xs rounded transition-all"
+                style={{ backgroundColor: `${P.pink}20`, border: `1px solid ${P.pink}50`, color: P.pink }}
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-[300px] flex flex-col flex-shrink-0" style={{ borderRight: `1px solid ${P.border}` }}>
         <div className="p-3 space-y-2" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
           <div className="flex items-center justify-between">
@@ -208,6 +283,29 @@ export function DesktopCaseManager() {
               </button>
             ))}
           </div>
+          <div className="flex gap-1 flex-wrap">
+            {(['all', 'low', 'medium', 'high', 'critical'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setFilterPriority(p)}
+                className="px-2 py-0.5 text-xs rounded transition-all"
+                style={{
+                  backgroundColor: filterPriority === p ? `${PRIORITY_COLORS[p] || P.cyan}15` : 'transparent',
+                  border: `1px solid ${filterPriority === p ? `${PRIORITY_COLORS[p] || P.cyan}40` : P.border}`,
+                  color: filterPriority === p ? (PRIORITY_COLORS[p] || P.cyan) : P.dim,
+                }}
+              >
+                {p.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          {filterTag && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: P.dim }}>TAG:</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${P.cyan}15`, color: P.cyan, border: `1px solid ${P.cyan}30` }}>{filterTag}</span>
+              <button onClick={() => setFilterTag('')} className="text-[10px]" style={{ color: P.dim }}>✕</button>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -253,8 +351,9 @@ export function DesktopCaseManager() {
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-medium" style={{ color: P.textLight }}>{selectedCase.title}</h2>
                 <div className="flex gap-2">
+                  <button onClick={() => handleExport(selectedCase)} className="text-xs px-2 py-1 rounded" style={{ color: P.text, border: `1px solid ${P.border}` }}>EXPORT</button>
                   <button onClick={() => openEdit(selectedCase)} className="text-xs px-2 py-1 rounded" style={{ color: P.cyan, border: `1px solid ${P.border}` }}>EDIT</button>
-                  <button onClick={() => handleDelete(selectedCase.id)} className="text-xs px-2 py-1 rounded" style={{ color: P.pink, border: `1px solid ${P.border}` }}>DELETE</button>
+                  <button onClick={() => setConfirmDeleteId(selectedCase.id)} className="text-xs px-2 py-1 rounded" style={{ color: P.pink, border: `1px solid ${P.border}` }}>DELETE</button>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -281,13 +380,27 @@ export function DesktopCaseManager() {
               {selectedCase.iocs && selectedCase.iocs.length > 0 && (
                 <div>
                   <span className="text-xs tracking-wider mb-2 block" style={{ color: P.dim }}>IOCs ({selectedCase.iocs.length})</span>
-                  <div className="rounded p-3 space-y-1" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
-                    {selectedCase.iocs.map((ioc, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-xs font-medium" style={{ color: P.cyan }}>{ioc.type}:</span>
-                        <code className="text-xs" style={{ color: P.textLight }}>{ioc.value}</code>
-                      </div>
-                    ))}
+                  <div className="rounded p-2 space-y-1" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+                    {selectedCase.iocs.map((ioc, i) => {
+                      const scannable = ['ip', 'domain', 'hash', 'url', 'email', 'cve', 'wallet', 'extension'].includes(ioc.type);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => scannable && handleScanIOC(ioc)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-all group"
+                          style={{
+                            cursor: scannable ? 'pointer' : 'default',
+                            backgroundColor: 'transparent',
+                          }}
+                          onMouseEnter={e => { if (scannable) (e.currentTarget as HTMLElement).style.backgroundColor = `${P.cyan}08`; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+                        >
+                          <span className="text-xs font-medium flex-shrink-0" style={{ color: P.cyan }}>{ioc.type}</span>
+                          <code className="text-xs flex-1 min-w-0 truncate" style={{ color: P.textLight }}>{ioc.value}</code>
+                          {scannable && <span className="text-[10px] opacity-0 group-hover:opacity-100 flex-shrink-0" style={{ color: P.cyan }}>SCAN →</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -304,9 +417,15 @@ export function DesktopCaseManager() {
                   <span className="text-xs tracking-wider mb-2 block" style={{ color: P.dim }}>TAGS</span>
                   <div className="flex flex-wrap gap-1">
                     {selectedCase.tags.map((tag, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: P.surfaceLight, color: P.text, border: `1px solid ${P.border}` }}>
-                        {tag}
-                      </span>
+                      <button
+                        key={i}
+                        onClick={() => setFilterTag(tag)}
+                        className="text-xs px-2 py-0.5 rounded transition-all"
+                        style={{ backgroundColor: P.surfaceLight, color: P.text, border: `1px solid ${P.border}` }}
+                        title={`Filter by tag: ${tag}`}
+                      >
+                        #{tag}
+                      </button>
                     ))}
                   </div>
                 </div>

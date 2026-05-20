@@ -1,17 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Globe, AlertTriangle, Shield, Database, Calendar, Server, Target, FileJson, Zap,
-  Copy, Check, Lock, Search
+  Copy, Check, Lock, Search, GitBranch
 } from 'lucide-react';
 import { lookupDomain } from '../../lib/threatIntel';
 import type { DomainLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
+import { RelatedIOCs } from '../../components/RelatedIOCs';
 
 interface DomainResultProps {
   domain: string;
 }
 
-type MenuItem = 'overview' | 'whois' | 'dns' | 'security' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'whois' | 'dns' | 'security' | 'pivot' | 'sources' | 'raw';
 
 export default function DomainResult({ domain }: DomainResultProps) {
   const [loading, setLoading] = useState(true);
@@ -96,6 +97,7 @@ export default function DomainResult({ domain }: DomainResultProps) {
     { id: 'whois' as MenuItem, label: 'WHOIS', icon: Globe },
     { id: 'dns' as MenuItem, label: 'DNS Records', icon: Server },
     { id: 'security' as MenuItem, label: 'Security', icon: Shield },
+    { id: 'pivot' as MenuItem, label: 'Pivot Graph', icon: GitBranch },
     { id: 'sources' as MenuItem, label: 'Sources', icon: Database },
     { id: 'raw' as MenuItem, label: 'Raw JSON', icon: FileJson },
   ];
@@ -158,6 +160,15 @@ export default function DomainResult({ domain }: DomainResultProps) {
           {activeMenu === 'whois' && <WhoisSection whoisData={whoisData} proMode={proMode} />}
           {activeMenu === 'dns' && <DNSSection vtData={vtData} proMode={proMode} />}
           {activeMenu === 'security' && <SecuritySection vtData={vtData} whoisData={whoisData} proMode={proMode} />}
+          {activeMenu === 'pivot' && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <GitBranch className="w-6 h-6 text-cyan-400" />
+                IOC PIVOT GRAPH
+              </h2>
+              <RelatedIOCs iocType="domain" iocValue={domain} />
+            </div>
+          )}
           {activeMenu === 'sources' && <SourcesSection sources={sources} proMode={proMode} />}
           {activeMenu === 'raw' && <RawJsonSection data={result} />}
         </div>

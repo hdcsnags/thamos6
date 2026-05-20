@@ -7,7 +7,8 @@ import { palette, typography } from '../../design-system/tokens';
 
 const COMMANDS = [
   'help', 'clear', 'history', 'status', 'scan', 'get', 'neofetch', 'nmap', 'whois', 'dig',
-  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit', 'vps', 'incident'
+  'thamosx', 'thamosy', 'thamosz', 'workspace', 'open', 'projects', 'git', 'ls', 'pwd', 'exit',
+  'vps', 'incident', 'ransomware', 'feeds',
 ];
 
 const AGENTS = {
@@ -150,6 +151,14 @@ export function DesktopTerminal() {
         handleVps(args);
         break;
 
+      case 'ransomware':
+        handleRansomware(args);
+        break;
+
+      case 'feeds':
+        handleFeeds(args);
+        break;
+
       case 'incident':
         const mockUPN = args[0] || 'michael.thomas@dsbn.io';
         addOutput(`[*] Generating mock incident for ${mockUPN}...`, 'info');
@@ -197,8 +206,13 @@ export function DesktopTerminal() {
     addOutput('  scan -hash [HASH]      Scan file hash (MD5/SHA256)', 'info');
     addOutput('  scan -url [URL]        Scan URL for threats', 'info');
     addOutput('  scan -domain [DOM]     Scan domain and DNS', 'info');
-    addOutput('  get -feed rss          Fetch RSS threat feed', 'info');
-    addOutput('  get -feed ransomware   Fetch ransomware intel', 'info');
+    addOutput('  scan -cve [CVE-ID]     Lookup CVE vulnerability', 'info');
+    addOutput('  scan -wallet [ADDR]    Scan crypto wallet address', 'info');
+    addOutput('  scan -extension [ID]   Analyze Chrome extension', 'info');
+    addOutput('  feeds [N]              Show latest N threat intel items', 'info');
+    addOutput('  ransomware [cmd]       Ransomware group/victim intel', 'info');
+    addOutput('  get -feed rss          Open RSS threat feed', 'info');
+    addOutput('  get -feed ransomware   Open ransomware intel', 'info');
     addOutput('', 'info');
     addOutput('AI AGENT ROUTING:', 'success', palette.green);
     addOutput('  thamosx [query]        Route to Claude (deep analysis)', 'info');
@@ -247,6 +261,9 @@ export function DesktopTerminal() {
     addOutput('  -hash [HASH]           Scan file hash', 'info');
     addOutput('  -url [URL]             Scan URL', 'info');
     addOutput('  -domain [DOMAIN]       Scan domain', 'info');
+    addOutput('  -cve [CVE-ID]          Lookup CVE vulnerability', 'info');
+    addOutput('  -wallet [ADDRESS]      Scan crypto wallet (BTC/ETH)', 'info');
+    addOutput('  -extension [ID]        Analyze Chrome extension', 'info');
     addOutput('', 'info');
     addOutput('FLAGS:', 'success', palette.cyan);
     addOutput('  -v, --verbose          Show all sections', 'info');
@@ -301,7 +318,7 @@ export function DesktopTerminal() {
     let value = remainingArgs.slice(1).join(' ');
 
     // Smart detection if first arg is not a recognized type flag
-    const typeFlags = ['-ip', '-hash', '-url', '-domain'];
+    const typeFlags = ['-ip', '-hash', '-url', '-domain', '-cve', '-wallet', '-extension'];
     if (type && !typeFlags.includes(type)) {
       const detection = detectIOCType(remainingArgs.join(' '));
       if (detection.type !== 'unknown') {
@@ -323,11 +340,13 @@ export function DesktopTerminal() {
       '-url': 'url',
       '-domain': 'domain',
       '-extension': 'extension',
+      '-cve': 'cve',
+      '-wallet': 'wallet',
     };
 
     const scanType = typeMap[type];
     if (!scanType) {
-      addOutput('ERROR: Unknown scan type. Use: -ip, -hash, -url, or -domain', 'error');
+      addOutput('ERROR: Unknown scan type. Use: -ip, -hash, -url, -domain, -cve, -wallet, or -extension', 'error');
       addOutput('Type "scan --help" for more information', 'info');
       addOutput('', 'info');
       return;
@@ -354,8 +373,13 @@ export function DesktopTerminal() {
     addOutput('[*] Opening result window...', 'info');
     addOutput('', 'info');
 
+    const appIdMap: Record<string, string> = {
+      ip: 'ip-result', hash: 'hash-result', url: 'url-result', domain: 'domain-result',
+      extension: 'extension-result', cve: 'cve-result', wallet: 'wallet-result',
+    };
+
     desktop.openWindow({
-      appId: `${scanType}-result` as any,
+      appId: (appIdMap[scanType] ?? `${scanType}-result`) as any,
       title: `${scanType.toUpperCase()}: ${value}`,
       data: { value, flags },
     });
@@ -574,6 +598,43 @@ export function DesktopTerminal() {
     addOutput('[*] Opening VPS Terminal (LIVE mode)...', 'success', palette.amber);
     addOutput('', 'info');
     desktop.openWindow({ appId: 'vps-terminal', title: 'VPS Terminal' });
+  };
+
+  const handleRansomware = (args: string[]) => {
+    const sub = args[0]?.toLowerCase();
+    addOutput('', 'info');
+
+    if (!sub || sub === 'summary') {
+      addOutput('[*] Opening Ransomware Intel dashboard...', 'success', palette.pink);
+      addOutput('', 'info');
+      desktop.openWindow({ appId: 'intel', title: 'Ransomware Intel', data: { feed: 'ransomware' } });
+      return;
+    }
+
+    if (sub === 'help') {
+      addOutput('━━━ RANSOMWARE COMMAND ━━━', 'success');
+      addOutput('', 'info');
+      addOutput('  ransomware             Open ransomware intel dashboard', 'info');
+      addOutput('  ransomware summary     Show attack summary stats', 'info');
+      addOutput('  ransomware victims     List recent victims', 'info');
+      addOutput('  ransomware groups      List active ransomware groups', 'info');
+      addOutput('', 'info');
+      return;
+    }
+
+    addOutput(`[*] Fetching ransomware ${sub} data...`, 'info');
+    addOutput('[*] Opening Ransomware Intel...', 'success', palette.pink);
+    addOutput('', 'info');
+    desktop.openWindow({ appId: 'intel', title: `Ransomware: ${sub}`, data: { feed: 'ransomware', sub } });
+  };
+
+  const handleFeeds = (args: string[]) => {
+    const n = parseInt(args[0] ?? '10');
+    const count = isNaN(n) || n < 1 ? 10 : Math.min(n, 50);
+    addOutput('', 'info');
+    addOutput(`[*] Opening Intel Dashboard (latest ${count} items)...`, 'success', palette.cyan);
+    addOutput('', 'info');
+    desktop.openWindow({ appId: 'intel', title: 'Threat Intelligence Feed', data: { limit: count } });
   };
 
   const handleLs = () => {

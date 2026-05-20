@@ -29,19 +29,37 @@ interface ApiKey {
 }
 
 const SERVICES = [
-  { id: 'anthropic_key', name: 'Anthropic', desc: 'ThamOS-X / Claude' },
-  { id: 'openai_key', name: 'OpenAI', desc: 'ThamOS-Y / GPT' },
-  { id: 'gemini_key', name: 'Google Gemini', desc: 'ThamOS-Z / Gemini' },
-  { id: 'virustotal', name: 'VirusTotal', desc: 'File/URL analysis' },
-  { id: 'abuseipdb', name: 'AbuseIPDB', desc: 'IP reputation' },
-  { id: 'shodan', name: 'Shodan', desc: 'Device search' },
-  { id: 'greynoise', name: 'GreyNoise', desc: 'Scan data' },
-  { id: 'urlscan', name: 'URLScan.io', desc: 'URL scanning' },
-  { id: 'alienvault', name: 'AlienVault OTX', desc: 'Threat intel' },
-  { id: 'ipqualityscore', name: 'IPQualityScore', desc: 'Fraud detection' },
-  { id: 'proxycheck', name: 'ProxyCheck', desc: 'Proxy/VPN detection' },
-  { id: 'ip2proxy', name: 'IP2Proxy', desc: 'Proxy database' },
-  { id: 'iphub', name: 'IPHub', desc: 'VPN/proxy detection' },
+  // AI models
+  { id: 'anthropic_key', name: 'Anthropic', desc: 'ThamOS-X / Claude', group: 'AI' },
+  { id: 'openai_key', name: 'OpenAI', desc: 'ThamOS-Y / GPT', group: 'AI' },
+  { id: 'gemini_key', name: 'Google Gemini', desc: 'ThamOS-Z / Gemini', group: 'AI' },
+  // Phase 0 — URL/domain threat
+  { id: 'google_safebrowsing', name: 'Google Safe Browsing', desc: 'Phishing & malware URLs', group: 'Threat Intel' },
+  { id: 'virustotal', name: 'VirusTotal', desc: 'File/URL/hash analysis', group: 'Threat Intel' },
+  { id: 'urlscan', name: 'URLScan.io', desc: 'URL scanning & screenshots', group: 'Threat Intel' },
+  { id: 'alienvault', name: 'AlienVault OTX', desc: 'Threat intel & pulses', group: 'Threat Intel' },
+  // Phase 0 — Chrome extensions
+  { id: 'crxcavator', name: 'CRXcavator', desc: 'Chrome extension risk scoring', group: 'Threat Intel' },
+  // Phase 1 — CVE / vuln
+  { id: 'nvd', name: 'NVD / NIST', desc: 'CVE vulnerability data (free)', group: 'Vulnerability' },
+  // Phase 1 — Email
+  { id: 'hibp', name: 'HaveIBeenPwned', desc: 'Breach lookup for emails', group: 'Email' },
+  { id: 'emailrep', name: 'EmailRep.io', desc: 'Email reputation scoring', group: 'Email' },
+  // Phase 1 — Crypto
+  { id: 'misttrack', name: 'MistTrack', desc: 'Crypto wallet risk scoring', group: 'Crypto' },
+  // Phase 2 — pDNS / cert
+  { id: 'circl_pdns', name: 'CIRCL pDNS', desc: 'Passive DNS (free, auth req.)', group: 'pDNS' },
+  { id: 'mnemonic_pdns', name: 'Mnemonic pDNS', desc: 'Passive DNS (free tier)', group: 'pDNS' },
+  { id: 'securitytrails', name: 'SecurityTrails', desc: 'Passive DNS + historical DNS', group: 'pDNS' },
+  { id: 'censys', name: 'Censys', desc: 'Internet-wide scanning data', group: 'pDNS' },
+  // Network/IP
+  { id: 'abuseipdb', name: 'AbuseIPDB', desc: 'IP abuse reports', group: 'IP Intel' },
+  { id: 'shodan', name: 'Shodan', desc: 'Device & service fingerprinting', group: 'IP Intel' },
+  { id: 'greynoise', name: 'GreyNoise', desc: 'Internet scan/noise data', group: 'IP Intel' },
+  { id: 'ipqualityscore', name: 'IPQualityScore', desc: 'Fraud & proxy detection', group: 'IP Intel' },
+  { id: 'proxycheck', name: 'ProxyCheck', desc: 'Proxy/VPN detection', group: 'IP Intel' },
+  { id: 'ip2proxy', name: 'IP2Proxy', desc: 'Proxy database lookup', group: 'IP Intel' },
+  { id: 'iphub', name: 'IPHub', desc: 'VPN/proxy detection', group: 'IP Intel' },
 ];
 
 export function DesktopSettings() {
