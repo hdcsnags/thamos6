@@ -22,6 +22,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   const [agentStatus, setAgentStatus] = useState({ x: false, y: false, z: false });
   const [showNotifications, setShowNotifications] = useState(false);
   const [intelUnread, setIntelUnread] = useState(0);
+  const [expandedResultGroup, setExpandedResultGroup] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -61,9 +62,19 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
     checkAgents();
   }, [user]);
 
-  const openWindows = Object.values(desktop.windows).filter(
+  const allOpenWindows = Object.values(desktop.windows).filter(
     w => w.workspaceId === desktop.activeWorkspace || w.pinned
   );
+
+  // Group result windows by appId when there are multiple
+  const RESULT_APP_IDS = ['ip-result', 'domain-result', 'hash-result', 'url-result', 'extension-result', 'cve-result', 'wallet-result', 'email-result'];
+  const resultWindows = allOpenWindows.filter(w => RESULT_APP_IDS.includes(w.appId));
+  const nonResultWindows = allOpenWindows.filter(w => !RESULT_APP_IDS.includes(w.appId));
+
+  // Either show individual result windows or group them
+  const openWindows = resultWindows.length <= 2
+    ? allOpenWindows
+    : [...nonResultWindows, { _isGroup: true, count: resultWindows.length, windows: resultWindows } as any];
 
   const agents = [
     { key: 'x', label: 'X (Claude)', color: palette.agentX, online: agentStatus.x },
@@ -143,52 +154,110 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
           className="flex items-center gap-1.5 px-2 py-1 rounded-xl overflow-x-auto max-w-2xl"
           style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
         >
-          {openWindows.map(win => (
-            <button
-              key={win.id}
-              data-window-tab={win.id}
-              onClick={() => {
-                if (win.minimized) {
-                  desktop.restoreWindow(win.id);
-                } else {
-                  desktop.focusWindow(win.id);
-                }
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                const items: MenuEntry[] = [
-                  win.minimized
-                    ? { label: 'Restore', icon: <Square size={14} />, action: () => desktop.restoreWindow(win.id) }
-                    : { label: 'Minimize', icon: <Minimize2 size={14} />, action: () => desktop.minimizeWindow(win.id) },
-                  { label: win.pinned ? 'Unpin' : 'Pin to All Workspaces', icon: win.pinned ? <PinOff size={14} /> : <Pin size={14} />, action: () => desktop.togglePinWindow(win.id) },
-                  { type: 'divider' },
-                  { label: 'Close', icon: <X size={14} />, action: () => desktop.closeWindow(win.id), danger: true },
-                ];
-                showContextMenu(e.clientX, e.clientY, items);
-              }}
-              className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
-              style={{
-                backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : 'transparent',
-                color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary,
-                border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '30' : 'transparent'}`,
-                opacity: win.minimized ? 0.5 : 1,
-              }}
-              aria-label={`Focus ${win.title}`}
-            >
-              <span style={{ color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary }}>
-                <win.icon size={14} />
-              </span>
-              <span className="max-w-[100px] truncate">{win.title}</span>
-              {win.appId === 'intel' && intelUnread > 0 && (
-                <span
-                  className="ml-0.5 px-1 rounded-full text-[9px] font-bold"
-                  style={{ backgroundColor: palette.cyan, color: palette.base }}
-                >
-                  {intelUnread > 99 ? '99+' : intelUnread}
+          {openWindows.map((win: any) => {
+            if (win._isGroup) {
+              // Grouped result windows button
+              const activeInGroup = win.windows.some((w: any) => w.id === desktop.activeWindowId);
+              return (
+                <div key="result-group" className="relative">
+                  <button
+                    onClick={() => setExpandedResultGroup(prev => !prev)}
+                    className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
+                    style={{
+                      backgroundColor: activeInGroup ? `${palette.cyan}15` : expandedResultGroup ? `${palette.cyan}08` : 'transparent',
+                      color: activeInGroup ? palette.cyan : palette.textTertiary,
+                      border: `1px solid ${activeInGroup ? palette.cyan + '30' : expandedResultGroup ? palette.cyan + '20' : 'transparent'}`,
+                    }}
+                  >
+                    <span style={{ fontSize: '12px' }}>⬡</span>
+                    <span>Results</span>
+                    <span
+                      className="px-1 rounded-full text-[9px] font-bold"
+                      style={{ backgroundColor: palette.cyan + '30', color: palette.cyan }}
+                    >
+                      {win.count}
+                    </span>
+                  </button>
+                  {expandedResultGroup && (
+                    <div
+                      className="absolute bottom-full left-0 mb-2 rounded-xl overflow-hidden min-w-[180px] shadow-2xl"
+                      style={{ backgroundColor: palette.elevated, border: `1px solid ${palette.borderDefault}` }}
+                    >
+                      {(win.windows as any[]).map((w: any) => (
+                        <button
+                          key={w.id}
+                          onClick={() => {
+                            if (w.minimized) desktop.restoreWindow(w.id);
+                            else desktop.focusWindow(w.id);
+                            setExpandedResultGroup(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs transition-all"
+                          style={{ color: desktop.activeWindowId === w.id ? w.accentColor : palette.textSecondary }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = `${palette.cyan}10`; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+                        >
+                          <w.icon size={12} />
+                          <span className="flex-1 text-left truncate max-w-[140px]">{w.title}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); desktop.closeWindow(w.id); }}
+                            className="opacity-0 hover:opacity-100 text-xs"
+                            style={{ color: palette.rose }}
+                          >×</button>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={win.id}
+                data-window-tab={win.id}
+                onClick={() => {
+                  if (win.minimized) {
+                    desktop.restoreWindow(win.id);
+                  } else {
+                    desktop.focusWindow(win.id);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const items: MenuEntry[] = [
+                    win.minimized
+                      ? { label: 'Restore', icon: <Square size={14} />, action: () => desktop.restoreWindow(win.id) }
+                      : { label: 'Minimize', icon: <Minimize2 size={14} />, action: () => desktop.minimizeWindow(win.id) },
+                    { label: win.pinned ? 'Unpin' : 'Pin to All Workspaces', icon: win.pinned ? <PinOff size={14} /> : <Pin size={14} />, action: () => desktop.togglePinWindow(win.id) },
+                    { type: 'divider' },
+                    { label: 'Close', icon: <X size={14} />, action: () => desktop.closeWindow(win.id), danger: true },
+                  ];
+                  showContextMenu(e.clientX, e.clientY, items);
+                }}
+                className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
+                style={{
+                  backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : 'transparent',
+                  color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary,
+                  border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '30' : 'transparent'}`,
+                  opacity: win.minimized ? 0.5 : 1,
+                }}
+                aria-label={`Focus ${win.title}`}
+              >
+                <span style={{ color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary }}>
+                  <win.icon size={14} />
                 </span>
-              )}
-            </button>
-          ))}
+                <span className="max-w-[100px] truncate">{win.title}</span>
+                {win.appId === 'intel' && intelUnread > 0 && (
+                  <span
+                    className="ml-0.5 px-1 rounded-full text-[9px] font-bold"
+                    style={{ backgroundColor: palette.cyan, color: palette.base }}
+                  >
+                    {intelUnread > 99 ? '99+' : intelUnread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           {openWindows.length === 0 && (
             <span className="text-xs italic px-2" style={{ color: palette.textTertiary, fontFamily: typography.mono }}>
               No windows

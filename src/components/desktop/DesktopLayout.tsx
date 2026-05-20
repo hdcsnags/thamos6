@@ -41,6 +41,7 @@ function DesktopContent() {
   const [showLauncher, setShowLauncher] = useState(false);
   const [showSpotlight, setShowSpotlight] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showMissionControl, setShowMissionControl] = useState(false);
   const [closedHistory, setClosedHistory] = useState<Array<{ appId: string; title: string }>>([]);
   const [workspaceFlash, setWorkspaceFlash] = useState<number | null>(null);
   const [wallpaper, setWallpaper] = useState(getSavedWallpaper);
@@ -169,9 +170,16 @@ function DesktopContent() {
       }
 
       if (e.key === 'Escape') {
+        if (showMissionControl) { setShowMissionControl(false); return; }
         if (showSpotlight) { setShowSpotlight(false); return; }
         if (showLauncher) { setShowLauncher(false); return; }
         if (showShortcuts) { setShowShortcuts(false); return; }
+      }
+
+      if (mod && e.shiftKey && e.key === 'M') {
+        e.preventDefault();
+        setShowMissionControl(prev => !prev);
+        return;
       }
 
       if (mod && ['1', '2', '3', '4'].includes(e.key)) {
@@ -326,6 +334,7 @@ function DesktopContent() {
       {showLauncher && <AppLauncher onClose={() => setShowLauncher(false)} />}
 
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
+      {showMissionControl && <MissionControl onClose={() => setShowMissionControl(false)} />}
 
       <Taskbar onOpenLauncher={() => setShowSpotlight(true)} />
     </div>
@@ -355,6 +364,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
     { keys: 'Ctrl + \u2191', desc: 'Maximize window' },
     { keys: 'Ctrl + \u2193', desc: 'Restore / minimize window' },
     { keys: 'Ctrl + D', desc: 'Show desktop / restore all' },
+    { keys: 'Ctrl + Shift + M', desc: 'Mission Control — all windows' },
     { keys: '?', desc: 'Toggle this overlay' },
     { keys: 'Escape', desc: 'Close overlay / launcher' },
   ];
@@ -493,4 +503,87 @@ function renderWindowContent(appId: string, data?: any) {
         </div>
       );
   }
+}
+
+function MissionControl({ onClose }: { onClose: () => void }) {
+  const desktop = useDesktop();
+  const allWindows = Object.values(desktop.windows);
+
+  const byWorkspace: Record<number, typeof allWindows> = {};
+  for (const w of allWindows) {
+    const ws = w.pinned ? 0 : w.workspaceId;
+    if (!byWorkspace[ws]) byWorkspace[ws] = [];
+    byWorkspace[ws].push(w);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[9990] flex flex-col"
+      onClick={onClose}
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)' }}
+    >
+      <div className="flex items-center justify-between px-8 pt-6 pb-3">
+        <span style={{ color: palette.cyan, fontFamily: typography.mono, fontSize: '12px', letterSpacing: '0.1em' }}>MISSION CONTROL</span>
+        <span style={{ color: palette.textTertiary, fontFamily: typography.mono, fontSize: '11px' }}>Ctrl+Shift+M · Esc to close</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-6" onClick={e => e.stopPropagation()}>
+        {[0, 1, 2, 3, 4].map(ws => {
+          const wins = byWorkspace[ws];
+          if (!wins?.length) return null;
+          return (
+            <div key={ws}>
+              <p style={{ color: palette.textTertiary, fontFamily: typography.mono, fontSize: '10px', marginBottom: '10px' }}>
+                {ws === 0 ? 'PINNED' : `WORKSPACE ${ws}`} · {wins.length} window{wins.length !== 1 ? 's' : ''}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {wins.map(win => (
+                  <button
+                    key={win.id}
+                    onClick={() => {
+                      if (win.minimized) desktop.restoreWindow(win.id);
+                      else desktop.focusWindow(win.id);
+                      if (win.workspaceId && !win.pinned) desktop.switchWorkspace(win.workspaceId);
+                      onClose();
+                    }}
+                    className="flex flex-col items-start gap-2 p-3 rounded-xl transition-all text-left"
+                    style={{
+                      width: '160px',
+                      backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : `${palette.surface}80`,
+                      border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '40' : palette.borderSubtle}`,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = `${win.accentColor}20`; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = desktop.activeWindowId === win.id ? `${win.accentColor}15` : `${palette.surface}80`; }}
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <span style={{ color: win.accentColor }}><win.icon size={14} /></span>
+                      <span className="text-xs font-medium truncate flex-1" style={{ color: palette.textPrimary, fontFamily: typography.ui }}>
+                        {win.title.length > 18 ? win.title.slice(0, 18) + '…' : win.title}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {win.minimized && (
+                        <span className="text-[9px] px-1 rounded" style={{ backgroundColor: `${palette.amber}20`, color: palette.amber }}>MIN</span>
+                      )}
+                      {win.maximized && (
+                        <span className="text-[9px] px-1 rounded" style={{ backgroundColor: `${palette.cyan}20`, color: palette.cyan }}>MAX</span>
+                      )}
+                      {win.pinned && (
+                        <span className="text-[9px] px-1 rounded" style={{ backgroundColor: `${palette.green}20`, color: palette.green }}>PIN</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {allWindows.length === 0 && (
+          <div className="flex-1 flex items-center justify-center" style={{ color: palette.textTertiary, fontFamily: typography.mono, fontSize: '12px' }}>
+            No open windows
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
