@@ -556,22 +556,6 @@ function buildVulnFindings(vulnLibs: VulnLibResult[], ruleId: "VULN-1" | "VULN-2
 
 // --- end Phase 7 ---
 
-async function checkCRXcavator(extensionId: string): Promise<Record<string, unknown>> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(`https://crxcavator.io/api/v1/report/${extensionId}`, {
-      headers: { "Accept": "application/json" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!response.ok) return { available: false, error: `HTTP ${response.status}` };
-    const data = await response.json();
-    return { available: true, data };
-  } catch (e) {
-    return { available: false, error: String(e) };
-  }
-}
 
 const SUSPICIOUS_TLDS = ['.xyz', '.top', '.tk', '.ml', '.ga', '.cf', '.gq', '.pw', '.cc'];
 const WHITELISTED_DOMAINS = [
@@ -687,8 +671,6 @@ Deno.serve(async (req: Request) => {
     const manifest = JSON.parse(new TextDecoder().decode(manifestFile));
     console.log(`Manifest parsed: ${manifest.name} v${manifest.version}`);
 
-    const crxcavatorData = await checkCRXcavator(extensionId);
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -752,7 +734,6 @@ Deno.serve(async (req: Request) => {
         skipped_files: skippedFiles,
         scan_duration_ms: scanDuration,
         files_skipped_count: skippedFiles.length,
-        crxcavator_data: crxcavatorData,
       })
       .select()
       .single();
@@ -934,7 +915,6 @@ Deno.serve(async (req: Request) => {
         scan_duration_ms: scanDuration,
         files_skipped: skippedFiles.length,
         vuln_libs_count: retireVulns.length + osvVulns.length,
-        crxcavator: crxcavatorData.available ? (crxcavatorData.data ?? null) : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
