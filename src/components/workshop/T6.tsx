@@ -379,6 +379,7 @@ export function T6() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [personaPickerFor, setPersonaPickerFor] = useState<string | null>(null); // agentId
   const [error, setError] = useState<string | null>(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -389,6 +390,20 @@ export function T6() {
   }, [mode, selectedAgent]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, councilResponses]);
+
+  // Keyboard carousel navigation (← →) — skip when focused in input/textarea
+  useEffect(() => {
+    if (mode !== 'council' || councilResponses.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft') setCurrentSlide(s => Math.max(0, s - 1));
+      if (e.key === 'ArrowRight') setCurrentSlide(s => Math.min(councilResponses.length - 1, s + 1));
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [mode, councilResponses.length]);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -509,6 +524,7 @@ export function T6() {
     setDeliberations([]);
     setSynthesis(null);
     setError(null);
+    setCurrentSlide(0);
     setInput('');
 
     const hdrs = await getAuthHeaders();
@@ -827,29 +843,73 @@ export function T6() {
                   {councilPrompt}
                 </div>
 
-                {/* Response cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(councilResponses.length, 2)}, 1fr)`, gap: 10 }}>
-                  {councilResponses.map(r => {
-                    const color = AGENT_COLOR[r.provider] ?? C.cyan;
-                    const delib = deliberations.find(d => d.source_id === r.id);
-                    return (
-                      <div key={r.id} style={{ border: `1px solid ${r.error ? C.rose + '40' : color + '30'}`, borderRadius: 8, overflow: 'hidden', background: C.surface }}>
-                        <div style={{ padding: '7px 12px', borderBottom: `1px solid ${color}20`, background: `${color}08`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.error ? C.rose : color, boxShadow: `0 0 6px ${r.error ? C.rose : color}` }} />
-                          <span style={{ color: r.error ? C.rose : color, fontSize: '0.65rem', letterSpacing: '0.06em' }}>{r.agent_name.toUpperCase()}</span>
-                          <span style={{ color: C.dim, fontSize: '0.58rem', marginLeft: 'auto' }}>{r.model}</span>
-                        </div>
-                        <div style={{ padding: '10px 12px', fontSize: '0.71rem', lineHeight: 1.65, color: r.error ? C.rose : C.textLight }}>
-                          {r.error ? `Error: ${r.error}` : renderMarkdown(r.content)}
-                        </div>
-                        {r.tokens_used > 0 && <div style={{ padding: '4px 12px', color: C.dim, fontSize: '0.58rem', borderTop: `1px solid ${C.border}` }}>{r.tokens_used} tokens</div>}
-                        {delib && <DeliberationCard result={delib} />}
-                      </div>
-                    );
-                  })}
+                {/* Carousel nav strip */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => setCurrentSlide(s => Math.max(0, s - 1))}
+                    disabled={currentSlide === 0}
+                    style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.border}`, background: 'transparent', color: currentSlide === 0 ? C.dim : C.textLight, cursor: currentSlide === 0 ? 'default' : 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
+                  >←</button>
+
+                  {/* Dot indicators */}
+                  <div style={{ display: 'flex', gap: 5, alignItems: 'center', flex: 1, justifyContent: 'center' }}>
+                    {councilResponses.map((r, i) => {
+                      const dotColor = r.error ? C.rose : (AGENT_COLOR[r.provider] ?? C.cyan);
+                      const active = i === currentSlide;
+                      return (
+                        <button key={r.id} onClick={() => setCurrentSlide(i)} title={r.agent_name}
+                          style={{ height: 6, width: active ? 22 : 6, borderRadius: 3, border: 'none', background: active ? dotColor : C.dim, cursor: 'pointer', transition: 'all 0.2s', padding: 0, flexShrink: 0 }} />
+                      );
+                    })}
+                  </div>
+
+                  <span style={{ color: C.dim, fontSize: '0.58rem', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 }}>
+                    {currentSlide + 1} / {councilResponses.length}
+                  </span>
+                  <span style={{ color: C.dim, fontSize: '0.55rem', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0, marginLeft: 4 }}>← → keys</span>
+
+                  <button
+                    onClick={() => setCurrentSlide(s => Math.min(councilResponses.length - 1, s + 1))}
+                    disabled={currentSlide === councilResponses.length - 1}
+                    style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.border}`, background: 'transparent', color: currentSlide === councilResponses.length - 1 ? C.dim : C.textLight, cursor: currentSlide === councilResponses.length - 1 ? 'default' : 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
+                  >→</button>
                 </div>
 
-                {/* Synthesis */}
+                {/* Current slide */}
+                {(() => {
+                  const r = councilResponses[currentSlide];
+                  if (!r) return null;
+                  const color = r.error ? C.rose : (AGENT_COLOR[r.provider] ?? C.cyan);
+                  const delib = deliberations.find(d => d.source_id === r.id);
+                  const agentForCard = agents.find(a => a.id === r.agent_id);
+                  const personaKey = agentForCard ? (agentPersonas[agentForCard.id] || 'none') : 'none';
+                  const persona = PERSONAS[personaKey] || PERSONAS.none;
+                  return (
+                    <div style={{ border: `1px solid ${color}30`, borderRadius: 8, overflow: 'hidden', background: C.surface }}>
+                      {/* Header */}
+                      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${color}20`, background: `${color}08`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}`, flexShrink: 0 }} />
+                        <span style={{ color, fontSize: '0.68rem', letterSpacing: '0.08em', fontWeight: 600 }}>{r.agent_name.toUpperCase()}</span>
+                        <span style={{ color: C.dim, fontSize: '0.58rem' }}>{r.model}</span>
+                        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {r.tokens_used > 0 && <span style={{ color: C.dim, fontSize: '0.57rem' }}>{r.tokens_used} tk</span>}
+                          {personaKey !== 'none' && (
+                            <span style={{ fontSize: '0.55rem', padding: '1px 6px', borderRadius: 3, color: persona.color, border: `1px solid ${persona.color}30`, background: `${persona.color}10` }}>
+                              {persona.icon} {persona.name.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {/* Content — full width, generous padding */}
+                      <div style={{ padding: '16px 18px', fontSize: '0.72rem', lineHeight: 1.75, color: r.error ? C.rose : C.textLight }}>
+                        {r.error ? `Error: ${r.error}` : renderMarkdown(r.content)}
+                      </div>
+                      {delib && <DeliberationCard result={delib} />}
+                    </div>
+                  );
+                })()}
+
+                {/* Synthesis — pinned below carousel */}
                 {synthesis && <SynthesisPanel synthesis={synthesis} />}
 
                 {/* Loading states */}
