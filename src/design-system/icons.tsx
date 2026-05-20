@@ -202,3 +202,18 @@ export const DocAnalyzerIcon: React.FC<IconProps> = ({ size = 24, className }) =
     <path d="m13.2 16.2 1.8 1.8" />
   </svg>
 );
+
+// Thamos AI orb icon — inner core + 8-point radial energy lines
+export const ThamosIcon: React.FC<IconProps> = ({ size = 24, className }) => (
+  <svg {...baseProps} width={size} height={size} className={className}>
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M12 2v2.5" strokeWidth={1.1} />
+    <path d="M12 19.5V22" strokeWidth={1.1} />
+    <path d="M2 12h2.5" strokeWidth={1.1} />
+    <path d="M19.5 12H22" strokeWidth={1.1} />
+    <path d="M5.64 5.64l1.77 1.77" strokeWidth={1.1} />
+    <path d="M16.59 16.59l1.77 1.77" strokeWidth={1.1} />
+    <path d="M18.36 5.64l-1.77 1.77" strokeWidth={1.1} />
+    <path d="M7.41 16.59l-1.77 1.77" strokeWidth={1.1} />
+  </svg>
+);

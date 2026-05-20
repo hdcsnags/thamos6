@@ -1,4 +1,3 @@
-
 export type T6OrbState =
   | 'idle'
   | 'thinking'
@@ -6,6 +5,8 @@ export type T6OrbState =
   | 'deliberating'
   | 'synthesizing'
   | 'done'
+  | 'tense'
+  | 'conflict'
   | 'error';
 
 interface T6OrbProps {
@@ -13,13 +14,13 @@ interface T6OrbProps {
   size?: number;
 }
 
-// Silver base with state-color adaptations.
-// idle/done     → cool silver-white
-// thinking      → warm silver (one agent working)
-// broadcasting  → cyan-blue pulse (council in flight)
-// deliberating  → amber pulse (critique round)
-// synthesizing  → green pulse (coming together)
-// error         → rose
+// Silver base, state-color adaptive.
+// Operational phases  → pulse (active work in progress)
+// Post-synthesis states → idle breathe (ambient status indicator)
+//   done     → cool blue-white  (consensus)
+//   tense    → amber breathe    (unresolved tensions)
+//   conflict → rose breathe     (significant disagreement)
+//   error    → rose pulse       (failure)
 const ORB_CONFIG: Record<T6OrbState, { gradient: string; glow: string; animation: string; duration: string }> = {
   idle: {
     gradient: 'radial-gradient(circle at 35% 30%, rgba(230,235,245,0.95) 0%, rgba(180,190,210,0.85) 28%, rgba(120,130,155,0.55) 62%, rgba(40,45,65,0.15) 88%, transparent 100%)',
@@ -51,11 +52,24 @@ const ORB_CONFIG: Record<T6OrbState, { gradient: string; glow: string; animation
     animation: 'orb-pulse',
     duration: '2.2s',
   },
+  // Post-synthesis: ambient breathe, not active pulse
   done: {
-    gradient: 'radial-gradient(circle at 35% 30%, rgba(215,235,255,0.95) 0%, rgba(165,200,240,0.85) 28%, rgba(100,150,200,0.55) 62%, rgba(30,55,90,0.15) 88%, transparent 100%)',
-    glow: '165,200,240',
+    gradient: 'radial-gradient(circle at 35% 30%, rgba(148,240,190,0.92) 0%, rgba(60,185,115,0.82) 28%, rgba(25,130,68,0.52) 62%, rgba(6,48,24,0.14) 88%, transparent 100%)',
+    glow: '60,185,115',
     animation: 'orb-idle',
     duration: '5s',
+  },
+  tense: {
+    gradient: 'radial-gradient(circle at 35% 30%, rgba(255,232,140,0.95) 0%, rgba(215,162,38,0.85) 28%, rgba(155,106,14,0.55) 62%, rgba(60,38,4,0.14) 88%, transparent 100%)',
+    glow: '215,162,38',
+    animation: 'orb-idle',
+    duration: '3.5s',
+  },
+  conflict: {
+    gradient: 'radial-gradient(circle at 35% 30%, rgba(255,185,185,0.95) 0%, rgba(210,72,72,0.85) 28%, rgba(148,28,28,0.55) 62%, rgba(60,8,8,0.14) 88%, transparent 100%)',
+    glow: '210,72,72',
+    animation: 'orb-idle',
+    duration: '4.5s',
   },
   error: {
     gradient: 'radial-gradient(circle at 35% 30%, rgba(255,148,148,0.95) 0%, rgba(210,70,70,0.85) 28%, rgba(148,28,28,0.55) 62%, rgba(60,8,8,0.15) 88%, transparent 100%)',
@@ -66,13 +80,15 @@ const ORB_CONFIG: Record<T6OrbState, { gradient: string; glow: string; animation
 };
 
 const STATE_LABEL: Record<T6OrbState, string> = {
-  idle: 'T6',
-  thinking: 'Thinking...',
-  broadcasting: 'Broadcasting...',
-  deliberating: 'Deliberating...',
-  synthesizing: 'Synthesizing...',
-  done: 'Complete',
-  error: 'Error',
+  idle: 'THAMOS',
+  thinking: 'THINKING',
+  broadcasting: 'BROADCAST',
+  deliberating: 'DELIBERATING',
+  synthesizing: 'SYNTHESIZING',
+  done: 'CONSENSUS',
+  tense: 'TENSION',
+  conflict: 'CONFLICT',
+  error: 'ERROR',
 };
 
 export function T6Orb({ state, size = 80 }: T6OrbProps) {

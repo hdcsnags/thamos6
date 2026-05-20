@@ -163,6 +163,18 @@ function phaseToOrbState(phase: T6Phase): T6OrbState {
   return map[phase];
 }
 
+// Post-synthesis: orb reflects analysis health, not loading phase.
+// conflict = ≥2 unresolved tensions, or tension + ≥2 acknowledged weaknesses.
+// tense    = any unresolved tension or acknowledged weakness.
+// done     = clean consensus.
+function synthesisToOrbState(s: SynthesisResult): T6OrbState {
+  const tensions = s.unresolved_tensions?.length ?? 0;
+  const weaknesses = s.acknowledged_weaknesses?.length ?? 0;
+  if (tensions >= 2 || (tensions >= 1 && weaknesses >= 2)) return 'conflict';
+  if (tensions >= 1 || weaknesses >= 1) return 'tense';
+  return 'done';
+}
+
 function renderMarkdown(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   const lines = text.split('\n');
@@ -389,6 +401,12 @@ export function T6() {
     return selectedAgent ? (AGENT_COLOR[selectedAgent.provider] ?? C.cyan) : C.cyan;
   }, [mode, selectedAgent]);
 
+  // Semantic orb: post-synthesis, reflect analysis health instead of loading phase.
+  const orbState = useMemo((): T6OrbState => {
+    if (mode === 'council' && synthesis && phase === 'done') return synthesisToOrbState(synthesis);
+    return phaseToOrbState(phase);
+  }, [mode, synthesis, phase]);
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, councilResponses]);
 
   // Keyboard carousel navigation (← →) — skip when focused in input/textarea
@@ -473,7 +491,25 @@ export function T6() {
   };
 
   const sendSingle = async () => {
-    if (!input.trim() || !selectedAgent || !selectedConv || phase !== 'idle') return;
+    if (!input.trim() || !selectedAgent || phase !== 'idle' || !user) return;
+
+    // Auto-create a conversation on first send — no explicit "Start Session" needed.
+    let convId: string;
+    let convTitle: string;
+    if (selectedConv) {
+      convId = selectedConv.id;
+      convTitle = selectedConv.title;
+    } else {
+      const { data } = await supabase.from('ai_conversations')
+        .insert({ user_id: user.id, agent_id: selectedAgent.id, title: 'New Session' })
+        .select().single();
+      if (!data) { setError('Failed to start session'); return; }
+      setSelectedConv(data);
+      loadConversations();
+      convId = data.id;
+      convTitle = data.title;
+    }
+
     setPhase('thinking');
     setError(null);
     const text = input.trim();
@@ -483,7 +519,7 @@ export function T6() {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      await supabase.from('ai_messages').insert({ conversation_id: selectedConv.id, role: 'user', content: text });
+      await supabase.from('ai_messages').insert({ conversation_id: convId, role: 'user', content: text });
       const hdrs = await getAuthHeaders();
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
         method: 'POST', headers: hdrs,
@@ -498,8 +534,8 @@ export function T6() {
       const d = await res.json();
       const assistantMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: d.content, created_at: new Date().toISOString(), tokens_used: d.tokens_used || 0, model_used: d.model };
       setMessages(prev => [...prev, assistantMsg]);
-      await supabase.from('ai_messages').insert({ conversation_id: selectedConv.id, role: 'assistant', content: d.content, tokens_used: d.tokens_used || 0, model_used: d.model });
-      await supabase.from('ai_conversations').update({ message_count: messages.length + 2, last_message_at: new Date().toISOString(), title: messages.length === 0 ? text.substring(0, 60) : selectedConv.title }).eq('id', selectedConv.id);
+      await supabase.from('ai_messages').insert({ conversation_id: convId, role: 'assistant', content: d.content, tokens_used: d.tokens_used || 0, model_used: d.model });
+      await supabase.from('ai_conversations').update({ message_count: messages.length + 2, last_message_at: new Date().toISOString(), title: messages.length === 0 ? text.substring(0, 60) : convTitle }).eq('id', convId);
       loadConversations();
       setPhase('idle');
     } catch (err) {
@@ -555,7 +591,7 @@ export function T6() {
 
   const runDeliberation = async () => {
     const successful = councilResponses.filter(r => !r.error && r.content);
-    if (successful.length < 3) { setError('Deliberation requires at least 3 successful council responses.'); return; }
+    if (successful.length < 2) { setError('Deliberation requires at least 2 successful council responses.'); return; }
 
     setPhase('deliberating');
     setDeliberations([]);
@@ -627,7 +663,7 @@ export function T6() {
     else broadcastToCouncil();
   };
 
-  const canDeliberate = mode === 'council' && phase === 'done' && councilResponses.filter(r => !r.error).length >= 3 && deliberations.length === 0;
+  const canDeliberate = mode === 'council' && phase === 'done' && councilResponses.filter(r => !r.error).length >= 2 && deliberations.length === 0;
   const canSynthesize = mode === 'council' && phase === 'done' && councilResponses.filter(r => !r.error).length > 0 && synthesis === null;
   const isBusy = phase !== 'idle' && phase !== 'done' && phase !== 'error';
 
@@ -739,9 +775,9 @@ export function T6() {
             <button onClick={() => setSidebarOpen(o => !o)} style={{ fontSize: '0.6rem', padding: '3px 7px', border: `1px solid ${C.border}`, borderRadius: 3, background: 'transparent', color: C.text, cursor: 'pointer' }}>
               {sidebarOpen ? '◁' : '▷'}
             </button>
-            <T6Orb state={phaseToOrbState(phase)} size={28} />
+            <T6Orb state={orbState} size={36} />
             <div>
-              <div style={{ color: C.textLight, fontSize: '0.7rem', fontWeight: 600 }}>T6</div>
+              <div style={{ color: C.textLight, fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.04em' }}>Thamos</div>
               <div style={{ color: C.dim, fontSize: '0.55rem' }}>{mode === 'council' ? `Council · ${activeAgentIds.size} agents` : selectedAgent?.name ?? 'No agent'}</div>
             </div>
           </div>
