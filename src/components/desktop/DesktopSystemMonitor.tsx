@@ -46,9 +46,11 @@ export function DesktopSystemMonitor() {
     { name: 'ThamOS-Y', provider: 'openai_key', keyConfigured: false, color: P.orange },
     { name: 'ThamOS-Z', provider: 'gemini_key', keyConfigured: false, color: P.blue },
   ]);
-  const [scanCounts, setScanCounts] = useState({ ip: 0, url: 0, hash: 0, domain: 0 });
-  const [intelStatus, setIntelStatus] = useState({ feeds: 0, articles: 0 });
+  const [scanCounts, setScanCounts] = useState({ ip: 0, url: 0, hash: 0, domain: 0, extension: 0 });
+  const [intelStatus, setIntelStatus] = useState({ feeds: 0, articles: 0, unread: 0 });
   const [keyCount, setKeyCount] = useState(0);
+  const [caseCount, setCaseCount] = useState({ open: 0, investigating: 0 });
+  const [iocRelCount, setIocRelCount] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -79,11 +81,18 @@ export function DesktopSystemMonitor() {
         keyConfigured: configuredServices.includes(a.provider),
       })));
 
-      const [ipRes, urlRes, hashRes, domainRes] = await Promise.all([
+      const [ipRes, urlRes, hashRes, domainRes, extRes, feedRes, articleRes, unreadRes, caseOpenRes, caseInvRes, iocRelRes] = await Promise.all([
         supabase.from('ip_lookups').select('id', { count: 'exact', head: true }),
         supabase.from('url_lookups').select('id', { count: 'exact', head: true }),
         supabase.from('hash_lookups').select('id', { count: 'exact', head: true }),
         supabase.from('domain_lookups').select('id', { count: 'exact', head: true }),
+        supabase.from('extension_analyses').select('id', { count: 'exact', head: true }),
+        supabase.from('rss_sources').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('feed_items').select('id', { count: 'exact', head: true }),
+        supabase.from('user_feed_items').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false),
+        supabase.from('case_notes').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+        supabase.from('case_notes').select('id', { count: 'exact', head: true }).eq('status', 'investigating'),
+        supabase.from('ioc_relationships').select('id', { count: 'exact', head: true }),
       ]);
 
       setScanCounts({
@@ -91,18 +100,12 @@ export function DesktopSystemMonitor() {
         url: urlRes.count || 0,
         hash: hashRes.count || 0,
         domain: domainRes.count || 0,
+        extension: extRes.count || 0,
       });
 
-      const { count: feedCount } = await supabase
-        .from('rss_sources')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_active', true);
-
-      const { count: articleCount } = await supabase
-        .from('feed_items')
-        .select('id', { count: 'exact', head: true });
-
-      setIntelStatus({ feeds: feedCount || 0, articles: articleCount || 0 });
+      setIntelStatus({ feeds: feedRes.count || 0, articles: articleRes.count || 0, unread: unreadRes.count || 0 });
+      setCaseCount({ open: caseOpenRes.count || 0, investigating: caseInvRes.count || 0 });
+      setIocRelCount(iocRelRes.count || 0);
     };
 
     loadStatus();
@@ -150,7 +153,7 @@ export function DesktopSystemMonitor() {
     }
   }, [desktop.activeWorkspace]);
 
-  const totalScans = scanCounts.ip + scanCounts.url + scanCounts.hash + scanCounts.domain;
+  const totalScans = scanCounts.ip + scanCounts.url + scanCounts.hash + scanCounts.domain + scanCounts.extension;
   const windowCount = Object.keys(desktop.windows).length;
 
   return (
@@ -190,24 +193,32 @@ export function DesktopSystemMonitor() {
           <BarRow label="URL" value={scanCounts.url} max={totalScans || 1} color={P.green} />
           <BarRow label="HASH" value={scanCounts.hash} max={totalScans || 1} color={P.amber} />
           <BarRow label="DOMAIN" value={scanCounts.domain} max={totalScans || 1} color={P.orange} />
+          <BarRow label="EXT" value={scanCounts.extension} max={totalScans || 1} color={P.blue} />
         </div>
+      </Section>
+
+      <Section title="CASE MANAGER">
+        <Row label="OPEN" value={caseCount.open.toString()} color={caseCount.open > 0 ? P.amber : P.dim} />
+        <Row label="INVESTIGATING" value={caseCount.investigating.toString()} color={caseCount.investigating > 0 ? P.orange : P.dim} />
+        <Row label="IOC GRAPH EDGES" value={iocRelCount.toString()} color={P.blue} />
       </Section>
 
       <Section title="THREAT FEEDS">
         <Row label="SOURCES" value={intelStatus.feeds.toString()} color={P.cyan} />
         <Row label="ARTICLES" value={intelStatus.articles.toString()} color={P.textLight} />
+        <Row label="UNREAD" value={intelStatus.unread.toString()} color={intelStatus.unread > 0 ? P.amber : P.dim} />
         <Row label="STATUS" value={intelStatus.feeds > 0 ? 'CONNECTED' : 'IDLE'} color={intelStatus.feeds > 0 ? P.green : P.dim} />
       </Section>
 
       <Section title="API KEYS">
-        <Row label="CONFIGURED" value={`${keyCount}/13`} color={keyCount > 0 ? P.green : P.dim} />
+        <Row label="CONFIGURED" value={`${keyCount}/25`} color={keyCount > 0 ? P.green : P.dim} />
         <div className="mt-1">
           <div className="w-full h-1 rounded-full" style={{ backgroundColor: P.border }}>
             <div
               className="h-1 rounded-full transition-all"
               style={{
-                width: `${(keyCount / 13) * 100}%`,
-                backgroundColor: keyCount > 8 ? P.green : keyCount > 4 ? P.amber : P.pink,
+                width: `${Math.min((keyCount / 25) * 100, 100)}%`,
+                backgroundColor: keyCount > 15 ? P.green : keyCount > 7 ? P.amber : P.pink,
               }}
             />
           </div>
