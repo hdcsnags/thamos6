@@ -16,6 +16,7 @@ import ExtensionScanner from '../../pages/ExtensionScanner';
 import DecoderTool from '../../pages/DecoderTool';
 import DefangTool from '../../pages/DefangTool';
 import EmailAnalyzer from '../../pages/EmailAnalyzer';
+import DocAnalyzer from '../../pages/DocAnalyzer';
 import IOCExtractor from '../../pages/IOCExtractor';
 import BulkLookup from '../../pages/BulkLookup';
 import { DesktopWorkshop } from './DesktopWorkshop';
@@ -487,6 +488,8 @@ function renderWindowContent(appId: string, data?: any) {
       return <DefangTool />;
     case 'email-analyzer':
       return <EmailAnalyzer />;
+    case 'doc-analyzer':
+      return <DocAnalyzer />;
     case 'ioc-extractor':
       return <IOCExtractor />;
     case 'bulk-lookup':

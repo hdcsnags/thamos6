@@ -21,6 +21,7 @@ import {
   IOCExtractorIcon,
   BulkLookupIcon,
   ExtensionScannerIcon,
+  DocAnalyzerIcon,
 } from './icons';
 
 export interface AppDefinition {
@@ -303,6 +304,16 @@ export const appRegistry: Record<string, AppDefinition> = {
     category: 'tools',
     keywords: ['extension', 'chrome', 'scanner', 'crx', 'browser', 'plugin', 'addon'],
     defaultSize: { width: 900, height: 700 },
+  },
+  'doc-analyzer': {
+    id: 'doc-analyzer',
+    name: 'Doc Analyzer',
+    icon: DocAnalyzerIcon,
+    description: 'Static analysis of PDF and Office documents for macros and malicious objects',
+    accentColor: palette.amber,
+    category: 'tools',
+    keywords: ['doc', 'pdf', 'office', 'macro', 'vba', 'document', 'analyze', 'static', 'malware'],
+    defaultSize: { width: 800, height: 600 },
   },
 };
 

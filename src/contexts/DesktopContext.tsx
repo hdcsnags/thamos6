@@ -28,7 +28,8 @@ export type AppId =
   | 'email-analyzer'
   | 'ioc-extractor'
   | 'bulk-lookup'
-  | 'extension-scanner';
+  | 'extension-scanner'
+  | 'doc-analyzer';
 
 export interface WindowInstance {
   id: string;

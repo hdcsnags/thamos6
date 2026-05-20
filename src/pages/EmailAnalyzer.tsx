@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
+import { supabase } from '../lib/supabase';
 
 const P = {
   void: '#060610',
@@ -52,6 +53,26 @@ interface AnalysisResult {
   rawHeaders: Record<string, string>;
 }
 
+interface EnrichIOCItem {
+  value: string;
+  enrichment: any;
+  isIDN?: boolean;
+}
+
+interface EnrichResult {
+  iocs: {
+    urls: EnrichIOCItem[];
+    domains: Array<EnrichIOCItem & { isIDN: boolean }>;
+    ips: EnrichIOCItem[];
+    emails: EnrichIOCItem[];
+  };
+  summary: {
+    totalScore: number;
+    isMalicious: boolean;
+    idnDomains: string[];
+  };
+}
+
 type Tab = 'headers' | 'auth' | 'hops' | 'iocs' | 'raw';
 
 function extractURLs(text: string): string[] {
@@ -83,6 +104,27 @@ export default function EmailAnalyzer() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('headers');
+  const [enrichResult, setEnrichResult] = useState<EnrichResult | null>(null);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+
+  const enrichMap = useMemo(() => {
+    const m = new Map<string, any>();
+    if (!enrichResult) return m;
+    for (const list of [
+      enrichResult.iocs.urls,
+      enrichResult.iocs.domains,
+      enrichResult.iocs.ips,
+      enrichResult.iocs.emails,
+    ]) {
+      for (const item of list) m.set(item.value, item.enrichment);
+    }
+    return m;
+  }, [enrichResult]);
+
+  const idnSet = useMemo(
+    () => new Set(enrichResult?.summary.idnDomains ?? []),
+    [enrichResult]
+  );
 
   const parseAnalysis = (): AnalysisResult => {
     const raw = rawInput;
@@ -143,7 +185,6 @@ export default function EmailAnalyzer() {
     const xMailer = headers['x-mailer'] || '';
     if (xMailer && /php|mass.?mail/i.test(xMailer)) indicators.push(`Suspicious X-Mailer: ${xMailer}`);
 
-    // Extract IOCs from body + headers
     const fullText = raw + '\n' + bodyInput;
     const iocs: ExtractedIOC[] = [];
     const seenValues = new Set<string>();
@@ -162,6 +203,13 @@ export default function EmailAnalyzer() {
     }
     for (const ip of extractIPs(fullText)) addIOC('ip', ip);
     for (const email of extractEmails(fullText)) addIOC('email', email);
+
+    // Flag IDN/punycode domains locally
+    for (const ioc of iocs) {
+      if (ioc.type === 'domain' && ioc.value.split('.').some(l => l.startsWith('xn--'))) {
+        indicators.push(`IDN/Punycode domain: ${ioc.value} (possible homoglyph attack)`);
+      }
+    }
 
     return {
       headers: {
@@ -185,10 +233,37 @@ export default function EmailAnalyzer() {
   const handleAnalyze = () => {
     if (!rawInput.trim()) return;
     setLoading(true);
+    setEnrichResult(null);
     setTimeout(() => {
       setResult(parseAnalysis());
       setLoading(false);
     }, 300);
+  };
+
+  const handleEnrich = async () => {
+    if (!result || enrichLoading) return;
+    setEnrichLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const hdrs: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      };
+      if (session?.access_token) hdrs['Authorization'] = `Bearer ${session.access_token}`;
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-email`,
+        {
+          method: 'POST',
+          headers: hdrs,
+          body: JSON.stringify({ headers: rawInput, emailBody: bodyInput }),
+        }
+      );
+      if (res.ok) setEnrichResult(await res.json());
+    } catch {
+      // local parse remains usable
+    } finally {
+      setEnrichLoading(false);
+    }
   };
 
   const handleScanIOC = (ioc: ExtractedIOC) => {
@@ -378,6 +453,30 @@ export default function EmailAnalyzer() {
 
             {activeTab === 'iocs' && (
               <div className="space-y-2">
+                {result.extractedIOCs.length > 0 && (
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px]" style={{ color: P.dim }}>
+                      {result.extractedIOCs.length} IOC{result.extractedIOCs.length !== 1 ? 's' : ''} extracted
+                      {enrichResult && (
+                        <span className="ml-2" style={{ color: P.green }}>· enriched</span>
+                      )}
+                    </span>
+                    <button
+                      onClick={handleEnrich}
+                      disabled={enrichLoading}
+                      className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded transition-all"
+                      style={{
+                        backgroundColor: enrichResult ? `${P.green}15` : `${P.cyan}15`,
+                        border: `1px solid ${enrichResult ? `${P.green}40` : `${P.cyan}40`}`,
+                        color: enrichResult ? P.green : P.cyan,
+                        opacity: enrichLoading ? 0.5 : 1,
+                      }}
+                    >
+                      <Zap className="w-3 h-3" />
+                      {enrichLoading ? 'ENRICHING...' : enrichResult ? 'RE-ENRICH' : 'ENRICH ALL'}
+                    </button>
+                  </div>
+                )}
                 {result.extractedIOCs.length === 0 && (
                   <div className="text-center py-10">
                     <div className="text-2xl opacity-20 mb-2">⬡</div>
@@ -387,19 +486,69 @@ export default function EmailAnalyzer() {
                 )}
                 {result.extractedIOCs.map((ioc, i) => {
                   const color = IOC_COLOR[ioc.type] || P.text;
+                  const enrich = enrichMap.get(ioc.value);
+                  const score: number | null = enrich ? (enrich.overallThreatScore ?? enrich.maxThreatScore ?? null) : null;
+                  const malicious = enrich?.isMalicious === true;
+                  const suspicious = enrich?.suspicious === true;
+                  const scoreColor = score !== null
+                    ? (score >= 70 ? P.rose : score >= 40 ? P.amber : P.dim)
+                    : null;
+                  const isIDN = idnSet.has(ioc.value) || (
+                    ioc.type === 'domain' && ioc.value.split('.').some(l => l.startsWith('xn--'))
+                  );
+
                   return (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 rounded group" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0" style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}>{ioc.type}</span>
-                        <code className="text-xs truncate" style={{ color: P.textLight }}>{ioc.value.length > 70 ? ioc.value.slice(0, 70) + '…' : ioc.value}</code>
+                    <div
+                      key={i}
+                      className="flex items-center justify-between px-3 py-2 rounded group"
+                      style={{ backgroundColor: P.surface, border: `1px solid ${malicious ? P.rose + '40' : P.border}` }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0"
+                          style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}
+                        >
+                          {ioc.type}
+                        </span>
+                        {isIDN && (
+                          <span
+                            className="text-[9px] px-1 py-0.5 rounded flex-shrink-0 font-bold"
+                            style={{ backgroundColor: `${P.amber}15`, color: P.amber }}
+                          >
+                            IDN
+                          </span>
+                        )}
+                        <code className="text-xs truncate" style={{ color: P.textLight }}>
+                          {ioc.value.length > 60 ? ioc.value.slice(0, 60) + '…' : ioc.value}
+                        </code>
                       </div>
-                      <button
-                        onClick={() => handleScanIOC(ioc)}
-                        className="text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2"
-                        style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}
-                      >
-                        SCAN →
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {malicious && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.rose}15`, color: P.rose }}>
+                            MALICIOUS
+                          </span>
+                        )}
+                        {!malicious && suspicious && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber }}>
+                            SUSPICIOUS
+                          </span>
+                        )}
+                        {score !== null && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded font-bold tabular-nums"
+                            style={{ backgroundColor: `${scoreColor}15`, color: scoreColor ?? P.dim }}
+                          >
+                            {score}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleScanIOC(ioc)}
+                          className="text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-all"
+                          style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}
+                        >
+                          SCAN →
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
