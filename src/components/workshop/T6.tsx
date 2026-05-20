@@ -69,6 +69,13 @@ interface SynthesisResult {
   recommendation?: string;
 }
 
+interface ContextSnippet {
+  id: string;
+  name: string;
+  content: string;
+  active: boolean;
+}
+
 // ─── Security Personas ────────────────────────────────────────────────────────
 
 const PERSONAS: Record<string, { name: string; icon: string; color: string; one_liner: string; voice_preamble: string; deliberation_signature: string }> = {
@@ -389,12 +396,24 @@ export function T6() {
   // UI state
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [personaPickerFor, setPersonaPickerFor] = useState<string | null>(null); // agentId
+  const [personaPickerFor, setPersonaPickerFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [slideDir, setSlideDir] = useState<'right' | 'left'>('right');
+
+  // Context memory (Sentinel schema, etc.) — persisted in localStorage
+  const [contextSnippets, setContextSnippets] = useState<ContextSnippet[]>(() => {
+    try { return JSON.parse(localStorage.getItem('t6_context') || '[]'); } catch { return []; }
+  });
+  const [contextOpen, setContextOpen] = useState(false);
+  const [addingCtx, setAddingCtx] = useState(false);
+  const [newCtxName, setNewCtxName] = useState('');
+  const [newCtxContent, setNewCtxContent] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const prevSlideRef = useRef(0);
 
   const accentColor = useMemo(() => {
     if (mode === 'council') return C.cyan;
@@ -408,6 +427,17 @@ export function T6() {
   }, [mode, synthesis, phase]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, councilResponses]);
+
+  // Carousel slide direction tracking
+  useEffect(() => {
+    setSlideDir(currentSlide > prevSlideRef.current ? 'right' : 'left');
+    prevSlideRef.current = currentSlide;
+  }, [currentSlide]);
+
+  // Persist context snippets to localStorage
+  useEffect(() => {
+    localStorage.setItem('t6_context', JSON.stringify(contextSnippets));
+  }, [contextSnippets]);
 
   // Keyboard carousel navigation (← →) — skip when focused in input/textarea
   useEffect(() => {
@@ -486,8 +516,13 @@ export function T6() {
 
   const buildSystemPrompt = (agent: Agent): string => {
     const persona = PERSONAS[agentPersonas[agent.id] || 'none'];
-    if (!persona || !persona.voice_preamble) return agent.system_prompt;
-    return `${persona.voice_preamble}\n\n${agent.system_prompt}`;
+    let prompt = agent.system_prompt;
+    if (persona?.voice_preamble) prompt = `${persona.voice_preamble}\n\n${prompt}`;
+    const activeCtx = contextSnippets.filter(c => c.active);
+    if (activeCtx.length > 0) {
+      prompt += '\n\n---\n## OPERATIONAL CONTEXT\n' + activeCtx.map(c => `### ${c.name}\n${c.content}`).join('\n\n');
+    }
+    return prompt;
   };
 
   const sendSingle = async () => {
@@ -565,10 +600,13 @@ export function T6() {
 
     const hdrs = await getAuthHeaders();
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const dispatches = council.map(async (agent): Promise<CouncilResponse> => {
       try {
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
-          method: 'POST', headers: hdrs,
+          method: 'POST', headers: hdrs, signal: controller.signal,
           body: JSON.stringify({
             provider: agent.provider, model: agent.model,
             messages: [{ role: 'user', content: prompt }],
@@ -580,11 +618,13 @@ export function T6() {
         const d = await res.json();
         return { id: crypto.randomUUID(), agent_id: agent.id, agent_name: agent.name, provider: agent.provider, model: agent.model, content: d.content, tokens_used: d.tokens_used || 0 };
       } catch (err) {
-        return { id: crypto.randomUUID(), agent_id: agent.id, agent_name: agent.name, provider: agent.provider, model: agent.model, content: '', tokens_used: 0, error: err instanceof Error ? err.message : 'Failed' };
+        const msg = err instanceof Error ? (err.name === 'AbortError' ? 'Cancelled' : err.message) : 'Failed';
+        return { id: crypto.randomUUID(), agent_id: agent.id, agent_name: agent.name, provider: agent.provider, model: agent.model, content: '', tokens_used: 0, error: msg };
       }
     });
 
     const results = await Promise.all(dispatches);
+    abortRef.current = null;
     setCouncilResponses(results);
     setPhase('done');
   };
@@ -763,6 +803,75 @@ export function T6() {
               </div>
             </>
           )}
+
+          {/* ── Context memory (Sentinel schema, runbooks, etc.) ── */}
+          <div style={{ borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+            <button
+              onClick={() => setContextOpen(o => !o)}
+              style={{ width: '100%', padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: 'none', cursor: 'pointer', color: C.text, fontSize: '0.6rem', letterSpacing: '0.08em' }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ color: contextSnippets.some(c => c.active) ? C.cyan : C.dim }}>◈</span>
+                CONTEXT {contextSnippets.some(c => c.active) ? `· ${contextSnippets.filter(c => c.active).length} active` : ''}
+              </span>
+              <span style={{ color: C.dim, fontSize: '0.55rem' }}>{contextOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {contextOpen && (
+              <div style={{ padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {contextSnippets.map(s => (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 4px', borderRadius: 4, border: `1px solid ${s.active ? C.cyan + '30' : C.border}`, background: s.active ? `${C.cyan}06` : 'transparent' }}>
+                    <button
+                      onClick={() => setContextSnippets(prev => prev.map(x => x.id === s.id ? { ...x, active: !x.active } : x))}
+                      style={{ width: 12, height: 12, borderRadius: 2, border: `1px solid ${s.active ? C.cyan : C.dim}`, background: s.active ? `${C.cyan}30` : 'transparent', cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <span style={{ flex: 1, fontSize: '0.6rem', color: s.active ? C.textLight : C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                    <button
+                      onClick={() => setContextSnippets(prev => prev.filter(x => x.id !== s.id))}
+                      style={{ color: C.dim, fontSize: '0.6rem', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 2px', flexShrink: 0 }}
+                    >✕</button>
+                  </div>
+                ))}
+
+                {addingCtx ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 }}>
+                    <input
+                      value={newCtxName}
+                      onChange={e => setNewCtxName(e.target.value)}
+                      placeholder="Name (e.g. Sentinel Schema)"
+                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: 'JetBrains Mono, monospace', outline: 'none' }}
+                    />
+                    <textarea
+                      value={newCtxContent}
+                      onChange={e => setNewCtxContent(e.target.value)}
+                      placeholder="Paste schema, runbook, or any context..."
+                      rows={5}
+                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', outline: 'none' }}
+                    />
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        onClick={() => {
+                          if (!newCtxName.trim() || !newCtxContent.trim()) return;
+                          setContextSnippets(prev => [...prev, { id: crypto.randomUUID(), name: newCtxName.trim(), content: newCtxContent.trim(), active: true }]);
+                          setNewCtxName(''); setNewCtxContent(''); setAddingCtx(false);
+                        }}
+                        style={{ flex: 1, padding: '3px 0', fontSize: '0.58rem', borderRadius: 3, border: `1px solid ${C.cyan}40`, background: `${C.cyan}10`, color: C.cyan, cursor: 'pointer' }}
+                      >SAVE</button>
+                      <button
+                        onClick={() => { setAddingCtx(false); setNewCtxName(''); setNewCtxContent(''); }}
+                        style={{ padding: '3px 8px', fontSize: '0.58rem', borderRadius: 3, border: `1px solid ${C.border}`, background: 'transparent', color: C.dim, cursor: 'pointer' }}
+                      >✕</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddingCtx(true)}
+                    style={{ padding: '4px 0', fontSize: '0.58rem', borderRadius: 3, border: `1px solid ${C.border}`, background: 'transparent', color: C.dim, cursor: 'pointer', letterSpacing: '0.06em' }}
+                  >+ ADD CONTEXT</button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -781,6 +890,12 @@ export function T6() {
               <div style={{ color: C.dim, fontSize: '0.55rem' }}>{mode === 'council' ? `Council · ${activeAgentIds.size} agents` : selectedAgent?.name ?? 'No agent'}</div>
             </div>
           </div>
+          {mode === 'council' && phase === 'broadcasting' && (
+            <button onClick={() => abortRef.current?.abort()}
+              style={{ fontSize: '0.6rem', padding: '4px 12px', border: `1px solid ${C.rose}40`, borderRadius: 4, background: `${C.rose}10`, color: C.rose, cursor: 'pointer', letterSpacing: '0.06em' }}>
+              CANCEL
+            </button>
+          )}
           {mode === 'council' && phase === 'done' && (
             <div style={{ display: 'flex', gap: 6 }}>
               {canDeliberate && (
@@ -879,6 +994,11 @@ export function T6() {
                   {councilPrompt}
                 </div>
 
+                <style>{`
+                  @keyframes t6-slide-right { from { opacity:0; transform:translateX(22px); } to { opacity:1; transform:translateX(0); } }
+                  @keyframes t6-slide-left  { from { opacity:0; transform:translateX(-22px); } to { opacity:1; transform:translateX(0); } }
+                `}</style>
+
                 {/* Carousel nav strip */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
@@ -921,7 +1041,7 @@ export function T6() {
                   const personaKey = agentForCard ? (agentPersonas[agentForCard.id] || 'none') : 'none';
                   const persona = PERSONAS[personaKey] || PERSONAS.none;
                   return (
-                    <div style={{ border: `1px solid ${color}30`, borderRadius: 8, overflow: 'hidden', background: C.surface }}>
+                    <div key={currentSlide} style={{ border: `1px solid ${color}30`, borderRadius: 8, overflow: 'hidden', background: C.surface, animation: `t6-slide-${slideDir} 0.2s ease-out both` }}>
                       {/* Header */}
                       <div style={{ padding: '9px 14px', borderBottom: `1px solid ${color}20`, background: `${color}08`, display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}`, flexShrink: 0 }} />
