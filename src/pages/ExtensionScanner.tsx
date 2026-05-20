@@ -286,16 +286,23 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
         `[${i.ioc_type}] ${i.ioc_value} (in ${i.source_file})`
       ).join('\n') || 'None';
 
-      const crxStr = currentAnalysis.crxcavator_data
-        ? JSON.stringify(currentAnalysis.crxcavator_data, null, 2)
+      const crx = currentAnalysis.crxcavator_data?.available ? currentAnalysis.crxcavator_data : null;
+      const crxStr = crx
+        ? `Score: ${crx.overall_score}/100 | Risk: ${crx.risk_level} | Recommended: ${crx.should_use === true ? 'Yes' : crx.should_use === false ? 'No' : 'Unknown'}
+Reasoning: ${(crx.reasoning as string[]).join(' | ') || 'None'}
+Categories: ${JSON.stringify(crx.categories)}
+Browser Impact: ${JSON.stringify(crx.browser_impact) || 'None'}`
         : 'Not available';
 
       const prompt = `Analyze this Chrome extension and return a JSON verdict.
 
 EXTENSION: ${currentAnalysis.extension_name} v${currentAnalysis.extension_version}
 EXTENSION ID: ${currentAnalysis.extension_id}
-RISK SCORE: ${currentAnalysis.risk_score}/100 (${currentAnalysis.risk_level})
+SCANNER RISK SCORE: ${currentAnalysis.risk_score}/100 (${currentAnalysis.risk_level})
 OBFUSCATION SCORE: ${currentAnalysis.obfuscation_score || 0}
+
+CRXPLORER INDEPENDENT ASSESSMENT:
+${crxStr}
 
 MANIFEST:
 ${manifestStr}
@@ -309,9 +316,6 @@ ${behaviorSummary}
 IOCS DETECTED (${iocs.length} total, showing first 20):
 ${iocSummary}
 
-CRXCAVATOR INTELLIGENCE:
-${crxStr}
-
 Return ONLY valid JSON in this exact format (no markdown, no prose):
 {
   "verdict": "MALICIOUS" | "OVERPRIVILEGED" | "SUSPICIOUS" | "LIKELY SAFE",
@@ -321,7 +325,7 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
   "ioc_highlights": ["key IOC 1", "key IOC 2"]
 }`;
 
-      const systemPrompt = `You are a senior threat intelligence analyst specializing in browser extension security. You analyze Chrome extensions for malicious behavior, data exfiltration, unauthorized network access, and policy violations. You are direct and base verdicts strictly on evidence — if the evidence points to malicious intent, say so. Return only valid JSON, no markdown fences.`;
+      const systemPrompt = `You are a senior threat intelligence analyst specializing in browser extension security. Your role is to synthesize the automated scanner findings with the independent CRXplorer assessment to produce a balanced, calibrated verdict. The scanner is intentionally aggressive and will flag many common patterns — your job is to weigh whether those patterns form a coherent threat picture or are consistent with the extension's stated purpose. Consider false positive rates: minified code, analytics SDKs, and broad host permissions are common in legitimate extensions. Elevate the verdict only when multiple independent signals converge. Return only valid JSON, no markdown fences.`;
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
         method: 'POST',
@@ -678,40 +682,73 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
                 </div>
               </div>
 
-              {currentAnalysis.crxcavator_data && (
+              {currentAnalysis.crxcavator_data?.available && (
                 <div className="mb-6 bg-slate-800/40 border border-slate-700 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Database className="w-4 h-4 text-teal-400" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-teal-400">CRXcavator Intel</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-teal-400">CRXplorer Intel</span>
                     </div>
-                    <a
-                      href={`https://crxcavator.io/report/${currentAnalysis.extension_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-slate-500 hover:text-teal-400 transition-colors flex items-center gap-1"
-                    >
-                      Full Report <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {currentAnalysis.crxcavator_data?.data?.risk?.total !== undefined && (
-                      <div className="bg-slate-900/50 rounded p-3">
-                        <div className="text-xl font-bold text-white">{currentAnalysis.crxcavator_data.data.risk.total}</div>
-                        <div className="text-xs text-slate-400">CRX Risk Score</div>
-                      </div>
+                    {currentAnalysis.crxcavator_data.share_url && (
+                      <a
+                        href={currentAnalysis.crxcavator_data.share_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-slate-500 hover:text-teal-400 transition-colors flex items-center gap-1"
+                      >
+                        Full Report <ExternalLink className="w-3 h-3" />
+                      </a>
                     )}
-                    {Object.entries((currentAnalysis.crxcavator_data?.data?.risk || {}) as Record<string, unknown>)
-                      .filter(([k, v]) => k !== 'total' && typeof v === 'number')
-                      .slice(0, 3)
-                      .map(([key, val]) => (
-                        <div key={key} className="bg-slate-900/50 rounded p-3">
-                          <div className="text-xl font-bold text-white">{val as number}</div>
-                          <div className="text-xs text-slate-400 capitalize">{key.replace(/_/g, ' ')}</div>
-                        </div>
-                      ))
-                    }
                   </div>
+
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="bg-slate-900/50 rounded-lg px-5 py-3 text-center">
+                      <div className="text-3xl font-bold text-white">{currentAnalysis.crxcavator_data.overall_score ?? '—'}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">Security Score</div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                          currentAnalysis.crxcavator_data.risk_level === 'Critical' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                          currentAnalysis.crxcavator_data.risk_level === 'High' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                          currentAnalysis.crxcavator_data.risk_level === 'Medium' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                          'bg-green-500/20 text-green-400 border border-green-500/30'
+                        }`}>
+                          {currentAnalysis.crxcavator_data.risk_level}
+                        </span>
+                        {currentAnalysis.crxcavator_data.should_use !== null && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            currentAnalysis.crxcavator_data.should_use
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}>
+                            {currentAnalysis.crxcavator_data.should_use ? '✓ Recommended' : '✗ Not Recommended'}
+                          </span>
+                        )}
+                      </div>
+                      {(currentAnalysis.crxcavator_data.reasoning as string[])?.length > 0 && (
+                        <ul className="space-y-0.5">
+                          {(currentAnalysis.crxcavator_data.reasoning as string[]).slice(0, 3).map((r: string, i: number) => (
+                            <li key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
+                              <span className="text-teal-500 mt-0.5 flex-shrink-0">›</span>
+                              {r}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                  {Object.keys(currentAnalysis.crxcavator_data.categories || {}).length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {Object.entries(currentAnalysis.crxcavator_data.categories as Record<string, number>).slice(0, 4).map(([key, val]) => (
+                        <div key={key} className="bg-slate-900/50 rounded p-2 text-center">
+                          <div className="text-lg font-bold text-white">{val}</div>
+                          <div className="text-[10px] text-slate-500 capitalize">{key.replace(/_/g, ' ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

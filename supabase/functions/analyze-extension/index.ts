@@ -556,6 +556,50 @@ function buildVulnFindings(vulnLibs: VulnLibResult[], ruleId: "VULN-1" | "VULN-2
 
 // --- end Phase 7 ---
 
+async function checkCRXplorer(extensionId: string): Promise<Record<string, unknown>> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch('https://api.crxplorer.com/api/api-scan/public', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ extensionIdOrUrl: extensionId }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return { available: false, error: `HTTP ${response.status}` };
+    const data = await response.json();
+    const details = data?.extensionScanDetails;
+    if (!details) return { available: false, error: 'No scan details returned' };
+
+    const ea = typeof details.extensionAnalysis === 'string'
+      ? JSON.parse(details.extensionAnalysis)
+      : (details.extensionAnalysis ?? {});
+    const ma = typeof details.manifestAnalysis === 'string'
+      ? JSON.parse(details.manifestAnalysis)
+      : (details.manifestAnalysis ?? {});
+
+    return {
+      available: true,
+      extension_name: details.extensionName,
+      version: details.version,
+      logo_url: details.logoUrl ?? null,
+      share_url: data.shareUrl ?? null,
+      overall_score: ea?.scores?.overall ?? null,
+      risk_level: ea?.riskLevel ?? null,
+      should_use: ea?.userRecommendation?.shouldUse ?? null,
+      reasoning: ea?.userRecommendation?.reasoning ?? [],
+      categories: ea?.scores?.categories ?? {},
+      category_justifications: ea?.categoryJustifications ?? {},
+      browser_impact: ea?.browserImpact ?? null,
+      safety_guidelines: ea?.userSafetyGuidelines ?? null,
+      permission_severity_count: ma?.permissionSeverityCount ?? {},
+      detailed_permissions: ma?.permissions ?? [],
+    };
+  } catch (e) {
+    return { available: false, error: String(e) };
+  }
+}
 
 const SUSPICIOUS_TLDS = ['.xyz', '.top', '.tk', '.ml', '.ga', '.cf', '.gq', '.pw', '.cc'];
 const WHITELISTED_DOMAINS = [
@@ -743,6 +787,9 @@ Deno.serve(async (req: Request) => {
       throw analysisError;
     }
 
+    // Fire CRXplorer in parallel with the rest of the post-processing
+    const crxplorerPromise = checkCRXplorer(extensionId);
+
     if (findings.length > 0) {
       const findingsToInsert = findings.map(f => ({
         analysis_id: analysis.id,
@@ -900,6 +947,15 @@ Deno.serve(async (req: Request) => {
         extension_name: manifest.name,
       }).eq('extension_id', extensionId);
     }
+
+    const crxplorerData = await crxplorerPromise;
+    if (crxplorerData.available) {
+      await supabase
+        .from('extension_analyses')
+        .update({ crxcavator_data: crxplorerData })
+        .eq('id', analysis.id);
+    }
+    console.log(`CRXplorer: ${crxplorerData.available ? `score ${crxplorerData.overall_score}, ${crxplorerData.risk_level}` : crxplorerData.error}`);
 
     return new Response(
       JSON.stringify({
