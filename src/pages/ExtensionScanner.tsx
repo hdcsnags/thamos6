@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check, Activity, Database, FileText, Zap } from 'lucide-react';
+import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check, Activity, Database, FileText, Zap, Brain } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../contexts/themecontext';
 import FileExplorer from '../components/extension/FileExplorer';
 import FileViewer from '../components/extension/FileViewer';
 import VaultList from '../components/extension/VaultList';
 import IOCEnrichment from '../components/extension/IOCEnrichment';
+import { T6Orb } from '../components/workshop/T6Orb';
+import type { T6OrbState } from '../components/workshop/T6Orb';
 
 interface Analysis {
   id: string;
@@ -24,6 +26,15 @@ interface Analysis {
   file_hashes?: Record<string, string>;
   scan_duration_ms?: number;
   files_skipped_count?: number;
+  crxcavator_data?: any;
+}
+
+interface VerdictResult {
+  verdict: 'MALICIOUS' | 'OVERPRIVILEGED' | 'SUSPICIOUS' | 'LIKELY SAFE';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  reasoning: string;
+  recommendation: string;
+  ioc_highlights?: string[];
 }
 
 interface SecurityFinding {
@@ -72,6 +83,9 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior' | 'files' | 'vault'>('findings');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [vaultStatus, setVaultStatus] = useState<'none' | 'adding' | 'added'>('none');
+  const [verdictLoading, setVerdictLoading] = useState(false);
+  const [verdict, setVerdict] = useState<VerdictResult | null>(null);
+  const [verdictError, setVerdictError] = useState('');
 
   useEffect(() => {
     loadRecentAnalyses();
@@ -81,6 +95,8 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
     if (currentAnalysis) {
       loadAnalysisData(currentAnalysis.id);
       checkVaultStatus(currentAnalysis.extension_id);
+      setVerdict(null);
+      setVerdictError('');
     }
   }, [currentAnalysis]);
 
@@ -244,6 +260,113 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
     setActiveTab('files');
   };
 
+  const runThamosVerdict = async () => {
+    if (!currentAnalysis) return;
+    setVerdictLoading(true);
+    setVerdictError('');
+    setVerdict(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const manifestStr = currentAnalysis.manifest_data
+        ? JSON.stringify(currentAnalysis.manifest_data, null, 2)
+        : 'Not available';
+
+      const findingsSummary = findings.map(f =>
+        `[${f.severity.toUpperCase()}] ${f.title}: ${f.description}\nEvidence: ${f.evidence}\nFile: ${f.file_path}`
+      ).join('\n\n') || 'None';
+
+      const behaviorSummary = otherBehaviorFlags.map(f =>
+        `${f.flag_type}: ${f.description}\n${f.evidence.join(', ')}`
+      ).join('\n\n') || 'None';
+
+      const iocSummary = iocs.slice(0, 20).map(i =>
+        `[${i.ioc_type}] ${i.ioc_value} (in ${i.source_file})`
+      ).join('\n') || 'None';
+
+      const crxStr = currentAnalysis.crxcavator_data
+        ? JSON.stringify(currentAnalysis.crxcavator_data, null, 2)
+        : 'Not available';
+
+      const prompt = `Analyze this Chrome extension and return a JSON verdict.
+
+EXTENSION: ${currentAnalysis.extension_name} v${currentAnalysis.extension_version}
+EXTENSION ID: ${currentAnalysis.extension_id}
+RISK SCORE: ${currentAnalysis.risk_score}/100 (${currentAnalysis.risk_level})
+OBFUSCATION SCORE: ${currentAnalysis.obfuscation_score || 0}
+
+MANIFEST:
+${manifestStr}
+
+SECURITY FINDINGS (${findings.length} total):
+${findingsSummary}
+
+BEHAVIORAL FLAGS:
+${behaviorSummary}
+
+IOCS DETECTED (${iocs.length} total, showing first 20):
+${iocSummary}
+
+CRXCAVATOR INTELLIGENCE:
+${crxStr}
+
+Return ONLY valid JSON in this exact format (no markdown, no prose):
+{
+  "verdict": "MALICIOUS" | "OVERPRIVILEGED" | "SUSPICIOUS" | "LIKELY SAFE",
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "reasoning": "2-4 sentences explaining your assessment based on specific evidence",
+  "recommendation": "1-2 sentences on what action to take",
+  "ioc_highlights": ["key IOC 1", "key IOC 2"]
+}`;
+
+      const systemPrompt = `You are a senior threat intelligence analyst specializing in browser extension security. You analyze Chrome extensions for malicious behavior, data exfiltration, unauthorized network access, and policy violations. You are direct and base verdicts strictly on evidence — if the evidence points to malicious intent, say so. Return only valid JSON, no markdown fences.`;
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-20250514',
+          messages: [{ role: 'user', content: prompt }],
+          system_prompt: systemPrompt,
+          temperature: 0.2,
+          max_tokens: 1024,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Verdict analysis failed (${response.status})`);
+      }
+
+      const data = await response.json();
+      const raw = (data.content || '').trim();
+      const jsonStr = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      const parsed = JSON.parse(jsonStr) as VerdictResult;
+      setVerdict(parsed);
+    } catch (err: any) {
+      setVerdictError(err.message || 'Verdict analysis failed');
+    } finally {
+      setVerdictLoading(false);
+    }
+  };
+
+  const getVerdictColor = (v: string) => {
+    switch (v) {
+      case 'MALICIOUS': return 'red';
+      case 'OVERPRIVILEGED': return 'orange';
+      case 'SUSPICIOUS': return 'amber';
+      case 'LIKELY SAFE': return 'green';
+      default: return 'slate';
+    }
+  };
+
   const getRiskColor = (level: string) => {
     switch (level) {
       case 'critical': return 'red';
@@ -283,6 +406,15 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   const behaviorFlags = currentAnalysis?.behavior_flags || [];
   const vaultDeltaFlags = behaviorFlags.filter(f => f.flag_type === 'vault_delta_detected');
   const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected');
+
+  const verdictOrbState: T6OrbState = verdictLoading
+    ? 'thinking'
+    : verdict?.verdict === 'MALICIOUS' ? 'conflict'
+    : verdict?.verdict === 'OVERPRIVILEGED' ? 'tense'
+    : verdict?.verdict === 'SUSPICIOUS' ? 'tense'
+    : verdict?.verdict === 'LIKELY SAFE' ? 'done'
+    : verdictError ? 'error'
+    : 'idle';
 
   const menuItems = [
     { id: 'findings', label: 'Findings', icon: Shield, count: findings.length },
@@ -543,6 +675,126 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                 <div className="bg-slate-800 rounded-lg p-4">
                   <div className="text-2xl font-bold text-white">{currentAnalysis.obfuscation_score || 0}</div>
                   <div className="text-sm text-slate-400">Obfuscation</div>
+                </div>
+              </div>
+
+              {currentAnalysis.crxcavator_data && (
+                <div className="mb-6 bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-4 h-4 text-teal-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-teal-400">CRXcavator Intel</span>
+                    </div>
+                    <a
+                      href={`https://crxcavator.io/report/${currentAnalysis.extension_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-slate-500 hover:text-teal-400 transition-colors flex items-center gap-1"
+                    >
+                      Full Report <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {currentAnalysis.crxcavator_data?.data?.risk?.total !== undefined && (
+                      <div className="bg-slate-900/50 rounded p-3">
+                        <div className="text-xl font-bold text-white">{currentAnalysis.crxcavator_data.data.risk.total}</div>
+                        <div className="text-xs text-slate-400">CRX Risk Score</div>
+                      </div>
+                    )}
+                    {Object.entries((currentAnalysis.crxcavator_data?.data?.risk || {}) as Record<string, unknown>)
+                      .filter(([k, v]) => k !== 'total' && typeof v === 'number')
+                      .slice(0, 3)
+                      .map(([key, val]) => (
+                        <div key={key} className="bg-slate-900/50 rounded p-3">
+                          <div className="text-xl font-bold text-white">{val as number}</div>
+                          <div className="text-xs text-slate-400 capitalize">{key.replace(/_/g, ' ')}</div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-6">
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+                    <div className="flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-cyan-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Thamos Verdict</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!verdictLoading && !verdict && (
+                        <button
+                          onClick={runThamosVerdict}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-semibold rounded transition-colors border border-cyan-500/30"
+                        >
+                          <Brain className="w-3.5 h-3.5" />
+                          Request Verdict
+                        </button>
+                      )}
+                      {verdict && !verdictLoading && (
+                        <button
+                          onClick={runThamosVerdict}
+                          className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+                        >
+                          Re-analyze
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {!verdictLoading && !verdict && !verdictError && (
+                    <div className="px-4 py-6 text-center text-slate-500 text-sm">
+                      Request an AI verdict to get a threat assessment synthesized from all scan data.
+                    </div>
+                  )}
+
+                  {verdictLoading && (
+                    <div className="px-4 py-6 flex flex-col items-center gap-3">
+                      <T6Orb state="thinking" size={56} />
+                      <div className="text-xs text-slate-400 font-mono tracking-wider">ANALYZING EXTENSION...</div>
+                    </div>
+                  )}
+
+                  {verdictError && !verdictLoading && (
+                    <div className="px-4 py-4 flex items-center gap-2 text-red-400 text-sm">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      {verdictError}
+                    </div>
+                  )}
+
+                  {verdict && !verdictLoading && (
+                    <div className="p-4">
+                      <div className="flex items-start gap-4 mb-4">
+                        <T6Orb state={verdictOrbState} size={56} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <span className={`px-3 py-1 rounded-full text-sm font-bold bg-${getVerdictColor(verdict.verdict)}-500/20 text-${getVerdictColor(verdict.verdict)}-400 border border-${getVerdictColor(verdict.verdict)}-500/30`}>
+                              {verdict.verdict}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono">{verdict.confidence} CONFIDENCE</span>
+                          </div>
+                          <p className="text-sm text-slate-300 leading-relaxed">{verdict.reasoning}</p>
+                        </div>
+                      </div>
+                      <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-1.5">Recommendation</div>
+                        <p className="text-sm text-slate-300">{verdict.recommendation}</p>
+                      </div>
+                      {verdict.ioc_highlights && verdict.ioc_highlights.length > 0 && (
+                        <div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1.5">Key IOCs</div>
+                          <div className="flex flex-wrap gap-2">
+                            {verdict.ioc_highlights.map((ioc, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-red-500/10 text-red-400 text-xs font-mono rounded border border-red-500/20 break-all">
+                                {ioc}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
