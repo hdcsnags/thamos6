@@ -338,8 +338,223 @@ const RULE_DEFINITIONS: Record<string, Rule> = {
     category: "performance",
     title: "Files Skipped During Scan",
     description: "Some files were too large or timed out during analysis"
-  }
+  },
+  "VULN-1": {
+    id: "VULN-1",
+    severity: "high",
+    confidence: "high",
+    category: "dependencies",
+    title: "Vulnerable JavaScript Library (retire.js)",
+    description: "Extension bundles a known-vulnerable version of a JavaScript library"
+  },
+  "VULN-2": {
+    id: "VULN-2",
+    severity: "high",
+    confidence: "high",
+    category: "dependencies",
+    title: "OSV Vulnerability in npm Dependency",
+    description: "A dependency declared in package.json has a known security vulnerability in OSV.dev"
+  },
+  "DELTA-1": {
+    id: "DELTA-1",
+    severity: "high",
+    confidence: "high",
+    category: "delta",
+    title: "Manifest Metadata Changed",
+    description: "Extension name, description, or permissions changed since last scan — supply chain or update attack indicator"
+  },
 };
+
+// --- Phase 7: retire.js + OSV.dev vulnerable library detection ---
+
+interface VulnLibResult {
+  component: string;
+  version: string;
+  vulnerabilities: string[];
+  file: string;
+}
+
+async function fetchRetireJSDb(supabase: ReturnType<typeof createClient>): Promise<Record<string, any> | null> {
+  const CACHE_KEY = "retirejs_hashdb_v2";
+  const SIX_HOURS = 6 * 60 * 60;
+
+  try {
+    const { data: cached } = await supabase
+      .from("api_cache")
+      .select("response_data, created_at")
+      .eq("cache_key", CACHE_KEY)
+      .maybeSingle();
+
+    if (cached) {
+      const age = (Date.now() - new Date(cached.created_at).getTime()) / 1000;
+      if (age < SIX_HOURS) return cached.response_data;
+    }
+
+    const res = await fetch(
+      "https://raw.githubusercontent.com/RetireJS/retire.js/master/repository/jsrepository-v2.json",
+      { signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) return null;
+    const db = await res.json();
+
+    await supabase.from("api_cache").upsert({
+      cache_key: CACHE_KEY,
+      source: "retirejs",
+      query: CACHE_KEY,
+      response_data: db,
+      created_at: new Date().toISOString(),
+    }, { onConflict: "cache_key" });
+
+    return db;
+  } catch {
+    return null;
+  }
+}
+
+async function checkVulnerableLibraries(
+  files: Map<string, Uint8Array>,
+  supabase: ReturnType<typeof createClient>
+): Promise<VulnLibResult[]> {
+  const results: VulnLibResult[] = [];
+  const db = await fetchRetireJSDb(supabase);
+  if (!db) return results;
+
+  const crypto = globalThis.crypto;
+
+  for (const [filename, content] of files.entries()) {
+    if (!filename.endsWith(".js")) continue;
+    if (content.length > 500_000) continue; // skip huge bundles
+
+    const hashBuf = await crypto.subtle.digest("SHA-256", content);
+    const hash = Array.from(new Uint8Array(hashBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    // Also compute SHA-1 for retire.js compatibility
+    const hash1Buf = await crypto.subtle.digest("SHA-1", content);
+    const sha1 = Array.from(new Uint8Array(hash1Buf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    for (const [component, info] of Object.entries(db)) {
+      const entry = info as any;
+      if (!entry?.vulnerabilities) continue;
+
+      const extractors = entry.extractors?.filecontent ?? [];
+      const hasHashMatch = (entry.vulnerabilities ?? []).some((vuln: any) =>
+        (vuln.identifiers?.sha1 ?? []).includes(sha1) ||
+        (vuln.identifiers?.sha256 ?? []).includes(hash)
+      );
+
+      // Check filename pattern match
+      const filenamePatterns: RegExp[] = extractors
+        .filter((e: any) => typeof e === "string" && e.startsWith("/") && e.endsWith("/"))
+        .map((e: string) => { try { return new RegExp(e.slice(1, -1)); } catch { return null; } })
+        .filter(Boolean);
+
+      const filenameMatch = filenamePatterns.some((re: RegExp) => re.test(filename));
+
+      if (!hasHashMatch && !filenameMatch) continue;
+
+      // Extract version from file content if possible
+      let version = "unknown";
+      const versionExtractors = entry.extractors?.filecontent ?? [];
+      const textDecoder = new TextDecoder();
+      const text = textDecoder.decode(content.slice(0, 4000));
+      for (const pattern of versionExtractors) {
+        if (typeof pattern !== "string" || !pattern.includes("##version##")) continue;
+        const regexStr = pattern.replace("##version##", "([\\d.]+)");
+        try {
+          const m = text.match(new RegExp(regexStr));
+          if (m?.[1]) { version = m[1]; break; }
+        } catch { /**/ }
+      }
+
+      const vulnIds = (entry.vulnerabilities ?? [])
+        .flatMap((v: any) => [
+          ...(v.identifiers?.CVE ?? []),
+          ...(v.identifiers?.bug ?? []),
+          v.summary,
+        ])
+        .filter(Boolean) as string[];
+
+      results.push({
+        component,
+        version,
+        vulnerabilities: [...new Set(vulnIds)].slice(0, 5),
+        file: filename,
+      });
+
+      break; // one match per file is enough
+    }
+  }
+
+  return results;
+}
+
+async function checkOSVPackages(files: Map<string, Uint8Array>): Promise<VulnLibResult[]> {
+  const results: VulnLibResult[] = [];
+  const pkgFile = files.get("package.json");
+  if (!pkgFile) return results;
+
+  try {
+    const pkg = JSON.parse(new TextDecoder().decode(pkgFile));
+    const allDeps: Record<string, string> = {
+      ...(pkg.dependencies ?? {}),
+      ...(pkg.devDependencies ?? {}),
+    };
+
+    const entries = Object.entries(allDeps).slice(0, 20);
+    const responses = await Promise.allSettled(
+      entries.map(async ([name, versionRange]) => {
+        const version = versionRange.replace(/[\^~>=<\s]/g, "").split(".").slice(0, 3).join(".");
+        try {
+          const res = await fetch("https://api.osv.dev/v1/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ package: { name, ecosystem: "npm" }, version }),
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (!data.vulns?.length) return null;
+          return {
+            component: name,
+            version,
+            vulnerabilities: (data.vulns as any[]).map((v: any) => v.id).slice(0, 5),
+            file: "package.json",
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    for (const r of responses) {
+      if (r.status === "fulfilled" && r.value) results.push(r.value);
+    }
+  } catch { /**/ }
+
+  return results;
+}
+
+function buildVulnFindings(vulnLibs: VulnLibResult[], ruleId: "VULN-1" | "VULN-2"): SecurityFinding[] {
+  return vulnLibs.map((lib) => {
+    const rule = RULE_DEFINITIONS[ruleId];
+    return {
+      rule_id: ruleId,
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: `${rule.title}: ${lib.component}`,
+      description: `${lib.component}@${lib.version} — ${lib.vulnerabilities.join(", ") || "known vulnerabilities"}`,
+      evidence: `File: ${lib.file}`,
+      file_path: lib.file,
+    };
+  });
+}
+
+// --- end Phase 7 ---
 
 async function checkCRXcavator(extensionId: string): Promise<Record<string, unknown>> {
   try {
@@ -474,6 +689,10 @@ Deno.serve(async (req: Request) => {
 
     const crxcavatorData = await checkCRXcavator(extensionId);
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const findings: SecurityFinding[] = [];
     const iocs: IOC[] = [];
     const behaviorFlags: BehaviorFlag[] = [];
@@ -482,6 +701,14 @@ Deno.serve(async (req: Request) => {
     analyzePermissions(manifest, findings);
     await analyzeAllFiles(files, manifest, findings, iocs, skippedFiles);
     analyzeManifestDeep(manifest, findings);
+
+    // Phase 7: vulnerable library checks (retire.js + OSV.dev, parallel)
+    const [retireVulns, osvVulns] = await Promise.all([
+      checkVulnerableLibraries(files, supabase),
+      checkOSVPackages(files),
+    ]);
+    findings.push(...buildVulnFindings(retireVulns, "VULN-1"));
+    findings.push(...buildVulnFindings(osvVulns, "VULN-2"));
 
     const behaviorAnalysis = analyzeBehaviorPatterns(manifest, findings, iocs);
     behaviorFlags.push(...behaviorAnalysis.flags);
@@ -506,10 +733,6 @@ Deno.serve(async (req: Request) => {
     const riskScore = calculateRiskScore(findings, behaviorFlags, obfuscationScore);
     const riskLevel = getRiskLevel(riskScore);
     const scanDuration = Date.now() - scanStartTime;
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { data: analysis, error: analysisError } = await supabase
       .from("extension_analyses")
@@ -629,9 +852,10 @@ Deno.serve(async (req: Request) => {
     if (vaultEntry && vaultEntry.baseline_analysis_id) {
       const compareId = vaultEntry.latest_analysis_id || vaultEntry.baseline_analysis_id;
 
-      const [prevFindings, prevIocs] = await Promise.all([
+      const [prevFindings, prevIocs, prevAnalysis] = await Promise.all([
         supabase.from('security_findings').select('rule_id, category, severity').eq('analysis_id', compareId),
-        supabase.from('extension_iocs').select('ioc_value, ioc_type').eq('analysis_id', compareId)
+        supabase.from('extension_iocs').select('ioc_value, ioc_type').eq('analysis_id', compareId),
+        supabase.from('extension_analyses').select('manifest_data, extension_version').eq('id', compareId).maybeSingle(),
       ]);
 
       const prevRuleIds = new Set((prevFindings.data || []).map((f: any) => f.rule_id).filter(Boolean));
@@ -640,18 +864,46 @@ Deno.serve(async (req: Request) => {
       const prevDomains = new Set((prevIocs.data || []).filter((i: any) => i.ioc_type === 'domain').map((i: any) => i.ioc_value));
       const newDomains = iocs.filter(i => i.ioc_type === 'domain' && !prevDomains.has(i.ioc_value)).map(i => i.ioc_value);
 
-      if (newRuleIds.length > 0 || newDomains.length > 0) {
+      // Phase 7: manifest metadata delta detection
+      const prevManifest = prevAnalysis.data?.manifest_data as any;
+      const metadataChanges: string[] = [];
+      if (prevManifest) {
+        if (prevManifest.name !== manifest.name) metadataChanges.push(`name: "${prevManifest.name}" → "${manifest.name}"`);
+        if (prevManifest.description !== manifest.description) metadataChanges.push(`description changed`);
+        if (prevAnalysis.data?.extension_version !== manifest.version) metadataChanges.push(`version: ${prevAnalysis.data?.extension_version} → ${manifest.version}`);
+
+        const prevPerms = new Set([...(prevManifest.permissions ?? []), ...(prevManifest.host_permissions ?? [])]);
+        const newPerms = [...(manifest.permissions ?? []), ...(manifest.host_permissions ?? [])].filter(p => !prevPerms.has(p));
+        if (newPerms.length > 0) metadataChanges.push(`new permissions: ${newPerms.slice(0, 5).join(', ')}`);
+      }
+
+      if (metadataChanges.length > 0) {
+        const rule = RULE_DEFINITIONS["DELTA-1"];
+        findings.push({
+          rule_id: "DELTA-1",
+          category: rule.category,
+          severity: rule.severity,
+          confidence: rule.confidence,
+          title: rule.title,
+          description: rule.description,
+          evidence: metadataChanges.join(" | "),
+          file_path: "manifest.json",
+        });
+      }
+
+      if (newRuleIds.length > 0 || newDomains.length > 0 || metadataChanges.length > 0) {
         behaviorFlags.push({
           flag_type: "vault_delta_detected",
           severity: newRuleIds.some(id => {
             const rule = RULE_DEFINITIONS[id!];
             return rule?.severity === 'critical';
-          }) ? "critical" : "high",
+          }) || metadataChanges.some(c => c.includes("permissions")) ? "critical" : "high",
           description: `This extension changed since its last vault scan. New findings and/or new external domains were detected.`,
           evidence: [
             `baseline_analysis_id: ${compareId}`,
             ...(newRuleIds.length > 0 ? [`New rules triggered: ${newRuleIds.join(', ')}`] : []),
             ...(newDomains.length > 0 ? [`New domains: ${newDomains.slice(0, 5).join(', ')}`] : []),
+            ...(metadataChanges.length > 0 ? [`Manifest changes: ${metadataChanges.join(' | ')}`] : []),
           ]
         });
 
@@ -681,6 +933,7 @@ Deno.serve(async (req: Request) => {
         obfuscation_score: obfuscationScore,
         scan_duration_ms: scanDuration,
         files_skipped: skippedFiles.length,
+        vuln_libs_count: retireVulns.length + osvVulns.length,
         crxcavator: crxcavatorData.available ? (crxcavatorData.data ?? null) : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
