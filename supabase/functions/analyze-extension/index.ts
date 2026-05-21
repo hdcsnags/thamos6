@@ -912,8 +912,10 @@ Deno.serve(async (req: Request) => {
     const extensionStore = extensionSource.store;
     console.log(`Analyzing extension: ${extensionId} (source: ${extensionStore})`);
 
-    // Fire blocklist check concurrently with CRX download
-    const malExtPromise = checkMalExtBlocklist(extensionId);
+    // MalExt only covers Chrome Web Store removals — skip for explicit Edge store sources
+    const malExtPromise = extensionStore !== 'edge'
+      ? checkMalExtBlocklist(extensionId)
+      : Promise.resolve({ hit: false as const });
 
     // Try Chrome CDN first; fall back to Edge CDN (or vice-versa for explicit Edge URLs)
     const CHROME_CRX = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0&acceptformat=crx3&x=id%3D${extensionId}%26installsource%3Dondemand%26uc`;
@@ -980,7 +982,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const manifest = JSON.parse(new TextDecoder().decode(manifestFile));
+    let manifest = JSON.parse(new TextDecoder().decode(manifestFile));
+    manifest = resolveManifestI18n(manifest, files);
     console.log(`Manifest parsed: ${manifest.name} v${manifest.version}`);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -1285,6 +1288,51 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
+
+function resolveManifestI18n(manifest: any, files: Map<string, Uint8Array>): any {
+  const MSG_RE = /^__MSG_(.+)__$/;
+
+  // Find messages.json — prefer default_locale, then 'en', then first available
+  const candidates = [
+    manifest.default_locale,
+    'en', 'en_US', 'en_GB',
+  ].filter(Boolean);
+
+  const allLocaleFiles = [...files.keys()].filter(
+    k => k.startsWith('_locales/') && k.endsWith('/messages.json')
+  );
+
+  let messages: Record<string, any> | null = null;
+  for (const locale of candidates) {
+    const file = files.get(`_locales/${locale}/messages.json`);
+    if (file) {
+      try { messages = JSON.parse(new TextDecoder().decode(file)); break; } catch { /* skip */ }
+    }
+  }
+  if (!messages && allLocaleFiles.length > 0) {
+    const file = files.get(allLocaleFiles[0]);
+    if (file) {
+      try { messages = JSON.parse(new TextDecoder().decode(file)); } catch { /* skip */ }
+    }
+  }
+
+  if (!messages) return manifest;
+
+  const resolve = (value: string): string => {
+    const m = value.match(MSG_RE);
+    if (!m) return value;
+    const key = m[1];
+    const entry = messages![key] ?? messages![key.toLowerCase()];
+    return entry?.message ?? value;
+  };
+
+  return {
+    ...manifest,
+    name: typeof manifest.name === 'string' ? resolve(manifest.name) : manifest.name,
+    short_name: typeof manifest.short_name === 'string' ? resolve(manifest.short_name) : manifest.short_name,
+    description: typeof manifest.description === 'string' ? resolve(manifest.description) : manifest.description,
+  };
+}
 
 interface ExtensionSource {
   id: string;

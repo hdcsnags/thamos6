@@ -593,7 +593,7 @@ Return ONLY valid JSON — no markdown, no prose:
           <div>
             <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
               <Shield className="w-8 h-8 text-cyan-500" />
-              Chrome Extension Scanner
+              Thamos Extension Scanner
             </h1>
             <p className="text-slate-400">Identify malicious behavior, hidden IOCs, and security risks in extensions</p>
           </div>

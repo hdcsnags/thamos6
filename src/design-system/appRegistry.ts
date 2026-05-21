@@ -300,7 +300,7 @@ export const appRegistry: Record<string, AppDefinition> = {
     id: 'extension-scanner',
     name: 'Extension Scanner',
     icon: ExtensionScannerIcon,
-    description: 'Analyze Chrome extensions for malicious behavior',
+    description: 'Analyze Chrome and Edge extensions for malicious behavior and governance risk',
     accentColor: palette.teal,
     category: 'tools',
     keywords: ['extension', 'chrome', 'scanner', 'crx', 'browser', 'plugin', 'addon'],
