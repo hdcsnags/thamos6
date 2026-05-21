@@ -363,6 +363,14 @@ const RULE_DEFINITIONS: Record<string, Rule> = {
     title: "Manifest Metadata Changed",
     description: "Extension name, description, or permissions changed since last scan — supply chain or update attack indicator"
   },
+  "MALEXT-1": {
+    id: "MALEXT-1",
+    severity: "critical",
+    confidence: "high",
+    category: "blocklist",
+    title: "Confirmed Removed from Chrome Web Store",
+    description: "This extension was removed from the Chrome Web Store and appears in the MalExt malicious extensions database"
+  },
 };
 
 // --- Phase 7: retire.js + OSV.dev vulnerable library detection ---
@@ -556,6 +564,41 @@ function buildVulnFindings(vulnLibs: VulnLibResult[], ruleId: "VULN-1" | "VULN-2
 
 // --- end Phase 7 ---
 
+async function checkMalExtBlocklist(extensionId: string): Promise<{
+  hit: boolean; name?: string; reason?: string; date?: string; blocklist?: boolean;
+}> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(
+      'https://raw.githubusercontent.com/toborrm9/malicious_extension_sentry/main/Malicious-Extensions.md',
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!response.ok) return { hit: false };
+
+    const text = await response.text();
+    const id = extensionId.toLowerCase();
+
+    for (const line of text.split('\n').slice(2)) {
+      const cols = line.split('|').map(c => c.trim());
+      if (cols.length < 7) continue;
+      if (cols[1].toLowerCase() !== id) continue;
+      return {
+        hit: true,
+        name: cols[2],
+        reason: cols[3],
+        date: cols[5],
+        blocklist: cols[6].toLowerCase() === 'yes',
+      };
+    }
+    return { hit: false };
+  } catch (e) {
+    console.error('MalExt blocklist check failed:', e);
+    return { hit: false };
+  }
+}
+
 async function checkCRXplorer(extensionId: string): Promise<Record<string, unknown>> {
   try {
     const controller = new AbortController();
@@ -646,6 +689,9 @@ Deno.serve(async (req: Request) => {
 
     console.log(`Analyzing extension: ${extensionId}`);
 
+    // Fire blocklist check concurrently with CRX download
+    const malExtPromise = checkMalExtBlocklist(extensionId);
+
     const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0&acceptformat=crx3&x=id%3D${extensionId}%26installsource%3Dondemand%26uc`;
 
     const controller = new AbortController();
@@ -723,6 +769,36 @@ Deno.serve(async (req: Request) => {
     const iocs: IOC[] = [];
     const behaviorFlags: BehaviorFlag[] = [];
     const skippedFiles: SkippedFile[] = [];
+
+    // Blocklist check should be done by now (ran in parallel with CRX download)
+    const malExtResult = await malExtPromise;
+    if (malExtResult.hit) {
+      const rule = RULE_DEFINITIONS["MALEXT-1"];
+      findings.unshift({
+        rule_id: "MALEXT-1",
+        category: rule.category,
+        severity: rule.severity,
+        confidence: rule.confidence,
+        title: `${rule.title}: ${malExtResult.reason || 'Removed'}`,
+        description: `"${malExtResult.name}" was removed from the Chrome Web Store${malExtResult.date ? ` (${malExtResult.date})` : ''} for: ${malExtResult.reason}. ${malExtResult.blocklist ? 'Flagged as confirmed malware on the MalExt blocklist.' : 'Listed in the MalExt removal database.'}`,
+        evidence: `Source: MalExt Database (github.com/toborrm9/malicious_extension_sentry) | Reason: ${malExtResult.reason} | Removed: ${malExtResult.date || 'unknown'} | Blocklist: ${malExtResult.blocklist ? 'YES — confirmed malware' : 'No'}`,
+        file_path: 'chrome_web_store',
+      });
+      behaviorFlags.push({
+        flag_type: 'confirmed_removed_from_store',
+        severity: malExtResult.blocklist ? 'critical' : 'high',
+        description: `Extension confirmed removed from the Chrome Web Store for: ${malExtResult.reason}`,
+        evidence: [
+          `MalExt Database entry`,
+          `Reason: ${malExtResult.reason}`,
+          `Removed: ${malExtResult.date || 'unknown'}`,
+          malExtResult.blocklist ? 'CONFIRMED MALWARE BLOCKLIST' : 'Policy / Unwanted Software',
+        ],
+      });
+      console.log(`MalExt HIT: ${extensionId} — ${malExtResult.reason} (blocklist: ${malExtResult.blocklist})`);
+    } else {
+      console.log(`MalExt: ${extensionId} not in blocklist`);
+    }
 
     analyzePermissions(manifest, findings);
     await analyzeAllFiles(files, manifest, findings, iocs, skippedFiles);

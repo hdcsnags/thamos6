@@ -408,8 +408,9 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
   }, {} as Record<string, SecurityFinding[]>);
 
   const behaviorFlags = currentAnalysis?.behavior_flags || [];
+  const malExtFlags = behaviorFlags.filter(f => f.flag_type === 'confirmed_removed_from_store');
   const vaultDeltaFlags = behaviorFlags.filter(f => f.flag_type === 'vault_delta_detected');
-  const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected');
+  const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected' && f.flag_type !== 'confirmed_removed_from_store');
 
   const verdictOrbState: T6OrbState = verdictLoading
     ? 'thinking'
@@ -641,6 +642,31 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
                   </div>
                 </div>
               </div>
+
+              {malExtFlags.length > 0 && (
+                <div className="mb-6 border-2 border-red-500/50 bg-red-500/10 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <Shield className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-bold text-red-300 mb-1 uppercase tracking-wide text-sm">
+                        Confirmed Removed from Chrome Web Store
+                      </h4>
+                      {malExtFlags.map((flag, idx) => (
+                        <div key={idx}>
+                          <p className="text-sm text-red-200/80 mb-2">{flag.description}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {flag.evidence.map((ev, i) => (
+                              <span key={i} className="text-xs font-mono px-2 py-0.5 bg-red-500/20 text-red-300 rounded border border-red-500/20">
+                                {ev}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {vaultDeltaFlags.length > 0 && (
                 <div className="mb-6 border-2 border-amber-500/30 bg-amber-500/10 rounded-lg p-4">
