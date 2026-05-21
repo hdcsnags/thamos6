@@ -900,57 +900,58 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const extensionId = extractExtensionId(extensionUrl);
-    if (!extensionId) {
+    const extensionSource = extractExtensionSource(extensionUrl);
+    if (!extensionSource) {
       return new Response(
-        JSON.stringify({ error: "Invalid Chrome Web Store URL" }),
+        JSON.stringify({ error: "Invalid extension URL or ID. Paste a Chrome Web Store or Microsoft Edge Add-ons URL, or a 32-character extension ID." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`Analyzing extension: ${extensionId}`);
+    const extensionId = extensionSource.id;
+    const extensionStore = extensionSource.store;
+    console.log(`Analyzing extension: ${extensionId} (source: ${extensionStore})`);
 
     // Fire blocklist check concurrently with CRX download
     const malExtPromise = checkMalExtBlocklist(extensionId);
 
-    const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0&acceptformat=crx3&x=id%3D${extensionId}%26installsource%3Dondemand%26uc`;
+    // Try Chrome CDN first; fall back to Edge CDN (or vice-versa for explicit Edge URLs)
+    const CHROME_CRX = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0&acceptformat=crx3&x=id%3D${extensionId}%26installsource%3Dondemand%26uc`;
+    const EDGE_CRX = `https://edge.microsoft.com/extensionwebstorebase/v1/crx?response=redirect&x=id%3D${extensionId}%26installsource%3Dondemand%26uc`;
+    const crxUrlsToTry = extensionStore === 'edge' ? [EDGE_CRX, CHROME_CRX] : [CHROME_CRX, EDGE_CRX];
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT);
-
-    const crxResponse = await fetch(crxUrl, {
-      redirect: "follow",
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!crxResponse.ok) {
-      console.error(`CRX download failed: ${crxResponse.status} ${crxResponse.statusText}`);
-      return new Response(
-        JSON.stringify({ error: `Failed to download extension: ${crxResponse.status}` }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    let crxData: ArrayBuffer | null = null;
+    let downloadedFrom = '';
+    for (const crxUrl of crxUrlsToTry) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT);
+      try {
+        const resp = await fetch(crxUrl, { redirect: "follow", signal: controller.signal });
+        clearTimeout(timeoutId);
+        const ct = resp.headers.get("content-type") || "";
+        if (resp.ok && !ct.includes("text/html")) {
+          const buf = await resp.arrayBuffer();
+          if (buf.byteLength > 0) {
+            crxData = buf;
+            downloadedFrom = crxUrl.includes('edge.microsoft.com') ? 'edge' : 'chrome';
+            break;
+          }
+        }
+        console.log(`CRX download skipped (${resp.status}, ct=${ct}) from ${crxUrl}`);
+      } catch (e) {
+        clearTimeout(timeoutId);
+        console.log(`CRX download error from ${crxUrl}:`, e);
+      }
     }
 
-    const contentType = crxResponse.headers.get("content-type") || "";
-    console.log(`Response Content-Type: ${contentType}`);
-
-    if (contentType.includes("text/html")) {
+    if (!crxData) {
       return new Response(
-        JSON.stringify({ error: "Extension not found or unavailable" }),
+        JSON.stringify({ error: "Extension not found on Chrome Web Store or Microsoft Edge Add-ons" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const crxData = await crxResponse.arrayBuffer();
-    console.log(`Downloaded CRX: ${crxData.byteLength} bytes`);
-
-    if (crxData.byteLength === 0) {
-      return new Response(
-        JSON.stringify({ error: "Downloaded file is empty" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    console.log(`Downloaded CRX from ${downloadedFrom}: ${crxData.byteLength} bytes`);
 
     if (crxData.byteLength > MAX_FILE_SIZE) {
       return new Response(
@@ -1285,9 +1286,37 @@ Deno.serve(async (req: Request) => {
   }
 });
 
+interface ExtensionSource {
+  id: string;
+  store: 'chrome' | 'edge' | 'unknown';
+}
+
+function extractExtensionSource(input: string): ExtensionSource | null {
+  const s = input.trim();
+
+  // Bare 32-char extension ID
+  if (/^[a-z]{32}$/i.test(s)) {
+    return { id: s.toLowerCase(), store: 'unknown' };
+  }
+
+  // Chrome Web Store
+  const chrome = s.match(/chromewebstore\.google\.com\/detail\/[^\/]+\/([a-z]{32})/i);
+  if (chrome) return { id: chrome[1].toLowerCase(), store: 'chrome' };
+
+  // Microsoft Edge Add-ons
+  const edge = s.match(/microsoftedge\.microsoft\.com\/addons\/detail\/[^\/]+\/([a-z]{32})/i);
+  if (edge) return { id: edge[1].toLowerCase(), store: 'edge' };
+
+  // Generic /detail/name/ID fallback (other Chromium store formats)
+  const generic = s.match(/\/detail\/[^\/]+\/([a-z]{32})/i);
+  if (generic) return { id: generic[1].toLowerCase(), store: 'unknown' };
+
+  return null;
+}
+
+// kept for any internal callers that still use the old signature
 function extractExtensionId(url: string): string | null {
-  const match = url.match(/\/detail\/[^\/]+\/([a-z]{32})/i);
-  return match ? match[1] : null;
+  return extractExtensionSource(url)?.id ?? null;
 }
 
 function extractZipFromCrx(crxData: ArrayBuffer): Uint8Array {
