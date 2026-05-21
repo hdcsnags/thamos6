@@ -289,7 +289,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
       const crx = currentAnalysis.crxcavator_data?.available ? currentAnalysis.crxcavator_data : null;
       const crxStr = crx
         ? `Score: ${crx.overall_score}/100 | Risk: ${crx.risk_level} | Recommended: ${crx.should_use === true ? 'Yes' : crx.should_use === false ? 'No' : 'Unknown'}
-Reasoning: ${(crx.reasoning as string[]).join(' | ') || 'None'}
+Reasoning: ${(crx.reasoning as any[]).map((r: any) => typeof r === 'string' ? r : r?.text ?? '').join(' | ') || 'None'}
 Categories: ${JSON.stringify(crx.categories)}
 Browser Impact: ${JSON.stringify(crx.browser_impact) || 'None'}`
         : 'Not available';
@@ -752,12 +752,12 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
                           </span>
                         )}
                       </div>
-                      {(currentAnalysis.crxcavator_data.reasoning as string[])?.length > 0 && (
+                      {(currentAnalysis.crxcavator_data.reasoning as any[])?.length > 0 && (
                         <ul className="space-y-0.5">
-                          {(currentAnalysis.crxcavator_data.reasoning as string[]).slice(0, 3).map((r: string, i: number) => (
+                          {(currentAnalysis.crxcavator_data.reasoning as any[]).slice(0, 3).map((r: any, i: number) => (
                             <li key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
                               <span className="text-teal-500 mt-0.5 flex-shrink-0">›</span>
-                              {r}
+                              {typeof r === 'string' ? r : r?.text ?? ''}
                             </li>
                           ))}
                         </ul>

@@ -631,7 +631,9 @@ async function checkCRXplorer(extensionId: string): Promise<Record<string, unkno
       overall_score: ea?.scores?.overall ?? null,
       risk_level: ea?.riskLevel ?? null,
       should_use: ea?.userRecommendation?.shouldUse ?? null,
-      reasoning: ea?.userRecommendation?.reasoning ?? [],
+      reasoning: (ea?.userRecommendation?.reasoning ?? []).map((r: unknown) =>
+        typeof r === 'string' ? r : (r as any)?.text ?? String(r)
+      ),
       categories: ea?.scores?.categories ?? {},
       category_justifications: ea?.categoryJustifications ?? {},
       browser_impact: ea?.browserImpact ?? null,
