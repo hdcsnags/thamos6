@@ -29,10 +29,24 @@ interface Analysis {
   crxcavator_data?: any;
 }
 
+interface TopConcern {
+  type: 'CONFIRMED_BEHAVIOR' | 'CAPABILITY_RISK' | 'CONTEXTUAL_FALSE_POSITIVE' | 'EXTERNAL_REPUTATION_SIGNAL' | 'WATCH_ITEM';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  evidence: string;
+}
+
 interface VerdictResult {
-  verdict: 'MALICIOUS' | 'OVERPRIVILEGED' | 'SUSPICIOUS' | 'LIKELY SAFE';
+  verdict: 'MALICIOUS' | 'OVERPRIVILEGED' | 'SUSPICIOUS' | 'LIKELY_SAFE';
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  reasoning: string;
+  admin_action: 'ALLOW' | 'ALLOW_MONITOR' | 'REVIEW' | 'BLOCK' | 'REMOVE';
+  raw_scanner_interpretation: { risk_score: number; risk_level: string; classification: 'CAPABILITY_RISK' | 'CONFIRMED_MALICIOUS' | 'MIXED' };
+  external_intel_interpretation: { provider: string; score: number | null; risk_level: string | null; summary: string };
+  purpose_fit: { rating: 'STRONG' | 'PARTIAL' | 'WEAK' | 'UNKNOWN'; reasoning: string };
+  why_verdict_differs: string;
+  top_concerns: TopConcern[];
+  positive_signals: string[];
+  watch_items: string[];
   recommendation: string;
   ioc_highlights?: string[];
 }
@@ -86,6 +100,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdict, setVerdict] = useState<VerdictResult | null>(null);
   const [verdictError, setVerdictError] = useState('');
+  const [showCrxJustifications, setShowCrxJustifications] = useState(false);
 
   useEffect(() => {
     loadRecentAnalyses();
@@ -270,35 +285,52 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
 
+      const classification = scannerClassification;
+
       const manifestStr = currentAnalysis.manifest_data
         ? JSON.stringify(currentAnalysis.manifest_data, null, 2)
         : 'Not available';
 
       const findingsSummary = findings.map(f =>
-        `[${f.severity.toUpperCase()}] ${f.title}: ${f.description}\nEvidence: ${f.evidence}\nFile: ${f.file_path}`
+        `[${f.severity.toUpperCase()}] ${f.title}\nDescription: ${f.description}\nEvidence: ${f.evidence}\nFile: ${f.file_path}`
       ).join('\n\n') || 'None';
 
       const behaviorSummary = otherBehaviorFlags.map(f =>
         `${f.flag_type}: ${f.description}\n${f.evidence.join(', ')}`
       ).join('\n\n') || 'None';
 
+      const vaultDeltaStr = vaultDeltaFlags.length > 0
+        ? vaultDeltaFlags.map(f =>
+            `VAULT DELTA — ${f.description}\n${f.evidence.filter(e => !e.startsWith('baseline_analysis_id')).join(' | ')}`
+          ).join('\n')
+        : 'None';
+
       const iocSummary = iocs.slice(0, 20).map(i =>
         `[${i.ioc_type}] ${i.ioc_value} (in ${i.source_file})`
       ).join('\n') || 'None';
 
-      const crx = currentAnalysis.crxcavator_data?.available ? currentAnalysis.crxcavator_data : null;
-      const crxStr = crx
-        ? `Score: ${crx.overall_score}/100 | Risk: ${crx.risk_level} | Recommended: ${crx.should_use === true ? 'Yes' : crx.should_use === false ? 'No' : 'Unknown'}
-Reasoning: ${(crx.reasoning as any[]).map((r: any) => typeof r === 'string' ? r : r?.text ?? '').join(' | ') || 'None'}
-Categories: ${JSON.stringify(crx.categories)}
-Browser Impact: ${JSON.stringify(crx.browser_impact) || 'None'}`
+      const crxFull = crxData;
+      const crxStr = crxFull
+        ? `Score: ${crxFull.overall_score}/100 | Risk: ${crxFull.risk_level} | Recommended: ${crxFull.should_use === true ? 'Yes' : crxFull.should_use === false ? 'No' : 'Unknown'}
+Reasoning: ${(crxFull.reasoning as any[]).map((r: any) => typeof r === 'string' ? r : r?.text ?? '').join(' | ') || 'None'}
+Categories: ${JSON.stringify(crxFull.categories)}
+Category Justifications: ${JSON.stringify(crxFull.category_justifications)}
+Browser Impact: ${JSON.stringify(crxFull.browser_impact)}
+Safety Guidelines: ${JSON.stringify(crxFull.safety_guidelines)}`
         : 'Not available';
 
-      const prompt = `Analyze this Chrome extension and return a JSON verdict.
+      const systemPrompt = `You are a senior browser-extension threat analyst inside Thamos6. You review automated scanner findings, manifest data, IOCs, behavior flags, CRXplorer external intel, and reputation signals. The internal scanner is intentionally aggressive and reports capability risk, not always malicious intent. Your job is to produce a calibrated analyst verdict.
+
+Do not invent evidence. Use only the supplied artifacts. If raw scanner risk and contextual verdict differ, explain why. Separate confirmed behavior from capability risk. A legitimate extension can have high capability risk if its function requires broad page access. Lower final verdict only when permissions, behavior, purpose, reputation, and external intel support that conclusion. Raise final verdict when multiple independent signals converge: sensitive data access, network exfiltration, remote control/config, dynamic execution, evasion, suspicious domains, store removal, or permission-purpose mismatch.
+
+Return only valid JSON matching the requested schema.`;
+
+      const prompt = `Analyze this Chrome extension and return a calibrated analyst verdict as JSON.
 
 EXTENSION: ${currentAnalysis.extension_name} v${currentAnalysis.extension_version}
 EXTENSION ID: ${currentAnalysis.extension_id}
 SCANNER RISK SCORE: ${currentAnalysis.risk_score}/100 (${currentAnalysis.risk_level})
+SCANNER CLASSIFICATION (pre-computed): ${classification}
 OBFUSCATION SCORE: ${currentAnalysis.obfuscation_score || 0}
 
 CRXPLORER INDEPENDENT ASSESSMENT:
@@ -313,19 +345,48 @@ ${findingsSummary}
 BEHAVIORAL FLAGS:
 ${behaviorSummary}
 
+VAULT DELTA (posture drift since known baseline):
+${vaultDeltaStr}
+
 IOCS DETECTED (${iocs.length} total, showing first 20):
 ${iocSummary}
 
-Return ONLY valid JSON in this exact format (no markdown, no prose):
-{
-  "verdict": "MALICIOUS" | "OVERPRIVILEGED" | "SUSPICIOUS" | "LIKELY SAFE",
-  "confidence": "HIGH" | "MEDIUM" | "LOW",
-  "reasoning": "2-4 sentences explaining your assessment based on specific evidence",
-  "recommendation": "1-2 sentences on what action to take",
-  "ioc_highlights": ["key IOC 1", "key IOC 2"]
-}`;
+IMPORTANT: When evaluating MAIN-world or broad content script access, decide whether it is purpose-aligned. If purpose-aligned, classify it as CAPABILITY_RISK or WATCH_ITEM rather than CONFIRMED_BEHAVIOR unless paired with exfiltration, credential targeting, remote command/config abuse, or evasion.
 
-      const systemPrompt = `You are a senior threat intelligence analyst specializing in browser extension security. Your role is to synthesize the automated scanner findings with the independent CRXplorer assessment to produce a balanced, calibrated verdict. The scanner is intentionally aggressive and will flag many common patterns — your job is to weigh whether those patterns form a coherent threat picture or are consistent with the extension's stated purpose. Consider false positive rates: minified code, analytics SDKs, and broad host permissions are common in legitimate extensions. Elevate the verdict only when multiple independent signals converge. Return only valid JSON, no markdown fences.`;
+Return ONLY valid JSON — no markdown, no prose:
+{
+  "verdict": "MALICIOUS" | "OVERPRIVILEGED" | "SUSPICIOUS" | "LIKELY_SAFE",
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "admin_action": "ALLOW" | "ALLOW_MONITOR" | "REVIEW" | "BLOCK" | "REMOVE",
+  "raw_scanner_interpretation": {
+    "risk_score": ${currentAnalysis.risk_score},
+    "risk_level": "${currentAnalysis.risk_level}",
+    "classification": "${classification}"
+  },
+  "external_intel_interpretation": {
+    "provider": "CRXplorer",
+    "score": ${crxFull?.overall_score ?? null},
+    "risk_level": ${crxFull?.risk_level ? `"${crxFull.risk_level}"` : 'null'},
+    "summary": "<one sentence summarizing CRXplorer assessment>"
+  },
+  "purpose_fit": {
+    "rating": "STRONG" | "PARTIAL" | "WEAK" | "UNKNOWN",
+    "reasoning": "<one sentence>"
+  },
+  "why_verdict_differs": "<explain if and why contextual verdict differs from raw scanner risk, or state they align>",
+  "top_concerns": [
+    {
+      "type": "CONFIRMED_BEHAVIOR" | "CAPABILITY_RISK" | "CONTEXTUAL_FALSE_POSITIVE" | "EXTERNAL_REPUTATION_SIGNAL" | "WATCH_ITEM",
+      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "title": "<concise title>",
+      "evidence": "<specific evidence from supplied data only>"
+    }
+  ],
+  "positive_signals": ["<signal>"],
+  "watch_items": ["<item>"],
+  "recommendation": "<1-2 sentences>",
+  "ioc_highlights": ["<critical IOC if any>"]
+}`;
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
         method: 'POST',
@@ -340,7 +401,7 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
           messages: [{ role: 'user', content: prompt }],
           system_prompt: systemPrompt,
           temperature: 0.2,
-          max_tokens: 1024,
+          max_tokens: 2048,
         }),
       });
 
@@ -366,10 +427,34 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
       case 'MALICIOUS': return 'red';
       case 'OVERPRIVILEGED': return 'orange';
       case 'SUSPICIOUS': return 'amber';
-      case 'LIKELY SAFE': return 'green';
+      case 'LIKELY_SAFE': return 'green';
       default: return 'slate';
     }
   };
+
+  const getAdminActionColor = (a: string) => {
+    switch (a) {
+      case 'ALLOW': return 'green';
+      case 'ALLOW_MONITOR': return 'teal';
+      case 'REVIEW': return 'amber';
+      case 'BLOCK': return 'orange';
+      case 'REMOVE': return 'red';
+      default: return 'slate';
+    }
+  };
+
+  const formatAdminAction = (a: string) => {
+    switch (a) {
+      case 'ALLOW': return 'Allow';
+      case 'ALLOW_MONITOR': return 'Allow + Monitor';
+      case 'REVIEW': return 'Review';
+      case 'BLOCK': return 'Block';
+      case 'REMOVE': return 'Remove';
+      default: return a;
+    }
+  };
+
+  const formatVerdict = (v: string) => v.replace('_', ' ');
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -412,12 +497,23 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
   const vaultDeltaFlags = behaviorFlags.filter(f => f.flag_type === 'vault_delta_detected');
   const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected' && f.flag_type !== 'confirmed_removed_from_store');
 
+  const crxData = currentAnalysis?.crxcavator_data?.available ? currentAnalysis.crxcavator_data : null;
+
+  const scannerClassification: 'CAPABILITY_RISK' | 'CONFIRMED_MALICIOUS' | 'MIXED' = (() => {
+    if (malExtFlags.length > 0 || findings.some(f => f.rule_id === 'MALEXT-1')) return 'CONFIRMED_MALICIOUS';
+    const hasCriticalBehavior = otherBehaviorFlags.some(f => f.severity === 'critical');
+    const hasCriticalCode = findings.some(f => f.category === 'code_patterns' && f.severity === 'critical');
+    if (hasCriticalBehavior && hasCriticalCode) return 'MIXED';
+    if (hasCriticalBehavior) return 'MIXED';
+    return 'CAPABILITY_RISK';
+  })();
+
   const verdictOrbState: T6OrbState = verdictLoading
     ? 'thinking'
     : verdict?.verdict === 'MALICIOUS' ? 'conflict'
     : verdict?.verdict === 'OVERPRIVILEGED' ? 'tense'
     : verdict?.verdict === 'SUSPICIOUS' ? 'tense'
-    : verdict?.verdict === 'LIKELY SAFE' ? 'done'
+    : verdict?.verdict === 'LIKELY_SAFE' ? 'done'
     : verdictError ? 'error'
     : 'idle';
 
@@ -629,18 +725,6 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
                     </p>
                   )}
                 </div>
-                <div className="text-right">
-                  <div className={`inline-flex px-4 py-2 rounded-lg bg-${getRiskColor(currentAnalysis.risk_level)}-500/20 border border-${getRiskColor(currentAnalysis.risk_level)}-500/30`}>
-                    <div className="text-center">
-                      <div className={`text-3xl font-bold text-${getRiskColor(currentAnalysis.risk_level)}-400`}>
-                        {currentAnalysis.risk_score}
-                      </div>
-                      <div className={`text-xs font-semibold text-${getRiskColor(currentAnalysis.risk_level)}-400 uppercase`}>
-                        {currentAnalysis.risk_level} Risk
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {malExtFlags.length > 0 && (
@@ -689,177 +773,280 @@ Return ONLY valid JSON in this exact format (no markdown, no prose):
                 </div>
               )}
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-2xl font-bold text-white">{findings.length}</div>
-                  <div className="text-sm text-slate-400">Findings</div>
-                </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-2xl font-bold text-white">{iocs.length}</div>
-                  <div className="text-sm text-slate-400">IOCs</div>
-                </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-2xl font-bold text-white">{otherBehaviorFlags.length}</div>
-                  <div className="text-sm text-slate-400">Behavior Flags</div>
-                </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-2xl font-bold text-white">{currentAnalysis.obfuscation_score || 0}</div>
-                  <div className="text-sm text-slate-400">Obfuscation</div>
-                </div>
-              </div>
+              {/* Three-panel summary: Raw Scanner | External Intel | THAMOS Verdict */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
 
-              {currentAnalysis.crxcavator_data?.available && (
-                <div className="mb-6 bg-slate-800/40 border border-slate-700 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Database className="w-4 h-4 text-teal-400" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-teal-400">CRXplorer Intel</span>
+                {/* Raw Scanner Risk */}
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Raw Scanner Risk</div>
+                  <div className={`text-4xl font-bold text-${getRiskColor(currentAnalysis.risk_level)}-400 leading-none mb-1`}>
+                    {currentAnalysis.risk_score}
+                  </div>
+                  <div className={`text-sm font-semibold text-${getRiskColor(currentAnalysis.risk_level)}-400 uppercase mb-3`}>
+                    {currentAnalysis.risk_level}
+                  </div>
+                  <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    scannerClassification === 'CONFIRMED_MALICIOUS' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                    : scannerClassification === 'MIXED' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                    : 'bg-slate-700/50 text-slate-400 border-slate-600/30'
+                  }`}>
+                    {scannerClassification === 'CONFIRMED_MALICIOUS' ? 'Confirmed Malicious'
+                     : scannerClassification === 'MIXED' ? 'Mixed Evidence'
+                     : 'Capability-Based'}
+                  </span>
+                  <div className="mt-3 grid grid-cols-2 gap-1.5">
+                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
+                      <div className="text-sm font-bold text-white">{findings.length}</div>
+                      <div className="text-[9px] text-slate-500">Findings</div>
                     </div>
-                    {currentAnalysis.crxcavator_data.share_url && (
-                      <a
-                        href={currentAnalysis.crxcavator_data.share_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-slate-500 hover:text-teal-400 transition-colors flex items-center gap-1"
-                      >
-                        Full Report <ExternalLink className="w-3 h-3" />
+                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
+                      <div className="text-sm font-bold text-white">{iocs.length}</div>
+                      <div className="text-[9px] text-slate-500">IOCs</div>
+                    </div>
+                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
+                      <div className="text-sm font-bold text-white">{otherBehaviorFlags.length}</div>
+                      <div className="text-[9px] text-slate-500">Behavior</div>
+                    </div>
+                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
+                      <div className="text-sm font-bold text-white">{currentAnalysis.obfuscation_score || 0}</div>
+                      <div className="text-[9px] text-slate-500">Obfuscation</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* External Intel */}
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">External Intel</div>
+                    {crxData?.share_url && (
+                      <a href={crxData.share_url} target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] text-slate-600 hover:text-teal-400 transition-colors flex items-center gap-0.5">
+                        CRXplorer <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     )}
                   </div>
-
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="bg-slate-900/50 rounded-lg px-5 py-3 text-center">
-                      <div className="text-3xl font-bold text-white">{currentAnalysis.crxcavator_data.overall_score ?? '—'}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Security Score</div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                          currentAnalysis.crxcavator_data.risk_level === 'Critical' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                          currentAnalysis.crxcavator_data.risk_level === 'High' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
-                          currentAnalysis.crxcavator_data.risk_level === 'Medium' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                          'bg-green-500/20 text-green-400 border border-green-500/30'
+                  {crxData ? (
+                    <>
+                      <div className="text-4xl font-bold text-white leading-none mb-1">{crxData.overall_score ?? '—'}</div>
+                      <div className={`text-sm font-semibold uppercase mb-3 ${
+                        crxData.risk_level === 'Critical' ? 'text-red-400'
+                        : crxData.risk_level === 'High' ? 'text-orange-400'
+                        : crxData.risk_level === 'Medium' ? 'text-amber-400'
+                        : 'text-green-400'
+                      }`}>{crxData.risk_level}</div>
+                      {crxData.should_use !== null && (
+                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border mb-3 ${
+                          crxData.should_use
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                            : 'bg-red-500/20 text-red-400 border-red-500/30'
                         }`}>
-                          {currentAnalysis.crxcavator_data.risk_level}
+                          {crxData.should_use ? '✓ Recommended' : '✗ Not Recommended'}
                         </span>
-                        {currentAnalysis.crxcavator_data.should_use !== null && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                            currentAnalysis.crxcavator_data.should_use
-                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          }`}>
-                            {currentAnalysis.crxcavator_data.should_use ? '✓ Recommended' : '✗ Not Recommended'}
-                          </span>
-                        )}
-                      </div>
-                      {(currentAnalysis.crxcavator_data.reasoning as any[])?.length > 0 && (
-                        <ul className="space-y-0.5">
-                          {(currentAnalysis.crxcavator_data.reasoning as any[]).slice(0, 3).map((r: any, i: number) => (
-                            <li key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
-                              <span className="text-teal-500 mt-0.5 flex-shrink-0">›</span>
+                      )}
+                      {(crxData.reasoning as any[])?.length > 0 && (
+                        <ul className="space-y-1 mt-1">
+                          {(crxData.reasoning as any[]).slice(0, 3).map((r: any, i: number) => (
+                            <li key={i} className="text-[10px] text-slate-400 flex items-start gap-1">
+                              <span className="text-teal-500 flex-shrink-0 mt-0.5">›</span>
                               {typeof r === 'string' ? r : r?.text ?? ''}
                             </li>
                           ))}
                         </ul>
                       )}
+                    </>
+                  ) : (
+                    <div className="text-slate-500 text-sm mt-2">No external data available</div>
+                  )}
+                </div>
+
+                {/* THAMOS Verdict */}
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <Brain className="w-3.5 h-3.5 text-cyan-400" />
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Thamos Verdict</span>
                     </div>
+                    {!verdictLoading && !verdict && (
+                      <button onClick={runThamosVerdict}
+                        className="text-[10px] px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded border border-cyan-500/30 transition-colors font-semibold">
+                        Analyze
+                      </button>
+                    )}
+                    {verdict && !verdictLoading && (
+                      <button onClick={runThamosVerdict}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
+                        Re-run
+                      </button>
+                    )}
                   </div>
 
-                  {Object.keys(currentAnalysis.crxcavator_data.categories || {}).length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                      {Object.entries(currentAnalysis.crxcavator_data.categories as Record<string, number>).slice(0, 4).map(([key, val]) => (
-                        <div key={key} className="bg-slate-900/50 rounded p-2 text-center">
-                          <div className="text-lg font-bold text-white">{val}</div>
-                          <div className="text-[10px] text-slate-500 capitalize">{key.replace(/_/g, ' ')}</div>
+                  {!verdict && !verdictLoading && !verdictError && (
+                    <div className="flex flex-col items-center py-3 gap-2">
+                      <T6Orb state="idle" size={44} />
+                      <span className="text-[10px] text-slate-500">Awaiting analysis</span>
+                    </div>
+                  )}
+                  {verdictLoading && (
+                    <div className="flex flex-col items-center py-3 gap-2">
+                      <T6Orb state="thinking" size={44} />
+                      <span className="text-[10px] text-slate-400 font-mono tracking-wider">Analyzing...</span>
+                    </div>
+                  )}
+                  {verdictError && !verdictLoading && (
+                    <div className="text-red-400 text-xs flex items-start gap-1.5 mt-1">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                      <span>{verdictError}</span>
+                    </div>
+                  )}
+                  {verdict && !verdictLoading && (
+                    <div className="flex flex-col items-center text-center gap-1">
+                      <T6Orb state={verdictOrbState} size={44} />
+                      <div className={`text-base font-bold text-${getVerdictColor(verdict.verdict)}-400 mt-1`}>
+                        {formatVerdict(verdict.verdict)}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{verdict.confidence} CONFIDENCE</div>
+                      {verdict.admin_action && (
+                        <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-${getAdminActionColor(verdict.admin_action)}-500/20 text-${getAdminActionColor(verdict.admin_action)}-400 border border-${getAdminActionColor(verdict.admin_action)}-500/30`}>
+                          {formatAdminAction(verdict.admin_action)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Why They Differ — full width below three panels */}
+              {verdict?.why_verdict_differs && (
+                <div className="mb-4 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-lg">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Why They Differ</div>
+                  <p className="text-sm text-slate-300 leading-relaxed">{verdict.why_verdict_differs}</p>
+                </div>
+              )}
+
+              {/* Full verdict details */}
+              {verdict && !verdictLoading && (
+                <div className="mb-6 space-y-3">
+                  {verdict.top_concerns && verdict.top_concerns.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Top Concerns</div>
+                      <div className="space-y-2">
+                        {verdict.top_concerns.map((concern, i) => (
+                          <div key={i} className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                concern.type === 'CONFIRMED_BEHAVIOR' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                : concern.type === 'CAPABILITY_RISK' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                                : concern.type === 'CONTEXTUAL_FALSE_POSITIVE' ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                : concern.type === 'EXTERNAL_REPUTATION_SIGNAL' ? 'bg-teal-500/20 text-teal-400 border-teal-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              }`}>
+                                {concern.type.replace(/_/g, ' ')}
+                              </span>
+                              <span className={`text-[10px] font-bold ${
+                                concern.severity === 'CRITICAL' ? 'text-red-400'
+                                : concern.severity === 'HIGH' ? 'text-orange-400'
+                                : concern.severity === 'MEDIUM' ? 'text-amber-400'
+                                : 'text-slate-400'
+                              }`}>{concern.severity}</span>
+                              <span className="text-xs font-medium text-white">{concern.title}</span>
+                            </div>
+                            <p className="text-xs text-slate-400">{concern.evidence}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {verdict.positive_signals && verdict.positive_signals.length > 0 && (
+                      <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-2">Positive Signals</div>
+                        <ul className="space-y-1">
+                          {verdict.positive_signals.map((s, i) => (
+                            <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                              <span className="text-green-400 flex-shrink-0">✓</span>{s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {verdict.watch_items && verdict.watch_items.length > 0 && (
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-2">Watch Items</div>
+                        <ul className="space-y-1">
+                          {verdict.watch_items.map((w, i) => (
+                            <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                              <span className="text-amber-400 flex-shrink-0">›</span>{w}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {(verdict.purpose_fit || verdict.recommendation) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {verdict.purpose_fit && (
+                        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Purpose Fit</div>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                              verdict.purpose_fit.rating === 'STRONG' ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                              : verdict.purpose_fit.rating === 'PARTIAL' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              : verdict.purpose_fit.rating === 'WEAK' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                              : 'bg-slate-700/50 text-slate-400 border-slate-600/30'
+                            }`}>{verdict.purpose_fit.rating}</span>
+                          </div>
+                          <p className="text-xs text-slate-400">{verdict.purpose_fit.reasoning}</p>
+                        </div>
+                      )}
+                      {verdict.recommendation && (
+                        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Recommendation</div>
+                          <p className="text-xs text-slate-300">{verdict.recommendation}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {verdict.ioc_highlights && verdict.ioc_highlights.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Key IOCs</div>
+                      <div className="flex flex-wrap gap-2">
+                        {verdict.ioc_highlights.map((ioc, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-red-500/10 text-red-400 text-xs font-mono rounded border border-red-500/20 break-all">
+                            {ioc}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* CRXplorer category justifications — collapsible */}
+              {crxData?.category_justifications && Object.keys(crxData.category_justifications as object).length > 0 && (
+                <div className="mb-6">
+                  <button
+                    onClick={() => setShowCrxJustifications(!showCrxJustifications)}
+                    className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-teal-400 transition-colors mb-2"
+                  >
+                    <Database className="w-3 h-3" />
+                    CRXplorer Category Analysis
+                    {showCrxJustifications ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  {showCrxJustifications && (
+                    <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3 space-y-2">
+                      {Object.entries(crxData.category_justifications as Record<string, any>).map(([cat, just]) => (
+                        <div key={cat} className="border-b border-slate-700/30 pb-2 last:border-0 last:pb-0">
+                          <div className="text-[10px] font-bold text-teal-400/70 uppercase mb-0.5">{cat.replace(/_/g, ' ')}</div>
+                          <p className="text-xs text-slate-400">{typeof just === 'string' ? just : JSON.stringify(just)}</p>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
               )}
-
-              <div className="mb-6">
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
-                    <div className="flex items-center gap-2">
-                      <Brain className="w-4 h-4 text-cyan-400" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Thamos Verdict</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!verdictLoading && !verdict && (
-                        <button
-                          onClick={runThamosVerdict}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-semibold rounded transition-colors border border-cyan-500/30"
-                        >
-                          <Brain className="w-3.5 h-3.5" />
-                          Request Verdict
-                        </button>
-                      )}
-                      {verdict && !verdictLoading && (
-                        <button
-                          onClick={runThamosVerdict}
-                          className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
-                        >
-                          Re-analyze
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {!verdictLoading && !verdict && !verdictError && (
-                    <div className="px-4 py-6 text-center text-slate-500 text-sm">
-                      Request an AI verdict to get a threat assessment synthesized from all scan data.
-                    </div>
-                  )}
-
-                  {verdictLoading && (
-                    <div className="px-4 py-6 flex flex-col items-center gap-3">
-                      <T6Orb state="thinking" size={56} />
-                      <div className="text-xs text-slate-400 font-mono tracking-wider">ANALYZING EXTENSION...</div>
-                    </div>
-                  )}
-
-                  {verdictError && !verdictLoading && (
-                    <div className="px-4 py-4 flex items-center gap-2 text-red-400 text-sm">
-                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                      {verdictError}
-                    </div>
-                  )}
-
-                  {verdict && !verdictLoading && (
-                    <div className="p-4">
-                      <div className="flex items-start gap-4 mb-4">
-                        <T6Orb state={verdictOrbState} size={56} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-2 flex-wrap">
-                            <span className={`px-3 py-1 rounded-full text-sm font-bold bg-${getVerdictColor(verdict.verdict)}-500/20 text-${getVerdictColor(verdict.verdict)}-400 border border-${getVerdictColor(verdict.verdict)}-500/30`}>
-                              {verdict.verdict}
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono">{verdict.confidence} CONFIDENCE</span>
-                          </div>
-                          <p className="text-sm text-slate-300 leading-relaxed">{verdict.reasoning}</p>
-                        </div>
-                      </div>
-                      <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
-                        <div className="text-xs font-bold text-slate-500 uppercase mb-1.5">Recommendation</div>
-                        <p className="text-sm text-slate-300">{verdict.recommendation}</p>
-                      </div>
-                      {verdict.ioc_highlights && verdict.ioc_highlights.length > 0 && (
-                        <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1.5">Key IOCs</div>
-                          <div className="flex flex-wrap gap-2">
-                            {verdict.ioc_highlights.map((ioc, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-red-500/10 text-red-400 text-xs font-mono rounded border border-red-500/20 break-all">
-                                {ioc}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
 
               {theme !== 'desktop' && (
                 <div className="border-b border-slate-700 mb-6">
