@@ -371,7 +371,226 @@ const RULE_DEFINITIONS: Record<string, Rule> = {
     title: "Confirmed Removed from Chrome Web Store",
     description: "This extension was removed from the Chrome Web Store and appears in the MalExt malicious extensions database"
   },
+  "AI-DATA-1": {
+    id: "AI-DATA-1",
+    severity: "medium",
+    confidence: "high",
+    category: "ai_data_flow",
+    title: "External AI Vendor Endpoint Detected",
+    description: "Extension communicates with a known external AI inference API — data sent may leave organizational control"
+  },
+  "AI-DATA-2": {
+    id: "AI-DATA-2",
+    severity: "low",
+    confidence: "high",
+    category: "ai_data_flow",
+    title: "Educational Content Platform Scope",
+    description: "Extension requests access to educational platforms (Classroom, Canvas, LMS, Docs, SharePoint)"
+  },
+  "AI-DATA-3": {
+    id: "AI-DATA-3",
+    severity: "high",
+    confidence: "high",
+    category: "ai_data_flow",
+    title: "User Content Transfer Capability",
+    description: "Extension can read page/document content via DOM access permissions and transmit it to external AI services"
+  },
+  "AI-DATA-4": {
+    id: "AI-DATA-4",
+    severity: "critical",
+    confidence: "high",
+    category: "ai_data_flow",
+    title: "Shadow AI Governance Risk",
+    description: "Extension routes educational content platforms to external AI vendor APIs outside approved provider governance controls"
+  },
+  "AI-DATA-5": {
+    id: "AI-DATA-5",
+    severity: "critical",
+    confidence: "high",
+    category: "ai_data_flow",
+    title: "Full Document Workspace Exposure",
+    description: "Extension has scripting access to full document workspaces (Docs, SharePoint) and can transmit complete document contents to external AI services"
+  },
 };
+
+// --- AI Data Flow Governance Detection ---
+
+const AI_VENDOR_DOMAINS = [
+  'api.openai.com', 'chat.openai.com', 'chatgpt.com',
+  'api.anthropic.com', 'claude.ai',
+  'generativelanguage.googleapis.com', 'aistudio.google.com', 'gemini.google.com',
+  'api.cohere.ai', 'cohere.com',
+  'api-inference.huggingface.co', 'huggingface.co',
+  'api.perplexity.ai', 'perplexity.ai',
+  'api.mistral.ai', 'mistral.ai',
+  'api.together.xyz', 'together.ai',
+  'api.replicate.com', 'replicate.com',
+  'grammarly.com', 'extension-api.grammarly.com',
+  'api.writesonic.com', 'writesonic.com',
+  'api.jasper.ai', 'jasper.ai',
+  'api.copy.ai', 'copy.ai',
+  'character.ai', 'neo.character.ai',
+  'api.stability.ai', 'stability.ai',
+  'api.deepseek.com', 'deepseek.com',
+  'api.groq.com', 'groq.com',
+  'api.x.ai', 'x.ai',
+  'copilot.microsoft.com', 'api.bing.microsoft.com',
+];
+
+const EDU_CONTENT_SURFACES = [
+  'classroom.google.com',
+  'docs.google.com',
+  'sheets.google.com',
+  'slides.google.com',
+  'drive.google.com',
+  'mail.google.com',
+  'instructure.com',
+  'canvas.com',
+  'moodle.org',
+  'blackboard.com',
+  'brightspace.com',
+  'd2l.com',
+  'schoology.com',
+  'powerschool.com',
+  'itslearning.com',
+  'edmodo.com',
+  'teams.microsoft.com',
+  'sharepoint.com',
+  'office.com',
+  'onedrive.live.com',
+  'outlook.office.com',
+  '.edu',
+];
+
+const DOM_ACCESS_PERMISSIONS = ['scripting', 'activetab', 'tabs', 'webnavigation'];
+
+function checkAIDataFlow(
+  manifest: any,
+  iocs: IOC[],
+): { findings: SecurityFinding[]; behaviorFlags: BehaviorFlag[] } {
+  const findings: SecurityFinding[] = [];
+  const behaviorFlags: BehaviorFlag[] = [];
+
+  const manifestUrls: string[] = [
+    ...(manifest.host_permissions || []),
+    ...(manifest.content_scripts || []).flatMap((cs: any) => cs.matches || []),
+    ...(manifest.permissions || []).filter((p: string) => p.startsWith('http')),
+  ].map((u: string) => u.toLowerCase());
+
+  const permissions: string[] = [
+    ...(manifest.permissions || []),
+    ...(manifest.optional_permissions || []),
+  ].map((p: string) => p.toLowerCase());
+
+  const detectedAIVendors = new Set<string>();
+  for (const ioc of iocs) {
+    if (ioc.ioc_type === 'domain' || ioc.ioc_type === 'url') {
+      for (const vendor of AI_VENDOR_DOMAINS) {
+        if (ioc.ioc_value.toLowerCase().includes(vendor)) detectedAIVendors.add(vendor);
+      }
+    }
+  }
+  for (const url of manifestUrls) {
+    for (const vendor of AI_VENDOR_DOMAINS) {
+      if (url.includes(vendor)) detectedAIVendors.add(vendor);
+    }
+  }
+
+  const detectedEduSurfaces = new Set<string>();
+  for (const url of manifestUrls) {
+    for (const surface of EDU_CONTENT_SURFACES) {
+      if (url.includes(surface)) detectedEduSurfaces.add(surface);
+    }
+  }
+
+  const hasDOMAccess = permissions.some(p => DOM_ACCESS_PERMISSIONS.includes(p));
+  const aiVendorList = [...detectedAIVendors];
+  const eduSurfaceList = [...detectedEduSurfaces];
+
+  if (aiVendorList.length > 0) {
+    const rule = RULE_DEFINITIONS['AI-DATA-1'];
+    findings.push({
+      rule_id: 'AI-DATA-1',
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: rule.title,
+      description: `Extension communicates with external AI service(s): ${aiVendorList.join(', ')}. Data sent to these services may leave organizational control.`,
+      evidence: aiVendorList.join(', '),
+      file_path: 'manifest.json + iocs',
+    });
+  }
+
+  if (eduSurfaceList.length > 0) {
+    const rule = RULE_DEFINITIONS['AI-DATA-2'];
+    findings.push({
+      rule_id: 'AI-DATA-2',
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: rule.title,
+      description: `Extension requests access to educational content platforms: ${eduSurfaceList.join(', ')}.`,
+      evidence: eduSurfaceList.join(', '),
+      file_path: 'manifest.json',
+    });
+  }
+
+  if (aiVendorList.length > 0 && hasDOMAccess) {
+    const domPerms = permissions.filter(p => DOM_ACCESS_PERMISSIONS.includes(p));
+    const rule = RULE_DEFINITIONS['AI-DATA-3'];
+    findings.push({
+      rule_id: 'AI-DATA-3',
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: rule.title,
+      description: 'Extension can read page/document content via DOM access permissions and transmit it to external AI services.',
+      evidence: `AI endpoints: ${aiVendorList.join(', ')} | DOM permissions: ${domPerms.join(', ')}`,
+      file_path: 'manifest.json',
+    });
+  }
+
+  if (aiVendorList.length > 0 && eduSurfaceList.length > 0) {
+    const rule = RULE_DEFINITIONS['AI-DATA-4'];
+    findings.push({
+      rule_id: 'AI-DATA-4',
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: rule.title,
+      description: 'Extension exposes educational content platforms to external AI vendor APIs — shadow AI data flows outside organizational governance controls.',
+      evidence: `AI vendors: ${aiVendorList.join(', ')} | Edu scope: ${eduSurfaceList.join(', ')}`,
+      file_path: 'manifest.json',
+    });
+    behaviorFlags.push({
+      flag_type: 'shadow_ai_risk',
+      severity: 'critical',
+      description: 'Extension routes educational content platform access to external AI vendor endpoints outside approved provider governance',
+      evidence: [
+        ...aiVendorList.map(v => `AI vendor: ${v}`),
+        ...eduSurfaceList.map(s => `Edu scope: ${s}`),
+      ],
+    });
+  }
+
+  const fullDocSurfaces = ['docs.google.com', 'sheets.google.com', 'slides.google.com', 'drive.google.com', 'sharepoint.com', 'onedrive.live.com', 'office.com'];
+  const exposedDocSurfaces = eduSurfaceList.filter(s => fullDocSurfaces.some(fd => s.includes(fd)));
+  if (aiVendorList.length > 0 && exposedDocSurfaces.length > 0 && hasDOMAccess) {
+    const rule = RULE_DEFINITIONS['AI-DATA-5'];
+    findings.push({
+      rule_id: 'AI-DATA-5',
+      category: rule.category,
+      severity: rule.severity,
+      confidence: rule.confidence,
+      title: rule.title,
+      description: 'Extension has scripting access to full document workspaces and can transmit complete document contents to external AI services.',
+      evidence: `Doc surfaces: ${exposedDocSurfaces.join(', ')} | AI vendors: ${aiVendorList.join(', ')}`,
+      file_path: 'manifest.json',
+    });
+  }
+
+  return { findings, behaviorFlags };
+}
 
 // --- Phase 7: retire.js + OSV.dev vulnerable library detection ---
 
@@ -817,6 +1036,10 @@ Deno.serve(async (req: Request) => {
     const behaviorAnalysis = analyzeBehaviorPatterns(manifest, findings, iocs);
     behaviorFlags.push(...behaviorAnalysis.flags);
     findings.push(...behaviorAnalysis.findings);
+
+    const aiDataFlow = checkAIDataFlow(manifest, iocs);
+    findings.push(...aiDataFlow.findings);
+    behaviorFlags.push(...aiDataFlow.behaviorFlags);
 
     const obfuscationScore = calculateObfuscationScore(files);
     const fileHashes = await calculateFileHashes(files, manifest);

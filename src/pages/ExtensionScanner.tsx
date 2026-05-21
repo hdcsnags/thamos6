@@ -49,6 +49,13 @@ interface VerdictResult {
   watch_items: string[];
   recommendation: string;
   ioc_highlights?: string[];
+  organizational_suitability?: {
+    rating: 'APPROVED' | 'REVIEW_REQUIRED' | 'NOT_APPROVED' | 'UNKNOWN';
+    ai_data_flow_risk: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    detected_ai_vendors: string[];
+    content_surfaces: string[];
+    reasoning: string;
+  };
 }
 
 interface SecurityFinding {
@@ -324,7 +331,13 @@ Safety Guidelines: ${JSON.stringify(crxFull.safety_guidelines)}`
 
 Do not invent evidence. Use only the supplied artifacts. If raw scanner risk and contextual verdict differ, explain why. Separate confirmed behavior from capability risk. A legitimate extension can have high capability risk if its function requires broad page access. Lower final verdict only when permissions, behavior, purpose, reputation, and external intel support that conclusion. Raise final verdict when multiple independent signals converge: sensitive data access, network exfiltration, remote control/config, dynamic execution, evasion, suspicious domains, store removal, or permission-purpose mismatch.
 
+ORGANIZATIONAL SUITABILITY is a separate assessment from malware risk. An extension can be LIKELY_SAFE from a threat perspective but still NOT_APPROVED for organizational use. When AI-DATA findings are present, assess whether the extension's AI vendor communication is inherent to its stated purpose, and whether the combination of AI vendor access + educational content platform scope creates shadow AI governance risk. Educational organizations require formal board-level agreements with AI vendors that receive student or staff data. Google AI (Gemini, Workspace AI) and Microsoft Copilot are commonly pre-approved in schools using those suites. OpenAI, Anthropic, Grammarly, Perplexity, and others typically require separate review. If no AI-DATA findings are present, return organizational_suitability with rating UNKNOWN.
+
 Return only valid JSON matching the requested schema.`;
+
+      const aiDataStr = aiDataFindings.length > 0
+        ? aiDataFindings.map(f => `[${f.rule_id}] ${f.title}\n${f.description}\nEvidence: ${f.evidence}`).join('\n\n')
+        : 'None detected';
 
       const prompt = `Analyze this Chrome extension and return a calibrated analyst verdict as JSON.
 
@@ -351,6 +364,9 @@ ${vaultDeltaStr}
 
 IOCS DETECTED (${iocs.length} total, showing first 20):
 ${iocSummary}
+
+AI DATA FLOW SIGNALS (${aiDataFindings.length} detected — governance assessment, separate from malware verdict):
+${aiDataStr}
 
 IMPORTANT: When evaluating MAIN-world or broad content script access, decide whether it is purpose-aligned. If purpose-aligned, classify it as CAPABILITY_RISK or WATCH_ITEM rather than CONFIRMED_BEHAVIOR unless paired with exfiltration, credential targeting, remote command/config abuse, or evasion.
 
@@ -386,7 +402,14 @@ Return ONLY valid JSON — no markdown, no prose:
   "positive_signals": ["<signal>"],
   "watch_items": ["<item>"],
   "recommendation": "<1-2 sentences>",
-  "ioc_highlights": ["<critical IOC if any>"]
+  "ioc_highlights": ["<critical IOC if any>"],
+  "organizational_suitability": {
+    "rating": "APPROVED" | "REVIEW_REQUIRED" | "NOT_APPROVED" | "UNKNOWN",
+    "ai_data_flow_risk": "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+    "detected_ai_vendors": ["<vendor domain if any>"],
+    "content_surfaces": ["<edu platform if any>"],
+    "reasoning": "<1-2 sentences on governance posture — mention which AI vendors were detected and whether edu content is exposed>"
+  }
 }`;
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
@@ -497,6 +520,7 @@ Return ONLY valid JSON — no markdown, no prose:
   const malExtFlags = behaviorFlags.filter(f => f.flag_type === 'confirmed_removed_from_store');
   const vaultDeltaFlags = behaviorFlags.filter(f => f.flag_type === 'vault_delta_detected');
   const otherBehaviorFlags = behaviorFlags.filter(f => f.flag_type !== 'vault_delta_detected' && f.flag_type !== 'confirmed_removed_from_store');
+  const aiDataFindings = findings.filter(f => f.category === 'ai_data_flow');
 
   const crxData = currentAnalysis?.crxcavator_data?.available ? currentAnalysis.crxcavator_data : null;
 
@@ -917,6 +941,82 @@ Return ONLY valid JSON — no markdown, no prose:
                   )}
                 </div>
               </div>
+
+              {/* Organizational Suitability — shown whenever AI data flow signals exist, even before verdict */}
+              {(aiDataFindings.length > 0 || verdict?.organizational_suitability) && (() => {
+                const os = verdict?.organizational_suitability;
+                const ratingColor = !os || os.rating === 'UNKNOWN' ? 'slate'
+                  : os.rating === 'APPROVED' ? 'green'
+                  : os.rating === 'REVIEW_REQUIRED' ? 'amber'
+                  : 'red';
+                const riskColor = !os || os.ai_data_flow_risk === 'NONE' ? 'slate'
+                  : os.ai_data_flow_risk === 'LOW' ? 'blue'
+                  : os.ai_data_flow_risk === 'MEDIUM' ? 'yellow'
+                  : os.ai_data_flow_risk === 'HIGH' ? 'orange'
+                  : 'red';
+                const vendors = os?.detected_ai_vendors?.length ? os.detected_ai_vendors : aiDataFindings.filter(f => f.rule_id === 'AI-DATA-1').flatMap(f => f.evidence.split(', '));
+                const surfaces = os?.content_surfaces?.length ? os.content_surfaces : aiDataFindings.filter(f => f.rule_id === 'AI-DATA-2').flatMap(f => f.evidence.split(', '));
+                return (
+                  <div className={`mb-4 border-2 rounded-xl p-4 ${
+                    ratingColor === 'red' ? 'border-red-500/40 bg-red-500/5'
+                    : ratingColor === 'amber' ? 'border-amber-500/40 bg-amber-500/5'
+                    : ratingColor === 'green' ? 'border-green-500/30 bg-green-500/5'
+                    : 'border-slate-700 bg-slate-800/30'
+                  }`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-4 h-4 text-slate-400" />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Organizational Suitability</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {os?.ai_data_flow_risk && os.ai_data_flow_risk !== 'NONE' && (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border bg-${riskColor}-500/20 text-${riskColor}-400 border-${riskColor}-500/30`}>
+                            AI Risk: {os.ai_data_flow_risk}
+                          </span>
+                        )}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border bg-${ratingColor}-500/20 text-${ratingColor}-400 border-${ratingColor}-500/30`}>
+                          {os ? os.rating.replace('_', ' ') : 'PENDING ANALYSIS'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {(vendors.length > 0 || surfaces.length > 0) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        {vendors.length > 0 && (
+                          <div>
+                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Detected AI Vendors</div>
+                            <div className="flex flex-wrap gap-1">
+                              {vendors.map((v, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-purple-500/15 text-purple-300 text-[10px] font-mono rounded border border-purple-500/20">{v}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {surfaces.length > 0 && (
+                          <div>
+                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Content Surfaces Exposed</div>
+                            <div className="flex flex-wrap gap-1">
+                              {surfaces.map((s, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-blue-500/15 text-blue-300 text-[10px] font-mono rounded border border-blue-500/20">{s}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {os?.reasoning ? (
+                      <p className="text-xs text-slate-300 leading-relaxed">{os.reasoning}</p>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">
+                        {aiDataFindings.length > 0
+                          ? `${aiDataFindings.length} AI data flow signal(s) detected. Run THAMOS Analysis for full governance assessment.`
+                          : 'No AI data flow signals detected in this extension.'}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Why They Differ — full width below three panels */}
               {verdict?.why_verdict_differs && (
