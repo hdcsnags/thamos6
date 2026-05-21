@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check, Activity, Database, FileText, Zap, Brain } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../contexts/themecontext';
@@ -95,6 +95,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   const [showHistory, setShowHistory] = useState(false);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'findings' | 'iocs' | 'behavior' | 'files' | 'vault'>('findings');
+  const tabStripRef = useRef<HTMLDivElement>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [vaultStatus, setVaultStatus] = useState<'none' | 'adding' | 'added'>('none');
   const [verdictLoading, setVerdictLoading] = useState(false);
@@ -1049,10 +1050,10 @@ Return ONLY valid JSON — no markdown, no prose:
               )}
 
               {theme !== 'desktop' && (
-                <div className="border-b border-slate-700 mb-6">
+                <div ref={tabStripRef} className="border-b border-slate-700 mb-6">
                   <div className="flex gap-4">
                     <button
-                      onClick={() => setActiveTab('findings')}
+                      onClick={() => { setActiveTab('findings'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
                       className={`pb-3 px-2 font-medium transition-all border-b-2 ${
                         activeTab === 'findings'
                           ? 'border-cyan-500 text-cyan-400'
@@ -1062,7 +1063,7 @@ Return ONLY valid JSON — no markdown, no prose:
                       Findings ({findings.length})
                     </button>
                     <button
-                      onClick={() => setActiveTab('iocs')}
+                      onClick={() => { setActiveTab('iocs'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
                       className={`pb-3 px-2 font-medium transition-all border-b-2 ${
                         activeTab === 'iocs'
                           ? 'border-cyan-500 text-cyan-400'
@@ -1072,7 +1073,7 @@ Return ONLY valid JSON — no markdown, no prose:
                       IOCs ({iocs.length})
                     </button>
                     <button
-                      onClick={() => setActiveTab('behavior')}
+                      onClick={() => { setActiveTab('behavior'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
                       className={`pb-3 px-2 font-medium transition-all border-b-2 ${
                         activeTab === 'behavior'
                           ? 'border-cyan-500 text-cyan-400'
@@ -1082,7 +1083,7 @@ Return ONLY valid JSON — no markdown, no prose:
                       Behavior ({otherBehaviorFlags.length})
                     </button>
                     <button
-                      onClick={() => setActiveTab('files')}
+                      onClick={() => { setActiveTab('files'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
                       className={`pb-3 px-2 font-medium transition-all border-b-2 ${
                         activeTab === 'files'
                           ? 'border-cyan-500 text-cyan-400'
