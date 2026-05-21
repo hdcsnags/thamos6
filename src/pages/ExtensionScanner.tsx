@@ -775,7 +775,7 @@ Return ONLY valid JSON — no markdown, no prose:
               )}
 
               {/* Three-panel summary: Raw Scanner | External Intel | THAMOS Verdict */}
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
 
                 {/* Raw Scanner Risk */}
                 <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
@@ -867,12 +867,7 @@ Return ONLY valid JSON — no markdown, no prose:
                       <Brain className="w-3.5 h-3.5 text-cyan-400" />
                       <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Thamos Verdict</span>
                     </div>
-                    {!verdictLoading && !verdict && (
-                      <button onClick={runThamosVerdict}
-                        className="text-[10px] px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded border border-cyan-500/30 transition-colors font-semibold">
-                        Analyze
-                      </button>
-                    )}
+                    {/* small re-run button shown only after a verdict exists */}
                     {verdict && !verdictLoading && (
                       <button onClick={runThamosVerdict}
                         className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
@@ -882,9 +877,16 @@ Return ONLY valid JSON — no markdown, no prose:
                   </div>
 
                   {!verdict && !verdictLoading && !verdictError && (
-                    <div className="flex flex-col items-center py-3 gap-2">
+                    <div className="flex flex-col items-center py-3 gap-3">
                       <T6Orb state="idle" size={44} />
                       <span className="text-[10px] text-slate-500">Awaiting analysis</span>
+                      <button
+                        onClick={runThamosVerdict}
+                        className="w-full px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-500/30 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Brain className="w-3.5 h-3.5" />
+                        Run THAMOS Analysis
+                      </button>
                     </div>
                   )}
                   {verdictLoading && (
@@ -1162,34 +1164,13 @@ Return ONLY valid JSON — no markdown, no prose:
               )}
 
               {activeTab === 'iocs' && (
-                <div className="space-y-4">
+                <div>
                   {iocs.length === 0 ? (
                     <div className="p-8 text-center text-slate-500 bg-slate-800/30 rounded-lg border border-slate-800">
                       No Indicators of Compromise detected in the source code.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {iocs.map(ioc => (
-                        <div key={ioc.id} className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                              {ioc.ioc_type}
-                            </span>
-                            <button
-                              onClick={() => viewFileForFinding(ioc.source_file)}
-                              className="text-[10px] text-slate-500 hover:text-cyan-400 transition-colors flex items-center gap-1 font-mono"
-                            >
-                              {ioc.source_file.split('/').pop()}
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                          <div className="text-sm font-mono text-white mb-3 break-all bg-slate-950/50 p-2 rounded">
-                            {ioc.ioc_value}
-                          </div>
-                          <IOCEnrichment iocs={[ioc]} />
-                        </div>
-                      ))}
-                    </div>
+                    <IOCEnrichment iocs={iocs} />
                   )}
                 </div>
               )}

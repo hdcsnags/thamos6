@@ -418,8 +418,8 @@ export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
                             <span className="text-xs text-slate-500 mt-0.5 block">Known safe infrastructure</span>
                           )}
                         </div>
-                        <div className="flex-shrink-0 px-4 text-sm text-slate-400">
-                          {ioc.source_file}
+                        <div className="flex-shrink-0 px-4 text-sm text-slate-400 max-w-[140px] truncate" title={ioc.source_file}>
+                          {ioc.source_file.split('/').pop()}
                         </div>
                         <div className="w-24 flex-shrink-0">
                           {enrichment?.status === 'done' && (

@@ -140,7 +140,7 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
         <div className="flex-shrink-0 w-16 px-3 py-1 text-right text-slate-500 select-none text-xs font-mono">
           {lineNumber}
         </div>
-        <div className="flex-1 px-3 py-1 text-sm font-mono whitespace-pre overflow-x-auto">
+        <div className="flex-1 px-3 py-1 text-sm font-mono whitespace-pre">
           <code className="text-slate-300">{line || ' '}</code>
         </div>
         <div className="flex-shrink-0 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -232,7 +232,7 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
       )}
 
       <div ref={contentRef} className="flex-1 overflow-auto bg-slate-900">
-        <div className="relative">
+        <div className="relative min-w-max">
           {lines.map((line, idx) => renderLineWithSyntax(line, idx + 1))}
         </div>
       </div>
