@@ -920,12 +920,28 @@ Deno.serve(async (req: Request) => {
       const authClient = createClient(supabaseUrl, supabaseAnonKey);
       const { data: userData, error: userError } = await authClient.auth.getUser(token);
       if (userError || !userData?.user) {
-        return new Response(
-          JSON.stringify({ error: "Invalid or expired authentication token" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        // Not a user JWT — it may still be a valid project API key (legacy
+        // anon JWT or sb_publishable_*) that differs from the runtime env's
+        // SUPABASE_ANON_KEY. Let the gateway validate it: only recognized
+        // project API keys get a 200 from the auth health endpoint.
+        let validApiKey = false;
+        try {
+          const healthRes = await fetch(`${supabaseUrl}/auth/v1/health`, {
+            headers: { apikey: token },
+            signal: AbortSignal.timeout(5000),
+          });
+          validApiKey = healthRes.ok;
+        } catch { /* network failure = treat as invalid */ }
+
+        if (!validApiKey) {
+          return new Response(
+            JSON.stringify({ error: "Invalid or expired authentication token" }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        userId = userData.user.id;
       }
-      userId = userData.user.id;
     }
 
     const { extensionUrl }: AnalysisRequest = await req.json();
