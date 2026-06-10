@@ -58,10 +58,12 @@ export default function ExtensionResult({ extensionId }: ExtensionResultProps) {
         const extensionUrl = `https://chromewebstore.google.com/detail/${extensionId}`;
         
         const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-extension`;
+        const { data: { session } } = await supabase.auth.getSession();
+        const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ extensionUrl }),

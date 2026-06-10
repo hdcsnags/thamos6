@@ -211,6 +211,25 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## Sprint Log
 
+### Sprint 2026-06-10 — Extension Scanner Phase A (Security + FP Hardening)
+**Agent:** GitHub Copilot CLI (Claude Fable 5)
+**Scope:** Critical security fixes + top false-positive defusal in the extension scanner, per full scanner audit (vs CRXplorer-depth benchmark).
+
+**Completed:**
+- **Auth validation in `analyze-extension`** — previously any non-empty `Authorization` header was accepted while the function ran as service role (internet-writable). Now requires the project anon key (anonymous tier) or a valid user JWT verified via `auth.getUser()`.
+- **RLS fix migration** (`20260610194500_lock_down_extension_iocs_insert.sql`) — `extension_iocs` INSERT was `WITH CHECK (true)` with no role restriction = IOC/prompt poisoning vector. Now service_role only.
+- **Vault cross-tenant fix** — vault delta lookup/update was unscoped by user (broke `maybeSingle()` when 2+ users vaulted the same extension, and mutated other users' vault pointers). Now scoped to the authenticated requester; frontend now sends session token (falls back to anon key).
+- **FP defusal:** GRAB-1 keywords word-boundary anchored + require ≥2 distinct matches (bare `pin` matched "spinner" → "financial theft" criticals); C2-1 `setInterval`+"callback" branch removed; API-1/DYN-2 require a non-whitelisted literal destination in-file else downgraded to capability-level severity/confidence; NET-3 WebSocket downgraded for whitelisted hosts; `hasExfilMethods` now ignores whitelisted domains (previously ANY url string = "exfil capable").
+- **Scoring:** per-rule dedup (same rule in N files = 1 signal + ≤50% repeat bonus, not N× criticals); AI-DATA governance findings and `shadow_ai_risk` flag excluded from the malware risk score (governance ≠ malware).
+
+**Decisions Made:**
+- Anonymous-tier scanning kept (anon key accepted); vault delta requires login.
+- Evidence collection unchanged — only severity/confidence gating and scoring were tuned (audit principle: don't weaken collection, improve correlation).
+
+**Deferred / Next Sprint (Phase B+ from audit):**
+- Server-side THAMOS verdict grounded in raw `extension_files` contents (fixes AI blindly trusting scanner labels); persist verdicts (`extension_verdicts`).
+- DECODE pass for base64/charcode payloads; `.mjs` coverage; AST-based flow rules; obfuscation-vs-minification split; four-axis scoring (capability/behavior/reputation/governance); org disposition workflow tables.
+
 ### Sprint 2026-05-04 — UI/UX Audit & Documentation
 **Agent:** Kimi Code CLI
 **Scope:** Frontend-focused audit of Desktop theme. No backend/Supabase changes.

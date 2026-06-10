@@ -229,10 +229,14 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-extension`;
+      // Send the user's session token when available — the edge function
+      // uses it for per-user vault delta tracking. Anon key = anonymous tier.
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ extensionUrl: finalUrl }),

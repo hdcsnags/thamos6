@@ -875,6 +875,22 @@ const WHITELISTED_DOMAINS = [
   'sentry.io', 'mixpanel.com', 'segment.com',
 ];
 
+// Returns hostnames of literal http(s) URLs in code that are NOT on the
+// whitelist. Used to gate exfiltration-style rules so that mere co-location
+// of an API call and "a network call somewhere in the bundle" no longer
+// produces critical findings on its own.
+function findExternalDestinations(code: string): string[] {
+  const urls = code.match(/https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g) || [];
+  const hosts = new Set<string>();
+  for (const u of urls) {
+    try {
+      const host = new URL(u).hostname;
+      if (host && !WHITELISTED_DOMAINS.some(d => host.includes(d))) hosts.add(host);
+    } catch { /* unparsable, ignore */ }
+  }
+  return [...hosts];
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -883,12 +899,33 @@ Deno.serve(async (req: Request) => {
   const scanStartTime = Date.now();
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Validate the bearer token: accept the project anon key (anonymous tier)
+    // or a valid user JWT. Reject everything else — previously any non-empty
+    // Authorization header was accepted while the function ran as service role.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!token) {
       return new Response(
         JSON.stringify({ error: "Authentication required" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    let userId: string | null = null;
+    if (token !== supabaseAnonKey) {
+      const authClient = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: userData, error: userError } = await authClient.auth.getUser(token);
+      if (userError || !userData?.user) {
+        return new Response(
+          JSON.stringify({ error: "Invalid or expired authentication token" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      userId = userData.user.id;
     }
 
     const { extensionUrl }: AnalysisRequest = await req.json();
@@ -986,8 +1023,6 @@ Deno.serve(async (req: Request) => {
     manifest = resolveManifestI18n(manifest, files);
     console.log(`Manifest parsed: ${manifest.name} v${manifest.version}`);
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const findings: SecurityFinding[] = [];
@@ -1175,12 +1210,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Vault delta computation
-    const { data: vaultEntry } = await supabase
-      .from('extension_vault')
-      .select('*')
-      .eq('extension_id', extensionId)
-      .maybeSingle();
+    // Vault delta computation — scoped to the requesting user's vault entry.
+    // (Previously this matched any user's vault row under service role, which
+    // both leaked drift state across tenants and broke maybeSingle() when two
+    // users vaulted the same extension.)
+    let vaultEntry: any = null;
+    if (userId) {
+      const { data } = await supabase
+        .from('extension_vault')
+        .select('*')
+        .eq('extension_id', extensionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      vaultEntry = data;
+    }
 
     if (vaultEntry && vaultEntry.baseline_analysis_id) {
       const compareId = vaultEntry.latest_analysis_id || vaultEntry.baseline_analysis_id;
@@ -1250,7 +1293,7 @@ Deno.serve(async (req: Request) => {
         latest_analysis_id: analysis.id,
         last_scanned_at: new Date().toISOString(),
         extension_name: manifest.name,
-      }).eq('extension_id', extensionId);
+      }).eq('extension_id', extensionId).eq('user_id', userId);
     }
 
     const crxplorerData = await crxplorerPromise;
@@ -1603,6 +1646,7 @@ async function analyzeAllFiles(
 function analyzeJavaScript(filename: string, code: string, findings: SecurityFinding[], iocs: IOC[], allExtensionIds: string[]): void {
   const hasCookieAccess = /chrome\.cookies\.(getAll|get)\s*\(/.test(code);
   const hasNetworkCall = /fetch\s*\(|XMLHttpRequest|\.send\s*\(/.test(code);
+  const externalHosts = findExternalDestinations(code);
 
   if (hasCookieAccess && hasNetworkCall) {
     const rule = RULE_DEFINITIONS["API-1"];
@@ -1612,13 +1656,19 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
       ? `${cookieMatch[0].substring(0, 50)}... → fetch('${fetchMatch[1]}')`
       : "chrome.cookies + network call detected";
 
+    // Only treat as confirmed-exfil severity when the file also contains a
+    // literal non-whitelisted destination. Co-location alone in a bundled
+    // file is capability, not behavior.
+    const hasExternalDest = externalHosts.length > 0;
     findings.push({
       rule_id: "API-1",
       category: rule.category,
-      severity: rule.severity,
-      confidence: rule.confidence,
+      severity: hasExternalDest ? rule.severity : "medium",
+      confidence: hasExternalDest ? rule.confidence : "low",
       title: rule.title,
-      description: rule.description,
+      description: hasExternalDest
+        ? `${rule.description}. Non-whitelisted destination(s) in same file: ${externalHosts.slice(0, 3).join(', ')}`
+        : `${rule.description}. NOTE: cookie access and network calls co-exist in this file but no non-whitelisted literal destination was found — likely bundler co-location (capability, not confirmed behavior).`,
       evidence: evidence.substring(0, 200),
       file_path: filename,
     });
@@ -1704,7 +1754,9 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
       file_path: filename,
     });
 
-    if (hasNetworkCall && hasEval) {
+    if (hasNetworkCall && hasEval && externalHosts.length > 0) {
+      // Tightened: requires a literal non-whitelisted destination in the same
+      // file. eval + fetch co-located in a bundle is covered by DYN-1 alone.
       const rule2 = RULE_DEFINITIONS["DYN-2"];
       findings.push({
         rule_id: "DYN-2",
@@ -1712,17 +1764,19 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
         severity: rule2.severity,
         confidence: rule2.confidence,
         title: rule2.title,
-        description: rule2.description,
-        evidence: "fetch() + eval() detected",
+        description: `${rule2.description}. Non-whitelisted destination(s): ${externalHosts.slice(0, 3).join(', ')}`,
+        evidence: "fetch() + eval() + external destination detected",
         file_path: filename,
       });
     }
   }
 
   // C2-1: Callback polling pattern (setup/callback/finish endpoint family)
+  // Note: the former third branch (setInterval + the word "callback" + any
+  // network call) was removed — "callback" appears in virtually every JS
+  // bundle and generated critical-severity false positives.
   if (/\/extensions\/(setup|callback|finish)\b/.test(code) ||
-      /\/(setup|callback|finish)\?.*uuid/.test(code) ||
-      (/setInterval|setTimeout/.test(code) && /callback/.test(code) && hasNetworkCall)) {
+      /\/(setup|callback|finish)\?.*uuid/.test(code)) {
     const rule = RULE_DEFINITIONS["C2-1"];
     const match = code.match(/\/extensions\/(setup|callback|finish)[^\s'"`]{0,60}/);
     findings.push({
@@ -1806,16 +1860,21 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
   }
 
   // GRAB-1: Financial data form grabber
-  const FINANCIAL_KEYWORDS = [
-    'cardnumber', 'card.number', 'card_number', 'creditcard',
+  // Word-boundary anchored (bare substrings like "pin" matched "spinner",
+  // "pinned", etc.) and requires >= 2 distinct financial keywords — real
+  // grabber payloads carry keyword lists, benign forms rarely match twice.
+  const FINANCIAL_KEYWORD_PATTERNS = [
+    'card[._-]?number', 'creditcard',
     'cvv', 'cvc', 'ccv', 'securitycode',
-    'iban', 'bic', 'swift', 'routingnumber',
-    'ssn', 'socialsecurity', 'taxid', 'ein',
-    'pin', 'passcode', 'otp', 'verificationcode',
-    'accountnumber', 'bankaccount'
+    'iban', 'swift[._-]?code', 'routing[._-]?number',
+    'ssn', 'socialsecurity', 'taxid', 'ein[._-]?number',
+    'pin[._-]?(code|number)', 'passcode', 'otp', 'verificationcode',
+    'account[._-]?number', 'bankaccount'
   ];
-  const financialPattern = new RegExp(FINANCIAL_KEYWORDS.join('|'), 'i');
-  if (financialPattern.test(code) &&
+  const financialMatches = FINANCIAL_KEYWORD_PATTERNS.filter(p =>
+    new RegExp(`\\b${p}\\b`, 'i').test(code)
+  );
+  if (financialMatches.length >= 2 &&
       /addEventListener.*input|addEventListener.*change|addEventListener.*keyup/.test(code) &&
       hasNetworkCall) {
     const rule = RULE_DEFINITIONS["GRAB-1"];
@@ -1823,7 +1882,7 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
       rule_id: "GRAB-1",
       category: rule.category, severity: rule.severity, confidence: rule.confidence,
       title: rule.title, description: rule.description,
-      evidence: "Financial keyword list + input event hooks + network exfiltration",
+      evidence: `Financial keywords matched: ${financialMatches.join(', ')} + input event hooks + network exfiltration`,
       file_path: filename,
     });
   }
@@ -1869,15 +1928,35 @@ function analyzeJavaScript(filename: string, code: string, findings: SecurityFin
     });
   }
 
-  // NET-3: WebSocket C2 channel
-  if (/new\s+WebSocket\s*\(\s*['"`]wss?:\/\//.test(code)) {
+  // NET-3: WebSocket channel — critical only for non-whitelisted hosts;
+  // a wss:// connection to the extension's own/whitelisted backend is normal.
+  const wsMatch = code.match(/new\s+WebSocket\s*\(\s*['"`](wss?:\/\/[^'"`]+)['"`]/);
+  if (wsMatch) {
     const rule = RULE_DEFINITIONS["NET-3"];
-    const match = code.match(/new\s+WebSocket\s*\(\s*['"`][^'"`]+['"`]/);
+    let wsHost = '';
+    try { wsHost = new URL(wsMatch[1]).hostname; } catch { /* keep empty */ }
+    const isWhitelistedWs = wsHost && WHITELISTED_DOMAINS.some(d => wsHost.includes(d));
     findings.push({
       rule_id: "NET-3",
-      category: rule.category, severity: rule.severity, confidence: rule.confidence,
-      title: rule.title, description: rule.description,
-      evidence: match ? match[0] : "WebSocket connection to external host",
+      category: rule.category,
+      severity: isWhitelistedWs ? "medium" : rule.severity,
+      confidence: isWhitelistedWs ? "low" : rule.confidence,
+      title: rule.title,
+      description: isWhitelistedWs
+        ? `WebSocket connection to whitelisted host ${wsHost} — likely legitimate realtime backend.`
+        : rule.description,
+      evidence: wsMatch[0],
+      file_path: filename,
+    });
+  } else if (/new\s+WebSocket\s*\(/.test(code)) {
+    // Dynamic WebSocket URL — keep visibility, lower confidence
+    const rule = RULE_DEFINITIONS["NET-3"];
+    findings.push({
+      rule_id: "NET-3",
+      category: rule.category, severity: "high", confidence: "medium",
+      title: rule.title,
+      description: rule.description + " (destination constructed at runtime)",
+      evidence: "new WebSocket() with dynamic URL",
       file_path: filename,
     });
   }
@@ -2146,7 +2225,13 @@ function analyzeBehaviorPatterns(
   const hasCookies = (manifest.permissions || []).includes("cookies");
   const hasProxy = (manifest.permissions || []).includes("proxy");
 
-  const hasExfilMethods = iocs.some(ioc => ioc.ioc_type === "url" || ioc.ioc_type === "domain");
+  // "External communication" must mean a non-whitelisted destination —
+  // previously any URL string anywhere (license headers, w3.org namespaces)
+  // marked the extension as having exfil capability.
+  const hasExfilMethods = iocs.some(ioc =>
+    (ioc.ioc_type === "url" || ioc.ioc_type === "domain") &&
+    !WHITELISTED_DOMAINS.some(d => ioc.ioc_value.includes(d))
+  );
 
   const hasKeyListeners = findings.some(f =>
     f.evidence && (f.evidence.includes("keydown") || f.evidence.includes("keypress"))
@@ -2334,14 +2419,38 @@ function calculateRiskScore(findings: SecurityFinding[], behaviorFlags: Behavior
     high: 1.0,
   };
 
-  let score = 0;
+  // Deduplicate by rule: the same rule firing in N bundled files is one
+  // signal, not N. First hit counts at full weight; each repeat adds 10%,
+  // capped at +50%. Findings without a rule_id are keyed by title.
+  // AI-DATA governance findings are excluded — shadow-AI governance risk is
+  // a separate assessment surfaced via organizational_suitability, and was
+  // previously inflating the malware risk score.
+  const ruleGroups = new Map<string, { finding: SecurityFinding; count: number }>();
   for (const finding of findings) {
+    if (finding.category === 'ai_data_flow') continue;
+    const key = finding.rule_id || finding.title;
+    const existing = ruleGroups.get(key);
+    if (existing) {
+      existing.count++;
+      // keep the highest-severity instance as representative
+      if ((severityScores[finding.severity] || 0) > (severityScores[existing.finding.severity] || 0)) {
+        existing.finding = finding;
+      }
+    } else {
+      ruleGroups.set(key, { finding, count: 1 });
+    }
+  }
+
+  let score = 0;
+  for (const { finding, count } of ruleGroups.values()) {
     const baseScore = severityScores[finding.severity] || 0;
     const multiplier = confidenceMultipliers[finding.confidence || 'medium'] || 0.7;
-    score += baseScore * multiplier;
+    const repeatFactor = Math.min(1.5, 1 + 0.1 * (count - 1));
+    score += baseScore * multiplier * repeatFactor;
   }
 
   for (const flag of behaviorFlags) {
+    if (flag.flag_type === 'shadow_ai_risk') continue;
     score += severityScores[flag.severity] || 0;
   }
 
