@@ -211,6 +211,30 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## Sprint Log
 
+### Sprint 2026-06-10 — Extension Scanner Phase B (Grounded AI Verdict)
+**Agent:** GitHub Copilot CLI (Claude)
+**Scope:** Move THAMOS verdict server-side, ground it in actual code evidence, persist verdicts
+
+**Completed:**
+- [x] New `extension_verdicts` table (migration `20260610201000`) — RLS: authenticated SELECT, service_role INSERT; applied to production
+- [x] New edge function `supabase/functions/extension-verdict/index.ts` (deployed):
+  - Requires a logged-in user (JWT verified); uses user's Anthropic/OpenAI key (same encryption scheme as ai-chat)
+  - Loads analysis/findings/IOCs/CRXplorer data server-side — client can no longer tamper with verdict inputs
+  - Pulls raw file contents from `extension_files`, extracts code windows (±1500 chars) around each finding's evidence (max 8 files / 45KB budget, severity-prioritized)
+  - Prompt now instructs the model to CONFIRM/REFUTE/CAPABILITY_ONLY/UNVERIFIABLE each finding against the actual code — fixes the "blindly trusts scanner labels" gap
+  - IOCs ranked by suspicion (IPs, suspicious TLDs first; whitelisted CDNs last) before the top-25 cut
+  - Verdict persisted to `extension_verdicts` (audit trail for BLOCK/REMOVE decisions)
+- [x] `ExtensionScanner.tsx`: `runThamosVerdict` now calls the new function (~170 lines of client-side prompt construction removed); persisted verdicts auto-load when viewing an analysis; new "Finding Verification — Code-Grounded" UI block with CONFIRMED/REFUTED badges per rule
+- [x] Production verified: 401 for no-auth/anon/garbage tokens; build clean
+
+**Decisions Made:**
+- Verdict requires login (uses the analyst's own API key) — anonymous scans still work, verdicts don't
+- Old ai-chat-based client flow fully removed rather than kept as fallback
+
+**Deferred / Next Sprint:**
+- Phase C/D: DECODE pass, .mjs coverage, four-axis scoring, org disposition workflow
+- Verdict history UI (table stores all verdicts; UI shows latest only)
+
 ### Sprint 2026-06-10 — Extension Scanner Phase A (Security + FP Hardening)
 **Agent:** GitHub Copilot CLI (Claude Fable 5)
 **Scope:** Critical security fixes + top false-positive defusal in the extension scanner, per full scanner audit (vs CRXplorer-depth benchmark).

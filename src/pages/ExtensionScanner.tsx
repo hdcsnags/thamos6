@@ -36,6 +36,13 @@ interface TopConcern {
   evidence: string;
 }
 
+interface FindingAssessment {
+  rule_id: string;
+  file_path: string;
+  assessment: 'CONFIRMED' | 'REFUTED' | 'CAPABILITY_ONLY' | 'UNVERIFIABLE';
+  reasoning: string;
+}
+
 interface VerdictResult {
   verdict: 'MALICIOUS' | 'OVERPRIVILEGED' | 'SUSPICIOUS' | 'LIKELY_SAFE';
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -44,6 +51,7 @@ interface VerdictResult {
   external_intel_interpretation: { provider: string; score: number | null; risk_level: string | null; summary: string };
   purpose_fit: { rating: 'STRONG' | 'PARTIAL' | 'WEAK' | 'UNKNOWN'; reasoning: string };
   why_verdict_differs: string;
+  finding_assessments?: FindingAssessment[];
   top_concerns: TopConcern[];
   positive_signals: string[];
   watch_items: string[];
@@ -120,8 +128,22 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
       checkVaultStatus(currentAnalysis.extension_id);
       setVerdict(null);
       setVerdictError('');
+      loadPersistedVerdict(currentAnalysis.id);
     }
   }, [currentAnalysis]);
+
+  const loadPersistedVerdict = async (analysisId: string) => {
+    const { data } = await supabase
+      .from('extension_verdicts')
+      .select('verdict_data')
+      .eq('analysis_id', analysisId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.verdict_data) {
+      setVerdict(data.verdict_data as VerdictResult);
+    }
+  };
 
   useEffect(() => {
     if (initialUrl && !hasAutoScanned && !isAnalyzing) {
@@ -297,140 +319,17 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
 
-      const classification = scannerClassification;
-
-      const manifestStr = currentAnalysis.manifest_data
-        ? JSON.stringify(currentAnalysis.manifest_data, null, 2)
-        : 'Not available';
-
-      const findingsSummary = findings.map(f =>
-        `[${f.severity.toUpperCase()}] ${f.title}\nDescription: ${f.description}\nEvidence: ${f.evidence}\nFile: ${f.file_path}`
-      ).join('\n\n') || 'None';
-
-      const behaviorSummary = otherBehaviorFlags.map(f =>
-        `${f.flag_type}: ${f.description}\n${f.evidence.join(', ')}`
-      ).join('\n\n') || 'None';
-
-      const vaultDeltaStr = vaultDeltaFlags.length > 0
-        ? vaultDeltaFlags.map(f =>
-            `VAULT DELTA — ${f.description}\n${f.evidence.filter(e => !e.startsWith('baseline_analysis_id')).join(' | ')}`
-          ).join('\n')
-        : 'None';
-
-      const iocSummary = iocs.slice(0, 20).map(i =>
-        `[${i.ioc_type}] ${i.ioc_value} (in ${i.source_file})`
-      ).join('\n') || 'None';
-
-      const crxFull = crxData;
-      const crxStr = crxFull
-        ? `Score: ${crxFull.overall_score}/100 | Risk: ${crxFull.risk_level} | Recommended: ${crxFull.should_use === true ? 'Yes' : crxFull.should_use === false ? 'No' : 'Unknown'}
-Reasoning: ${(crxFull.reasoning as any[]).map((r: any) => typeof r === 'string' ? r : r?.text ?? '').join(' | ') || 'None'}
-Categories: ${JSON.stringify(crxFull.categories)}
-Category Justifications: ${JSON.stringify(crxFull.category_justifications)}
-Browser Impact: ${JSON.stringify(crxFull.browser_impact)}
-Safety Guidelines: ${JSON.stringify(crxFull.safety_guidelines)}`
-        : 'Not available';
-
-      const systemPrompt = `You are a senior browser-extension threat analyst inside Thamos6. You review automated scanner findings, manifest data, IOCs, behavior flags, CRXplorer external intel, and reputation signals. The internal scanner is intentionally aggressive and reports capability risk, not always malicious intent. Your job is to produce a calibrated analyst verdict.
-
-Do not invent evidence. Use only the supplied artifacts. If raw scanner risk and contextual verdict differ, explain why. Separate confirmed behavior from capability risk. A legitimate extension can have high capability risk if its function requires broad page access. Lower final verdict only when permissions, behavior, purpose, reputation, and external intel support that conclusion. Raise final verdict when multiple independent signals converge: sensitive data access, network exfiltration, remote control/config, dynamic execution, evasion, suspicious domains, store removal, or permission-purpose mismatch.
-
-ORGANIZATIONAL SUITABILITY is a separate assessment from malware risk. An extension can be LIKELY_SAFE from a threat perspective but still NOT_APPROVED for organizational use. When AI-DATA findings are present, assess whether the extension's AI vendor communication is inherent to its stated purpose, and whether the combination of AI vendor access + educational content platform scope creates shadow AI governance risk. Educational organizations require formal board-level agreements with AI vendors that receive student or staff data. Google AI (Gemini, Workspace AI) and Microsoft Copilot are commonly pre-approved in schools using those suites. OpenAI, Anthropic, Grammarly, Perplexity, and others typically require separate review. If no AI-DATA findings are present, return organizational_suitability with rating UNKNOWN.
-
-Return only valid JSON matching the requested schema.`;
-
-      const aiDataStr = aiDataFindings.length > 0
-        ? aiDataFindings.map(f => `[${f.rule_id}] ${f.title}\n${f.description}\nEvidence: ${f.evidence}`).join('\n\n')
-        : 'None detected';
-
-      const prompt = `Analyze this Chrome extension and return a calibrated analyst verdict as JSON.
-
-EXTENSION: ${currentAnalysis.extension_name} v${currentAnalysis.extension_version}
-EXTENSION ID: ${currentAnalysis.extension_id}
-SCANNER RISK SCORE: ${currentAnalysis.risk_score}/100 (${currentAnalysis.risk_level})
-SCANNER CLASSIFICATION (pre-computed): ${classification}
-OBFUSCATION SCORE: ${currentAnalysis.obfuscation_score || 0}
-
-CRXPLORER INDEPENDENT ASSESSMENT:
-${crxStr}
-
-MANIFEST:
-${manifestStr}
-
-SECURITY FINDINGS (${findings.length} total):
-${findingsSummary}
-
-BEHAVIORAL FLAGS:
-${behaviorSummary}
-
-VAULT DELTA (posture drift since known baseline):
-${vaultDeltaStr}
-
-IOCS DETECTED (${iocs.length} total, showing first 20):
-${iocSummary}
-
-AI DATA FLOW SIGNALS (${aiDataFindings.length} detected — governance assessment, separate from malware verdict):
-${aiDataStr}
-
-IMPORTANT: When evaluating MAIN-world or broad content script access, decide whether it is purpose-aligned. If purpose-aligned, classify it as CAPABILITY_RISK or WATCH_ITEM rather than CONFIRMED_BEHAVIOR unless paired with exfiltration, credential targeting, remote command/config abuse, or evasion.
-
-Return ONLY valid JSON — no markdown, no prose:
-{
-  "verdict": "MALICIOUS" | "OVERPRIVILEGED" | "SUSPICIOUS" | "LIKELY_SAFE",
-  "confidence": "HIGH" | "MEDIUM" | "LOW",
-  "admin_action": "ALLOW" | "ALLOW_MONITOR" | "REVIEW" | "BLOCK" | "REMOVE",
-  "raw_scanner_interpretation": {
-    "risk_score": ${currentAnalysis.risk_score},
-    "risk_level": "${currentAnalysis.risk_level}",
-    "classification": "${classification}"
-  },
-  "external_intel_interpretation": {
-    "provider": "CRXplorer",
-    "score": ${crxFull?.overall_score ?? null},
-    "risk_level": ${crxFull?.risk_level ? `"${crxFull.risk_level}"` : 'null'},
-    "summary": "<one sentence summarizing CRXplorer assessment>"
-  },
-  "purpose_fit": {
-    "rating": "STRONG" | "PARTIAL" | "WEAK" | "UNKNOWN",
-    "reasoning": "<one sentence>"
-  },
-  "why_verdict_differs": "<explain if and why contextual verdict differs from raw scanner risk, or state they align>",
-  "top_concerns": [
-    {
-      "type": "CONFIRMED_BEHAVIOR" | "CAPABILITY_RISK" | "CONTEXTUAL_FALSE_POSITIVE" | "EXTERNAL_REPUTATION_SIGNAL" | "WATCH_ITEM",
-      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-      "title": "<concise title>",
-      "evidence": "<specific evidence from supplied data only>"
-    }
-  ],
-  "positive_signals": ["<signal>"],
-  "watch_items": ["<item>"],
-  "recommendation": "<1-2 sentences>",
-  "ioc_highlights": ["<critical IOC if any>"],
-  "organizational_suitability": {
-    "rating": "APPROVED" | "REVIEW_REQUIRED" | "NOT_APPROVED" | "UNKNOWN",
-    "ai_data_flow_risk": "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-    "detected_ai_vendors": ["<vendor domain if any>"],
-    "content_surfaces": ["<edu platform if any>"],
-    "reasoning": "<1-2 sentences on governance posture — mention which AI vendors were detected and whether edu content is exposed>"
-  }
-}`;
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
+      // Server-side grounded verdict: the edge function loads findings, IOCs,
+      // CRXplorer data AND raw file contents from the DB, then asks the model
+      // to confirm/refute each finding against actual code.
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extension-verdict`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-20250514',
-          messages: [{ role: 'user', content: prompt }],
-          system_prompt: systemPrompt,
-          temperature: 0.2,
-          max_tokens: 2048,
-        }),
+        body: JSON.stringify({ analysis_id: currentAnalysis.id }),
       });
 
       if (!response.ok) {
@@ -439,10 +338,7 @@ Return ONLY valid JSON — no markdown, no prose:
       }
 
       const data = await response.json();
-      const raw = (data.content || '').trim();
-      const jsonStr = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-      const parsed = JSON.parse(jsonStr) as VerdictResult;
-      setVerdict(parsed);
+      setVerdict(data.verdict as VerdictResult);
     } catch (err: any) {
       setVerdictError(err.message || 'Verdict analysis failed');
     } finally {
@@ -1038,6 +934,31 @@ Return ONLY valid JSON — no markdown, no prose:
               {/* Full verdict details */}
               {verdict && !verdictLoading && (
                 <div className="mb-6 space-y-3">
+                  {verdict.finding_assessments && verdict.finding_assessments.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Finding Verification — Code-Grounded</div>
+                      <div className="space-y-2">
+                        {verdict.finding_assessments.map((fa, i) => (
+                          <div key={i} className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                fa.assessment === 'CONFIRMED' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                : fa.assessment === 'REFUTED' ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                : fa.assessment === 'CAPABILITY_ONLY' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                                : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                              }`}>
+                                {fa.assessment.replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-xs font-mono font-medium text-cyan-400">{fa.rule_id}</span>
+                              <span className="text-[10px] font-mono text-slate-500">{fa.file_path}</span>
+                            </div>
+                            <p className="text-xs text-slate-400">{fa.reasoning}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {verdict.top_concerns && verdict.top_concerns.length > 0 && (
                     <div>
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Top Concerns</div>
