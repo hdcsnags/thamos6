@@ -10,7 +10,27 @@
       "Bash(npx tsc *)",
       "Bash(npm run *)",
       "Bash(node_modules/.bin/vite build *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(gh auth *)",
+      "Bash(npx supabase *)",
+      "Bash(printenv)",
+      "PowerShell(Get-ChildItem *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://aufxheaofpzbovgqwcdr.supabase.co/rest/v1/)",
+      "Bash(curl -s -o /dev/null -w \"Auth health: %{http_code}\\\\n\" https://aufxheaofpzbovgqwcdr.supabase.co/auth/v1/health)",
+      "Bash(sed -n '2440,2530p' ./supabase/functions/threat-intel/index.ts)",
+      "Bash(sed -n '2600,2700p' ./supabase/functions/threat-intel/index.ts)",
+      "Bash(sed -n '2700,2790p' ./supabase/functions/threat-intel/index.ts)",
+      "Bash(file ./samples/*)",
+      "Bash(awk 'BEGIN{RS=\"\\\\r\\\\n\\\\r\\\\n\"} NR==1{print; exit}' ./samples/f473d29f-b9d2-0530-03e6-5836af6141f5.eml)",
+      "Bash(awk 'BEGIN{RS=\"\\\\r\\\\n\\\\r\\\\n\"} NR>1{print}' ./samples/f473d29f-b9d2-0530-03e6-5836af6141f5.eml)",
+      "Read(//tmp/**)",
+      "Bash(grep -v '^\\\\s*$')",
+      "Bash(awk 'BEGIN{RS=\"\\\\r\\\\n\\\\r\\\\n\"} NR==2{print; exit}' ./samples/f473d29f-b9d2-0530-03e6-5836af6141f5.eml)",
+      "Bash(awk 'blank{print} /^$/{blank=1}')",
+      "Bash(grep -v '^$')",
+      "Bash(deno --version)",
+      "Bash(node samples/test-parser.ts)",
+      "Bash(node samples/test-parser.ts samples/f473d29f-b9d2-0530-03e6-5836af6141f5.eml)"
     ]
   }
 }

@@ -6,6 +6,7 @@ import {
 import { lookupHash } from '../../lib/threatIntel';
 import type { HashLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
+import VerdictPanel from '../../components/scanner/VerdictPanel';
 
 interface HashResultProps {
   hash: string;
@@ -180,15 +181,18 @@ export default function HashResult({ hash }: HashResultProps) {
 
           {/* Content Sections */}
           {activeMenu === 'overview' && (
-            <OverviewSection 
-              result={result}
-              vtData={vtData}
-              malwareBazaarData={malwareBazaarData}
-              copySummary={copySummary}
-              copyJson={copyJson}
-              copiedSummary={copiedSummary}
-              copiedJson={copiedJson}
-            />
+            <div className="space-y-6">
+              <OverviewSection
+                result={result}
+                vtData={vtData}
+                malwareBazaarData={malwareBazaarData}
+                copySummary={copySummary}
+                copyJson={copyJson}
+                copiedSummary={copiedSummary}
+                copiedJson={copiedJson}
+              />
+              <VerdictPanel lookupType="hash" value={hash} scoring={result.scoring} />
+            </div>
           )}
 
           {activeMenu === 'file-info' && (

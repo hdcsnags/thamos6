@@ -30,6 +30,28 @@ export interface IPEnrichment {
   lon?: number;
 }
 
+export interface ScoreContribution {
+  source: string;
+  points: number;
+  weight: 'high' | 'medium' | 'low';
+  note: string;
+}
+
+export interface ScoreVariance {
+  field: string;
+  values: { source: string; value: string }[];
+  recommendation?: string;
+}
+
+export interface CalibratedScoring {
+  calibrated: number;
+  legacy: number | null;
+  verdict: 'malicious' | 'suspicious' | 'low_signal' | 'no_signal';
+  legacyDivergence: string | null;
+  contributions: ScoreContribution[];
+  variances: ScoreVariance[];
+}
+
 export interface IPLookupResult {
   ip: string;
   enrichment?: IPEnrichment;
@@ -37,6 +59,7 @@ export interface IPLookupResult {
   maxThreatScore: number;
   isMalicious: boolean;
   results: Record<string, ThreatResult>;
+  scoring?: CalibratedScoring;
   checkedAt: string;
 }
 
@@ -45,6 +68,8 @@ export interface URLLookupResult {
   isMalicious: boolean;
   threatTypes: string[];
   results: Record<string, ThreatResult>;
+  overallThreatScore?: number;
+  scoring?: CalibratedScoring;
   checkedAt: string;
 }
 
@@ -95,6 +120,7 @@ export interface HashLookupResult {
   maxThreatScore: number;
   sources: Record<string, { checked: boolean; error?: string; threatScore?: number }>;
   detections: HashDetections;
+  scoring?: CalibratedScoring;
   checkedAt: string;
   tier?: string;
   sourcesAvailable?: number;
@@ -117,6 +143,7 @@ export interface DomainLookupResult {
   overallThreatScore: number;
   maxThreatScore: number;
   sources: Record<string, { found: boolean; malicious: boolean; details: any; error?: string; threatScore?: number }>;
+  scoring?: CalibratedScoring;
   whois?: DomainWHOIS | null;
   reputation?: number | null;
   categories?: Record<string, string> | null;

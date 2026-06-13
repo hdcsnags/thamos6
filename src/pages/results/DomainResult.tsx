@@ -7,6 +7,7 @@ import { lookupDomain } from '../../lib/threatIntel';
 import type { DomainLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
 import { RelatedIOCs } from '../../components/RelatedIOCs';
+import VerdictPanel from '../../components/scanner/VerdictPanel';
 
 interface DomainResultProps {
   domain: string;
@@ -156,7 +157,12 @@ export default function DomainResult({ domain }: DomainResultProps) {
             </button>
           </div>
 
-          {activeMenu === 'overview' && <OverviewSection result={result} whoisData={whoisData} vtData={vtData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />}
+          {activeMenu === 'overview' && (
+            <div className="space-y-6">
+              <OverviewSection result={result} whoisData={whoisData} vtData={vtData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />
+              <VerdictPanel lookupType="domain" value={domain} scoring={result.scoring} />
+            </div>
+          )}
           {activeMenu === 'whois' && <WhoisSection whoisData={whoisData} proMode={proMode} />}
           {activeMenu === 'dns' && <DNSSection vtData={vtData} proMode={proMode} />}
           {activeMenu === 'security' && <SecuritySection vtData={vtData} whoisData={whoisData} proMode={proMode} />}

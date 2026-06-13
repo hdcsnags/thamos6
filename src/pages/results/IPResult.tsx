@@ -8,6 +8,7 @@ import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
 import { RelatedIOCs } from '../../components/RelatedIOCs';
+import VerdictPanel from '../../components/scanner/VerdictPanel';
 
 interface IPResultProps {
   ip: string;
@@ -219,17 +220,20 @@ export default function IPResult({ ip }: IPResultProps) {
 
           {/* Content Sections */}
           {activeMenu === 'overview' && (
-            <OverviewSection 
-              result={result}
-              enrichment={enrichment}
-              spamhausData={spamhausData}
-              abuseIPDBData={abuseIPDBData}
-              virusTotalData={virusTotalData}
-              copySummary={copySummary}
-              copyJson={copyJson}
-              copiedSummary={copiedSummary}
-              copiedJson={copiedJson}
-            />
+            <div className="space-y-6">
+              <OverviewSection
+                result={result}
+                enrichment={enrichment}
+                spamhausData={spamhausData}
+                abuseIPDBData={abuseIPDBData}
+                virusTotalData={virusTotalData}
+                copySummary={copySummary}
+                copyJson={copyJson}
+                copiedSummary={copiedSummary}
+                copiedJson={copiedJson}
+              />
+              <VerdictPanel lookupType="ip" value={ip} scoring={result.scoring} />
+            </div>
           )}
 
           {activeMenu === 'network' && (

@@ -7,6 +7,7 @@ import { useTheme } from '../../contexts/themecontext';
 import { scanURL } from '../../lib/threatIntel';
 import type { URLLookupResult } from '../../types';
 import ThreatScore from '../../components/ThreatScore';
+import VerdictPanel from '../../components/scanner/VerdictPanel';
 
 interface URLResultProps {
   url: string;
@@ -183,7 +184,12 @@ export default function URLResult({ url }: URLResultProps) {
             </button>
           </div>
 
-          {activeMenu === 'overview' && <OverviewSection result={result} vtData={vtData} urlscanData={urlscanData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />}
+          {activeMenu === 'overview' && (
+            <div className="space-y-6">
+              <OverviewSection result={result} vtData={vtData} urlscanData={urlscanData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />
+              <VerdictPanel lookupType="url" value={url} scoring={result.scoring} />
+            </div>
+          )}
           {activeMenu === 'analysis' && <AnalysisSection vtData={vtData} urlscanData={urlscanData} proMode={proMode} />}
           {activeMenu === 'threats' && <ThreatsSection vtData={vtData} proMode={proMode} />}
           {activeMenu === 'sources' && <SourcesSection results={results} proMode={proMode} />}

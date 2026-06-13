@@ -612,6 +612,276 @@ function calculateOTXScore(data: Record<string, unknown>): number {
   return Math.min(pulseCount * 10, 100);
 }
 
+// ===================== SCORING V2 (calibrated) =====================
+// Calibrated re-scoring computed from each source's RAW data, fixing the
+// known per-source bugs WITHOUT touching the legacy pipeline:
+//   - VT: count-based curve instead of dividing by the full engine roster
+//     (8 malicious engines used to score 800/75 ≈ 11/100)
+//   - Spamhaus PBL: informational, not malicious (it's a residential policy
+//     list); only SBL/XBL/CSS hits score
+//   - Tranco: top-ranked domains now DISCOUNT the score (reputation signal)
+//   - OTX pulses: capped low — researchers pulse clean infrastructure
+//   - Tor/VPN/proxy: context notes with small boosts, not +10..+30 blind adds
+// The legacy overallThreatScore is left untouched so Bulk Lookup / History /
+// watchlists keep their current behavior; result pages render
+// `scoring.calibrated` alongside legacy for comparison until the default flips.
+
+interface ScoreContribution {
+  source: string;
+  points: number; // signed; negative = reputation discount
+  weight: "high" | "medium" | "low";
+  note: string;
+}
+
+interface ScoreVariance {
+  field: string;
+  values: { source: string; value: string }[];
+  recommendation?: string;
+}
+
+interface CalibratedScoring {
+  calibrated: number;
+  legacy: number | null;
+  verdict: "malicious" | "suspicious" | "low_signal" | "no_signal";
+  legacyDivergence: string | null;
+  contributions: ScoreContribution[];
+  variances: ScoreVariance[];
+}
+
+function vtCurve(malicious: number, suspicious: number): number {
+  if (malicious >= 10) return 95;
+  if (malicious >= 5) return 85;
+  if (malicious >= 3) return 70;
+  if (malicious === 2) return 55;
+  if (malicious === 1) return 35;
+  if (suspicious > 0) return Math.min(20 + suspicious * 5, 35);
+  return 0;
+}
+
+function computeCalibratedScoring(
+  results: ThreatResult[],
+  legacy: number | null,
+  enrichment?: IPEnrichment
+): CalibratedScoring {
+  const up: ScoreContribution[] = [];
+  const down: ScoreContribution[] = [];
+  const info: ScoreContribution[] = [];
+  const cleanHighSources: string[] = [];
+
+  const find = (s: string) => results.find(r => r.source === s && !r.error);
+
+  // --- VirusTotal (ip/domain/url/hash variants share last_analysis_stats) ---
+  for (const src of ["virustotal", "virustotal_url", "virustotal_hash"]) {
+    const r = find(src);
+    const stats = (r?.data as any)?.data?.attributes?.last_analysis_stats;
+    if (!r || !stats) continue;
+    const m = Number(stats.malicious ?? 0);
+    const s = Number(stats.suspicious ?? 0);
+    const silent = Number(stats.harmless ?? 0) + Number(stats.undetected ?? 0);
+    const score = vtCurve(m, s);
+    if (score > 0) {
+      up.push({ source: src, points: score, weight: "high", note: `${m} malicious / ${s} suspicious engines (count-based; not diluted by ${silent} clean/silent engines)` });
+    } else {
+      info.push({ source: src, points: 0, weight: "high", note: "no engine flagged this indicator" });
+      cleanHighSources.push(src);
+    }
+  }
+
+  // --- AbuseIPDB: community confidence is already calibrated 0-100 ---
+  {
+    const r = find("abuseipdb");
+    const d = (r?.data as any)?.data;
+    if (r && d) {
+      const conf = Number(d.abuseConfidenceScore ?? 0);
+      if (conf > 0) up.push({ source: "abuseipdb", points: conf, weight: "high", note: `abuse confidence ${conf}% (${d.totalReports ?? 0} reports)` });
+      else { info.push({ source: "abuseipdb", points: 0, weight: "high", note: "no abuse reports" }); cleanHighSources.push("abuseipdb"); }
+    }
+  }
+
+  // --- Spamhaus: zone-aware (the PBL fix) ---
+  {
+    const r = find("spamhaus");
+    const listed: string[] = ((r?.data as any)?.listedIn ?? []);
+    if (r && listed.length > 0) {
+      const sbl = listed.some(n => n.includes("SBL"));
+      const xbl = listed.some(n => n.includes("XBL"));
+      const pblOnly = !sbl && !xbl;
+      if (xbl) up.push({ source: "spamhaus", points: 85, weight: "high", note: "XBL: hijacked/exploited host (bot, open proxy)" });
+      else if (sbl) up.push({ source: "spamhaus", points: 80, weight: "high", note: "SBL: verified spam source" });
+      if (pblOnly) info.push({ source: "spamhaus", points: 0, weight: "low", note: "PBL only — residential/dynamic IP policy listing, NOT a malicious signal (legacy scored this +60 and boosted +25)" });
+    }
+  }
+
+  // --- abuse.ch family ---
+  for (const [src, pts, note] of [
+    ["threatfox", 85, "active IOC in ThreatFox"],
+    ["urlhaus", 85, "listed in URLhaus (malware distribution)"],
+    ["urlhaus_url", 85, "URL listed in URLhaus (malware distribution)"],
+    ["malwarebazaar", 95, "known malware sample in MalwareBazaar"],
+  ] as Array<[string, number, string]>) {
+    const r = find(src);
+    if (!r) continue;
+    if (r.isMalicious) up.push({ source: src, points: pts, weight: "high", note });
+    else { info.push({ source: src, points: 0, weight: "high", note: "not listed" }); cleanHighSources.push(src); }
+  }
+
+  // --- phishing feeds + Safe Browsing ---
+  for (const [src, pts, note] of [
+    ["phishtank", 90, "verified phish in PhishTank"],
+    ["openphish", 85, "listed in OpenPhish feed"],
+    ["google_safebrowsing", 90, "flagged by Google Safe Browsing"],
+  ] as Array<[string, number, string]>) {
+    const r = find(src);
+    if (!r) continue;
+    if (r.isMalicious) up.push({ source: src, points: pts, weight: "high", note });
+    else { info.push({ source: src, points: 0, weight: "high", note: "not listed" }); cleanHighSources.push(src); }
+  }
+
+  // --- Blocklist.de: real attack reports ---
+  {
+    const r = find("blocklistde");
+    const listed: string[] = ((r?.data as any)?.listedIn ?? []);
+    if (r && listed.length > 0) up.push({ source: "blocklistde", points: 70, weight: "medium", note: `attack reports in last 48h (${listed.join(", ")})` });
+  }
+
+  // --- GreyNoise: separates scanners from threats; benign is a DISCOUNT ---
+  {
+    const r = find("greynoise");
+    const cls = (r?.data as any)?.classification;
+    if (cls === "malicious") up.push({ source: "greynoise", points: 75, weight: "medium", note: "GreyNoise classifies as malicious scanner" });
+    else if (cls === "benign") down.push({ source: "greynoise", points: -25, weight: "medium", note: "GreyNoise classifies as BENIGN known scanner (e.g. Shodan/Censys/research)" });
+    else if (r && (r.data as any)?.noise) info.push({ source: "greynoise", points: 0, weight: "low", note: "internet background noise — scanning is not itself maliciousness" });
+  }
+
+  // --- OTX: pulse count is research activity, not a verdict (legacy: ×10) ---
+  for (const src of ["alienvault", "alienvault_hash"]) {
+    const r = find(src);
+    const pulses = Number((r?.data as any)?.pulse_info?.count ?? 0);
+    if (!r) continue;
+    if (pulses >= 10) up.push({ source: src, points: 30, weight: "low", note: `${pulses} OTX pulses (capped — pulse count ≠ maliciousness)` });
+    else if (pulses >= 3) up.push({ source: src, points: 18, weight: "low", note: `${pulses} OTX pulses (capped)` });
+    else if (pulses >= 1) info.push({ source: src, points: 0, weight: "low", note: `${pulses} OTX pulse(s) — too few to score` });
+  }
+
+  // --- IPQualityScore: only high fraud scores are meaningful ---
+  {
+    const r = find("ipqualityscore");
+    const fraud = Number((r?.data as any)?.fraud_score ?? 0);
+    if (r && fraud >= 85) up.push({ source: "ipqualityscore", points: fraud, weight: "medium", note: `fraud score ${fraud}` });
+    else if (r && fraud >= 75) up.push({ source: "ipqualityscore", points: 40, weight: "low", note: `fraud score ${fraud} (elevated, below high-risk threshold)` });
+  }
+
+  // --- Hybrid Analysis (hash) ---
+  {
+    const r = find("hybrid_analysis");
+    const first = (r?.data as any)?.[0];
+    if (first?.verdict === "malicious") up.push({ source: "hybrid_analysis", points: 90, weight: "high", note: `sandbox verdict: malicious${first.vx_family ? ` (${first.vx_family})` : ""}` });
+    else if (first?.verdict === "suspicious") up.push({ source: "hybrid_analysis", points: 50, weight: "medium", note: "sandbox verdict: suspicious" });
+  }
+
+  // --- Tranco: popularity DISCOUNTS suspicion (legacy fetched it, scored nothing) ---
+  {
+    const r = find("tranco");
+    const rank = Number((r?.data as any)?.rank ?? 0);
+    if (rank > 0) {
+      const discount = rank <= 1_000 ? -30 : rank <= 10_000 ? -20 : rank <= 100_000 ? -12 : -6;
+      down.push({ source: "tranco", points: discount, weight: "medium", note: `Tranco global rank #${rank} — widely-used domain, compromise possible but bar is higher` });
+    }
+  }
+
+  // --- WHOIS age (domains): brand-new registration is a real signal ---
+  {
+    const r = find("whois");
+    const parsed = (r?.data as any)?.parsed;
+    const createdRaw = parsed?.creationDate ?? parsed?.created ?? parsed?.creation_date ?? null;
+    if (createdRaw) {
+      const created = new Date(createdRaw);
+      if (!isNaN(created.getTime())) {
+        const ageDays = (Date.now() - created.getTime()) / 86_400_000;
+        if (ageDays >= 0 && ageDays <= 30) up.push({ source: "whois", points: 25, weight: "medium", note: `domain registered ${Math.round(ageDays)} days ago` });
+        else if (ageDays > 365 * 5) down.push({ source: "whois", points: -8, weight: "low", note: `domain registered ${Math.round(ageDays / 365)} years ago` });
+      }
+    }
+  }
+
+  // --- context (tor/vpn/proxy): notes with small boosts, not blind +10..+30 ---
+  if (enrichment?.isTor) up.push({ source: "tor_exit_list", points: 12, weight: "low", note: "Tor exit node — anonymity infrastructure, not maliciousness per se" });
+  if (enrichment?.isMassScanner && enrichment?.scannerType === "malicious") up.push({ source: "scanner_db", points: 25, weight: "medium", note: "known malicious mass scanner" });
+  if (enrichment?.isProxy) up.push({ source: "proxy_check", points: 6, weight: "low", note: "open/anonymous proxy" });
+  if (enrichment?.isVPN) info.push({ source: "vpn_check", points: 0, weight: "low", note: `VPN exit${enrichment.vpnService ? ` (${enrichment.vpnService})` : ""} — commercial VPNs are not a threat signal by themselves (legacy added +10)` });
+
+  // --- aggregate: strongest signal + diminishing corroboration − reputation ---
+  const sortedUp = [...up].sort((a, b) => b.points - a.points);
+  let score = sortedUp[0]?.points ?? 0;
+  const corroborationFactors = [0.25, 0.15, 0.05];
+  for (let i = 1; i < sortedUp.length; i++) {
+    score += sortedUp[i].points * (corroborationFactors[i - 1] ?? 0.05);
+  }
+  const downSum = Math.max(down.reduce((a, c) => a + c.points, 0), -40);
+  // reputation can soften a weak signal, but cannot erase multiple confirmed hits
+  const strongHits = sortedUp.filter(c => c.points >= 70 && c.weight === "high").length;
+  score += strongHits >= 2 ? downSum * 0.3 : downSum;
+  const calibrated = Math.max(0, Math.min(100, Math.round(score)));
+
+  const verdict: CalibratedScoring["verdict"] =
+    calibrated >= 70 ? "malicious" : calibrated >= 40 ? "suspicious" : calibrated >= 15 ? "low_signal" : "no_signal";
+
+  // --- variances: cross-source disagreement, surfaced instead of averaged away ---
+  const variances: ScoreVariance[] = [];
+  const hits = sortedUp.filter(c => c.points >= 50);
+  if (hits.length > 0 && cleanHighSources.length >= 2) {
+    variances.push({
+      field: "Maliciousness",
+      values: [
+        ...hits.map(c => ({ source: c.source, value: `flagged (${c.points})` })),
+        ...cleanHighSources.map(s => ({ source: s, value: "clean" })),
+      ],
+      recommendation: "Sources disagree — review the flagged sources' evidence before acting; a single-feed hit may be stale or scoped differently.",
+    });
+  }
+  const trancoDown = down.find(c => c.source === "tranco");
+  if (trancoDown && hits.length > 0) {
+    variances.push({
+      field: "Reputation vs detection",
+      values: [
+        { source: "tranco", value: trancoDown.note },
+        ...hits.map(c => ({ source: c.source, value: `flagged (${c.points})` })),
+      ],
+      recommendation: "A highly-ranked domain that's also flagged usually means compromise of a legit site or a false positive — verify the specific URL/path, not just the domain.",
+    });
+  }
+  const pblInfo = info.find(c => c.source === "spamhaus");
+  if (pblInfo && legacy !== null && legacy >= 40 && calibrated < 40) {
+    variances.push({
+      field: "Spamhaus PBL inflation",
+      values: [
+        { source: "legacy score", value: String(legacy) },
+        { source: "calibrated", value: String(calibrated) },
+      ],
+      recommendation: "Legacy score was inflated by a PBL-only Spamhaus listing (residential policy list). Calibrated scoring treats PBL as informational.",
+    });
+  }
+
+  // --- explain legacy divergence ---
+  let legacyDivergence: string | null = null;
+  if (legacy !== null && Math.abs(legacy - calibrated) > 25) {
+    if (calibrated > legacy) {
+      legacyDivergence = `Calibrated ${calibrated} vs legacy ${legacy}: legacy averaged real detections against sources that returned 0 (and divided VT hits by the full ~75-engine roster), hiding a genuine signal.`;
+    } else {
+      legacyDivergence = `Calibrated ${calibrated} vs legacy ${legacy}: legacy added binary boosts (VPN/proxy/Spamhaus-PBL) with no evidence of maliciousness behind them.`;
+    }
+  }
+
+  return {
+    calibrated,
+    legacy,
+    verdict,
+    legacyDivergence,
+    contributions: [...sortedUp, ...down, ...info],
+    variances,
+  };
+}
+
 async function checkShodan(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "shodan", data: {}, error: "API key not configured" };
   const cached = await getCachedResponse(ctx, "shodan", ip);
@@ -2349,10 +2619,13 @@ Deno.serve(async (req: Request) => {
       if (enrichment.isVPN && enrichment.vpnService) detectionSources.push("IP2Proxy + VPN DB");
       if (enrichment.isProxy) detectionSources.push("IP2Proxy + ProxyCheck");
 
+      const legacyScore = Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100);
+
       const aggregated = {
         ip,
         enrichment,
-        overallThreatScore: Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100),
+        overallThreatScore: legacyScore,
+        scoring: computeCalibratedScoring(results, legacyScore, enrichment),
         maxThreatScore: maxScore,
         isMalicious: hasMaliciousHit || maxScore > 50,
         sources: normalizedSources,
@@ -2368,7 +2641,11 @@ Deno.serve(async (req: Request) => {
       if (canPersist) {
         await serviceClient.from("ip_lookups").insert({
           ip_address: ip,
-          results: aggregated.results,
+          // was `aggregated.results`, a key the IP aggregate never had — the
+          // column persisted null for every IP lookup. Store the full aggregate
+          // (same as domain/hash) so server-side consumers (ioc-verdict) can
+          // load the evidence.
+          results: aggregated,
           threat_score: aggregated.overallThreatScore,
           sources_checked: results.map(r => r.source),
           user_id: ctx.userId,
@@ -2421,10 +2698,16 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      // URL lookups historically had NO numeric score (only the boolean) —
+      // calibrated scoring is the first score this endpoint has ever returned
+      const urlScoring = computeCalibratedScoring(results, null);
+
       const aggregated = {
         url: targetUrl,
         isMalicious,
         threatTypes,
+        scoring: urlScoring,
+        overallThreatScore: urlScoring.calibrated,
         results: Object.fromEntries(results.map(r => [r.source, r])),
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
@@ -2658,10 +2941,13 @@ Deno.serve(async (req: Request) => {
         };
       }
 
+      const hashLegacyScore = Math.max(avgScore, maxScore);
+
       const aggregated = {
         hash,
         isMalicious,
-        overallThreatScore: Math.max(avgScore, maxScore),
+        overallThreatScore: hashLegacyScore,
+        scoring: computeCalibratedScoring(results, hashLegacyScore),
         maxThreatScore: maxScore,
         sources: normalizedSources,
         detections: {
@@ -2739,10 +3025,13 @@ Deno.serve(async (req: Request) => {
         };
       }
 
+      const domainLegacyScore = Math.max(avgScore, maxScore);
+
       const aggregated = {
         domain,
         isMalicious,
-        overallThreatScore: Math.max(avgScore, maxScore),
+        overallThreatScore: domainLegacyScore,
+        scoring: computeCalibratedScoring(results, domainLegacyScore),
         maxThreatScore: maxScore,
         sources: normalizedSources,
         whois: whoisData?.parsed || null,
