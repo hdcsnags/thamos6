@@ -1,6 +1,7 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "thamos6",
   "private": true,
+  "license": "UNLICENSED",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
