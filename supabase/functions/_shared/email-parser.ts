@@ -48,6 +48,17 @@ export interface DefenderSignal {
   meaning: string;
 }
 
+export interface AttachmentInfo {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  disposition: string;
+  /** lowercased final extension, e.g. "htm" */
+  extension: string;
+  risk: "high" | "medium" | "low";
+  reasons: string[];
+}
+
 export interface DefenderIntel {
   present: boolean;
   scl: string | null;
@@ -91,6 +102,7 @@ export interface ParsedEmail {
   originIP: string | null;
   defender: DefenderIntel;
   parts: MimePart[];
+  attachments: AttachmentInfo[];
   /** all decoded text/* content concatenated (HTML included) */
   decodedBody: string;
   /** decodedBody with HTML tags stripped — for display + IOC text matching */
@@ -189,8 +201,13 @@ function parseHeaderBlock(headerText: string): Array<{ name: string; value: stri
 // ---------- MIME body parsing ----------
 
 function getHeaderParam(headerValue: string, param: string): string | null {
-  const m = headerValue.match(new RegExp(`${param}\\s*=\\s*"?([^";\\s]+)"?`, "i"));
-  return m ? m[1] : null;
+  // Quoted form first: param="..." may legitimately contain spaces (boundaries,
+  // filenames). Falling straight through to the bare matcher truncated those at
+  // the first space and silently broke multipart splitting / filename capture.
+  const quoted = headerValue.match(new RegExp(`${param}\\s*=\\s*"([^"]+)"`, "i"));
+  if (quoted) return quoted[1];
+  const bare = headerValue.match(new RegExp(`${param}\\s*=\\s*([^";\\s]+)`, "i"));
+  return bare ? bare[1] : null;
 }
 
 function decodePartBody(body: string, encoding: string, charset: string): string {
@@ -511,6 +528,52 @@ function extractDefender(headers: Record<string, string>): DefenderIntel {
   }
   if (intel.dkim === "none") {
     sig("DKIM", "none", "warn", "Message was not DKIM-signed — sender identity rests on SPF alone.");
+  } else if (intel.dkim === "fail") {
+    sig("DKIM", "fail", "high", "DKIM signature failed verification — the message body/headers were altered in transit or the signature was forged.");
+  }
+  if (intel.spf) {
+    const spfSev: DefenderSignal["severity"] =
+      intel.spf === "fail" || intel.spf === "softfail" ? "high"
+      : intel.spf === "none" || intel.spf === "neutral" || intel.spf === "permerror" || intel.spf === "temperror" ? "warn"
+      : "info";
+    const spfMeaning: Record<string, string> = {
+      pass: "SPF pass — the connecting IP is authorized to send for the envelope domain. NOTE: this authorizes the Return-Path, not the visible From, and passes from a compromised relay prove nothing about the sender.",
+      fail: "SPF FAIL — the connecting IP is NOT authorized for the envelope domain (hard fail). Strong spoofing signal.",
+      softfail: "SPF softfail — the domain marks this IP as probably unauthorized (~all).",
+      neutral: "SPF neutral — the domain explicitly takes no position on this IP.",
+      none: "No SPF record published for the sender domain — no IP-level authorization to check.",
+      permerror: "SPF permerror — the sender's SPF record is malformed.",
+      temperror: "SPF temperror — SPF could not be evaluated (transient DNS issue).",
+    };
+    sig("SPF", intel.spf, spfSev, spfMeaning[intel.spf] ?? `SPF ${intel.spf}`);
+  }
+  if (intel.sfv) {
+    const SFV_MEANING: Record<string, [string, DefenderSignal["severity"]]> = {
+      SPM: ["SFV:SPM — Defender's content filter classified the message as spam.", "warn"],
+      HSPM: ["SFV:HSPM — high-confidence spam.", "warn"],
+      PHSH: ["SFV:PHSH — Defender's content filter classified the message as phishing.", "high"],
+      MLW: ["SFV:MLW — malware detected.", "high"],
+      BLK: ["SFV:BLK — sender is on a block list (recipient or org policy).", "warn"],
+      SKS: ["SFV:SKS — message was marked spam by a mail-flow rule before content filtering.", "warn"],
+      SKB: ["SFV:SKB — message blocked by a policy before content filtering.", "warn"],
+      SKA: ["SFV:SKA — skipped filtering and allowed (safe sender / allow rule). Spam scoring was bypassed — verify the allow rule is legitimate.", "warn"],
+      SKI: ["SFV:SKI — skipped filtering (similar to SKN), no spam verdict computed.", "info"],
+      SKN: ["SFV:SKN — marked not-spam by a mail-flow rule before content filtering (allow rule). Content scanning was bypassed.", "warn"],
+      SKQ: ["SFV:SKQ — message released from quarantine.", "info"],
+      NSPM: ["SFV:NSPM — Defender's content filter classified the message as NOT spam (does not clear well-crafted BEC/AITM phish).", "info"],
+    };
+    const hit = SFV_MEANING[intel.sfv];
+    sig("SFV", intel.sfv, hit?.[1] ?? "info", hit?.[0] ?? `Spam filtering verdict: ${intel.sfv}`);
+  }
+  if (intel.heloHost || intel.ptr) {
+    const parts: string[] = [];
+    if (intel.heloHost) parts.push(`HELO=${intel.heloHost}`);
+    if (intel.ptr) parts.push(`PTR=${intel.ptr}`);
+    const ptrMissing = intel.ptr === "" || /^none$/i.test(intel.ptr ?? "");
+    sig("Sending host", parts.join(" "), ptrMissing ? "warn" : "info",
+      ptrMissing
+        ? "The connecting server has no reverse-DNS (PTR) record — common for throwaway / compromised senders."
+        : "Connecting server's announced HELO name and reverse-DNS, as Defender saw them — compare against the claimed sender domain.");
   }
   if (intel.crossTenantAuthAs) {
     sig("AuthAs", intel.crossTenantAuthAs,
@@ -556,11 +619,15 @@ function findBodyFindings(html: string, text: string): string[] {
       'Fake trust banner: body claims the sender is on a "safe senders list" / "has been verified" — Outlook/Defender never injects such text into the body. This is attacker-supplied social engineering.'
     );
   }
-  const hiddenBlocks = html.match(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|opacity\s*:\s*0)[^>]*>([\s\S]{0,400}?)<\//gi) ?? [];
-  const hiddenWithText = hiddenBlocks.filter((b) => stripHtml(b).length > 10);
-  if (hiddenWithText.length > 0) {
+  // Hidden elements are extremely common in legitimate mail (the invisible
+  // "preheader" snippet every ESP injects), so plain hidden text is NOT a
+  // signal. Only flag hidden blocks that conceal a link or an address — that is
+  // the actual evasion pattern, not a benign preheader.
+  const hiddenBlocks = html.match(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?:px)?|opacity\s*:\s*0)[^>]*>([\s\S]{0,600}?)<\//gi) ?? [];
+  const hiddenWithLink = hiddenBlocks.filter((b) => /href\s*=|https?:\/\/|[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(b));
+  if (hiddenWithLink.length > 0) {
     findings.push(
-      `Hidden content: ${hiddenWithText.length} element(s) styled invisible (display:none / zero font / zero opacity) contain text — common filter-evasion / keyword-stuffing technique.`
+      `Hidden links/addresses: ${hiddenWithLink.length} invisible element(s) (display:none / zero font / zero opacity) conceal a URL or email address — filter-evasion technique, not a normal preheader.`
     );
   }
   const externalForm = html.match(/<form[^>]+action\s*=\s*["']?(https?:\/\/[^"'\s>]+)/i);
@@ -570,8 +637,120 @@ function findBodyFindings(html: string, text: string): string[] {
   if (/url=data:text\/html|javascript:/i.test(html)) {
     findings.push("Body contains data:/javascript: URI — possible HTML smuggling.");
   }
+  for (const m of findAnchorMismatches(html)) findings.push(m);
   return findings;
 }
+
+/**
+ * Visible link text claims one destination, the href points somewhere else —
+ * the canonical phishing tell. Returns one finding per mismatch (capped).
+ * Wrapper hosts (SafeLinks/Mimecast) are skipped: their href legitimately
+ * differs from the displayed URL.
+ */
+function findAnchorMismatches(html: string): string[] {
+  const out: string[] = [];
+  const anchorRe = /<a\b[^>]*?href\s*=\s*["']?(https?:\/\/[^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  let count = 0;
+  while ((m = anchorRe.exec(html)) !== null && count < 5) {
+    const href = m[1];
+    const text = stripHtml(m[2]);
+    // only meaningful when the visible text itself looks like a URL/domain
+    const shownHost = text.match(/\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/i)?.[1]?.toLowerCase();
+    if (!shownHost) continue;
+    let hrefHost = "";
+    try { hrefHost = new URL(href).hostname.toLowerCase(); } catch { continue; }
+    if (!hrefHost || isWrapperHost(hrefHost)) continue;
+    const reg = (h: string) => h.split(".").slice(-2).join(".");
+    if (reg(shownHost) !== reg(hrefHost)) {
+      out.push(
+        `Link text says "${shownHost}" but the href points to ${hrefHost} — displayed destination does not match the real link target.`
+      );
+      count++;
+    }
+  }
+  return out;
+}
+
+// ---------- attachment triage ----------
+
+const ATTACH_HIGH = new Set([
+  "exe", "scr", "com", "pif", "bat", "cmd", "js", "jse", "vbs", "vbe", "wsf",
+  "wsh", "hta", "lnk", "iso", "img", "vhd", "msi", "jar", "ps1", "ps1xml",
+  "htm", "html", "shtml", "svg", "docm", "xlsm", "pptm", "dotm", "xlam", "msc",
+]);
+const ATTACH_MEDIUM = new Set([
+  "zip", "rar", "7z", "gz", "tar", "ace", "cab", "z", "rtf", "one", "xml",
+  "xll", "pdf", "doc", "xls", "ppt",
+]);
+const RISKY_DOUBLE = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|txt|invoice|receipt)\.(exe|scr|com|pif|bat|cmd|js|vbs|hta|lnk|html?|svg|iso|img|zip)$/i;
+
+function attachmentExtension(filename: string): string {
+  const clean = filename.replace(/["']/g, "").trim();
+  const dot = clean.lastIndexOf(".");
+  return dot >= 0 ? clean.slice(dot + 1).toLowerCase() : "";
+}
+
+function analyzeAttachments(parts: MimePart[]): AttachmentInfo[] {
+  const out: AttachmentInfo[] = [];
+  for (const p of parts) {
+    const isAttachment = p.disposition === "attachment" || Boolean(p.filename);
+    if (!isAttachment) continue;
+    const filename = (p.filename ?? "(unnamed)").replace(/["']/g, "");
+    const ext = attachmentExtension(filename);
+    const reasons: string[] = [];
+    let risk: AttachmentInfo["risk"] = "low";
+
+    if (RISKY_DOUBLE.test(filename)) {
+      risk = "high";
+      reasons.push("Double extension disguising an executable/script as a document.");
+    }
+    if (ATTACH_HIGH.has(ext)) {
+      risk = "high";
+      if (ext === "htm" || ext === "html" || ext === "shtml" || ext === "svg") {
+        reasons.push(`.${ext} attachment — local credential-harvest page / HTML smuggling (opens a phishing form straight from the inbox, bypassing URL reputation).`);
+      } else {
+        reasons.push(`.${ext} is a directly executable / script type — should never arrive by email and is normally stripped by mail filters.`);
+      }
+    } else if (ATTACH_MEDIUM.has(ext)) {
+      if (risk !== "high") risk = "medium";
+      if (ext === "zip" || ext === "rar" || ext === "7z" || ext === "iso" || ext === "img") {
+        reasons.push(`Archive (.${ext}) — common wrapper used to smuggle executables past attachment scanning.`);
+      } else if (ext === "pdf" || ext === "doc" || ext === "xls" || ext === "ppt") {
+        reasons.push(`Office/PDF document (.${ext}) — may carry macros, embedded links, or QR codes; inspect before opening.`);
+      } else {
+        reasons.push(`.${ext} can carry active content.`);
+      }
+    }
+    if (reasons.length === 0) reasons.push("No high-risk indicators on the filename.");
+
+    out.push({
+      filename,
+      contentType: p.contentType,
+      sizeBytes: p.sizeBytes,
+      disposition: p.disposition || "attachment",
+      extension: ext,
+      risk,
+      reasons,
+    });
+  }
+  return out;
+}
+
+/** From: "Display Name" <addr@dom> — pull the quoted/leading display name. */
+function extractDisplayName(fromHeader: string): string {
+  const quoted = fromHeader.match(/"([^"]+)"/)?.[1];
+  if (quoted) return quoted.trim();
+  const before = fromHeader.split("<")[0].trim();
+  return before.includes("@") ? "" : before;
+}
+
+const BRANDS = [
+  "microsoft", "office365", "office 365", "outlook", "onedrive", "sharepoint",
+  "paypal", "amazon", "apple", "icloud", "google", "docusign", "adobe",
+  "netflix", "facebook", "instagram", "linkedin", "dhl", "fedex", "ups",
+  "wells fargo", "chase", "bank of america", "american express", "amex",
+];
 
 // ---------- main entry ----------
 
@@ -658,13 +837,41 @@ export function parseEmail(raw: string): ParsedEmail {
       break;
     }
   }
+  // Display-name impersonation — independent of whatever Defender's SFTY caught.
+  const displayName = extractDisplayName(headers["from"] ?? "");
+  if (displayName) {
+    const dnLower = displayName.toLowerCase();
+    const dnEmailDomain = displayName.match(/[\w.+-]+@([\w.-]+\.[a-z]{2,})/i)?.[1]?.toLowerCase();
+    if (dnEmailDomain && fromDomain && dnEmailDomain !== fromDomain) {
+      indicators.push(
+        `Display name embeds a different address (@${dnEmailDomain}) than the real sender (${fromDomain}) — spoofed sender identity.`
+      );
+    }
+    const brand = BRANDS.find((b) => dnLower.includes(b));
+    if (brand && fromDomain) {
+      const brandKey = brand.replace(/\s+/g, "");
+      if (!fromDomain.includes(brandKey) && !fromDomain.includes(brandKey.slice(0, 6))) {
+        indicators.push(
+          `Display name impersonates "${displayName}" (brand: ${brand}) but the message came from ${fromDomain}, which is not a ${brand} domain.`
+        );
+      }
+    }
+  }
+
+  // Return-Path / Reply-To divergence is NORMAL for legitimate ESPs and mailing
+  // lists, so it is only worth surfacing when DMARC did not actually pass (i.e.
+  // the From identity is not verified). Without this guard it fired on most
+  // newsletters and generated alert-fatigue noise.
+  const dmarcPass = defender.dmarc === "pass";
   const returnAddr = (headers["return-path"] ?? "").match(/<([^>]+)>/)?.[1] ?? headers["return-path"] ?? "";
-  if (returnAddr && fromAddr && returnAddr.toLowerCase() !== fromAddr.toLowerCase()) {
-    indicators.push(`Return-Path (${returnAddr}) differs from From (${fromAddr})`);
+  const returnDomain = returnAddr.split("@")[1]?.toLowerCase() ?? "";
+  if (!dmarcPass && returnDomain && fromDomain && returnDomain !== fromDomain) {
+    indicators.push(`Return-Path (${returnAddr}) is on a different domain than From (${fromAddr}) and DMARC did not pass — possible spoofing.`);
   }
   const replyAddr = (headers["reply-to"] ?? "").match(/<([^>]+)>|([^\s<>]+@[^\s<>]+)/)?.[1] ?? "";
-  if (replyAddr && fromAddr && replyAddr.toLowerCase() !== fromAddr.toLowerCase()) {
-    indicators.push(`Reply-To (${replyAddr}) differs from From (${fromAddr})`);
+  const replyDomain = replyAddr.split("@")[1]?.toLowerCase() ?? "";
+  if (replyDomain && fromDomain && replyDomain !== fromDomain) {
+    indicators.push(`Reply-To (${replyAddr}) is on a different domain than From (${fromAddr}) — replies leave the sender's domain (common in BEC reply-hijack; also seen in some legitimate newsletters).`);
   }
   if (defender.dmarc === "bestguesspass") {
     indicators.push("dmarc=bestguesspass — sender domain has NO DMARC record; the 'pass' is Microsoft's guess, not verification.");
@@ -687,6 +894,13 @@ export function parseEmail(raw: string): ParsedEmail {
 
   const bodyFindings = findBodyFindings(decodedBody, plainBody);
 
+  const attachments = analyzeAttachments(parts);
+  for (const att of attachments) {
+    if (att.risk === "high") {
+      indicators.push(`Dangerous attachment "${att.filename}" — ${att.reasons[0]}`);
+    }
+  }
+
   return {
     headers,
     headerList,
@@ -701,6 +915,7 @@ export function parseEmail(raw: string): ParsedEmail {
     originIP,
     defender,
     parts,
+    attachments,
     decodedBody,
     bodyText: plainBody,
     bodyFindings,

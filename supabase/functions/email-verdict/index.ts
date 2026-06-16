@@ -205,6 +205,11 @@ Deno.serve(async (req: Request) => {
 
     const indicatorsStr = parsed.suspiciousIndicators.map(i => `- ${i}`).join("\n") || "None";
     const bodyFindingsStr = parsed.bodyFindings.map(f => `- ${f}`).join("\n") || "None";
+    const attachmentsStr = parsed.attachments.length > 0
+      ? parsed.attachments.map(a =>
+          `[${a.risk.toUpperCase()}] ${a.filename} (${a.contentType}, ${a.sizeBytes} bytes) — ${a.reasons.join(" ")}`
+        ).join("\n")
+      : "None";
 
     let enrichmentStr = "Not provided";
     if (enrichment) {
@@ -215,7 +220,7 @@ Deno.serve(async (req: Request) => {
 
     const systemPrompt = `You are a senior email-threat analyst inside Thamos6 performing defensive analysis of a message an analyst received and uploaded. You are given server-parsed evidence: full header intelligence (including Microsoft Defender/EOP verdict headers), the MIME-decoded body, unwrapped URLs, and base64 artifacts decoded from URL components.
 
-Your job is to produce a calibrated verdict GROUNDED IN THE SUPPLIED EVIDENCE. For each automated signal, CONFIRM or REFUTE it against the actual headers/body before accepting it. Authentication results are frequently misleading: spf=pass from a compromised third-party relay proves nothing about the From identity; dmarc=bestguesspass is a guess, not verification. Conversely, a clean SCL/CAT does not clear a message — Defender misses well-crafted BEC/AITM phish. Weigh header contradictions (authenticated sender vs From, spoofed HELO), social-engineering content (fake trust banners, urgency), and URL evidence (credential-harvest hosts, victim identity embedded base64) above raw filter scores.
+Your job is to produce a calibrated verdict GROUNDED IN THE SUPPLIED EVIDENCE. For each automated signal, CONFIRM or REFUTE it against the actual headers/body before accepting it. Authentication results are frequently misleading: spf=pass from a compromised third-party relay proves nothing about the From identity; dmarc=bestguesspass is a guess, not verification. Conversely, a clean SCL/CAT does not clear a message — Defender misses well-crafted BEC/AITM phish. Weigh header contradictions (authenticated sender vs From, spoofed HELO), display-name impersonation, social-engineering content (fake trust banners, urgency), dangerous attachments (HTML/script/archive/double-extension — local credential pages and malware delivery), and URL evidence (credential-harvest hosts, victim identity embedded base64) above raw filter scores.
 
 Do not invent evidence. Cite the specific header, body text, or URL for every claim. If evidence is insufficient for a signal, say UNCERTAIN rather than guessing. Return only valid JSON matching the requested schema.`;
 
@@ -247,6 +252,9 @@ EXTRACTED IOCS:
 Domains: ${parsed.domains.join(", ") || "none"}
 IPs: ${parsed.ips.join(", ") || "none"}
 Email addresses seen: ${parsed.emails.join(", ") || "none"}
+
+ATTACHMENTS (server-triaged by filename/type):
+${attachmentsStr}
 
 BODY FINDINGS (server-derived):
 ${bodyFindingsStr}

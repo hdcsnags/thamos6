@@ -1,21 +1,25 @@
 import { useState, useMemo, useRef } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning } from 'lucide-react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
 import { supabase } from '../lib/supabase';
+import { palette, typography } from '../design-system/tokens';
 
+// Map the local names this file uses onto the shared design-system tokens so the
+// Email Analyzer matches the rest of the desktop instead of carrying its own
+// off-by-a-few-hex palette.
 const P = {
-  void: '#060610',
-  surface: '#0a0e1a',
-  surfaceLight: '#0f1424',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  pink: '#ff0080',
-  rose: '#f43f5e',
+  void: palette.void,
+  surface: palette.base,
+  surfaceLight: palette.elevated,
+  border: palette.borderDefault,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
+  cyan: palette.cyan,
+  green: palette.green,
+  amber: palette.amber,
+  pink: palette.teal, // URL/secondary accent — on-brand, distinct from rose
+  rose: palette.rose,
 };
 
 interface AuthResult {
@@ -76,6 +80,16 @@ interface UrlIntel {
   decodedArtifacts: DecodedArtifact[];
 }
 
+interface AttachmentInfo {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  disposition: string;
+  extension: string;
+  risk: 'high' | 'medium' | 'low';
+  reasons: string[];
+}
+
 interface AnalysisResult {
   headers: {
     from: string;
@@ -98,6 +112,7 @@ interface AnalysisResult {
   bodyFindings?: string[];
   bodyText?: string;
   urls?: UrlIntel[];
+  attachments?: AttachmentInfo[];
 }
 
 interface EnrichIOCItem {
@@ -135,7 +150,13 @@ interface EmailVerdict {
   analyst_next_steps: string[];
 }
 
-type Tab = 'headers' | 'auth' | 'defender' | 'hops' | 'iocs' | 'body' | 'thamos' | 'raw';
+type Tab = 'headers' | 'auth' | 'defender' | 'hops' | 'iocs' | 'attach' | 'body' | 'thamos' | 'raw';
+
+type VerdictProvider = 'anthropic' | 'openai';
+const VERDICT_MODELS: Record<VerdictProvider, string> = {
+  anthropic: 'claude-sonnet-4-20250514',
+  openai: 'gpt-4o',
+};
 
 const MAX_UPLOAD_MB = 5;
 
@@ -176,6 +197,7 @@ export default function EmailAnalyzer() {
   const [verdict, setVerdict] = useState<EmailVerdict | null>(null);
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictError, setVerdictError] = useState<string | null>(null);
+  const [verdictProvider, setVerdictProvider] = useState<VerdictProvider>('anthropic');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const enrichMap = useMemo(() => {
@@ -362,6 +384,7 @@ export default function EmailAnalyzer() {
       bodyFindings: parsed.bodyFindings ?? [],
       bodyText: parsed.bodyText ?? '',
       urls: parsed.urls ?? [],
+      attachments: parsed.attachments ?? [],
     };
   };
 
@@ -443,7 +466,14 @@ export default function EmailAnalyzer() {
         {
           method: 'POST',
           headers: await authHeaders(),
-          body: JSON.stringify({ raw_email: rawEmail, enrichment: enrichResult?.summary ?? null }),
+          body: JSON.stringify({
+            raw_email: rawEmail,
+            // send the full per-IOC enrichment (the function truncates it), not
+            // just the summary — otherwise the verdict ignores the TI we gathered
+            enrichment: enrichResult ?? null,
+            provider: verdictProvider,
+            model: VERDICT_MODELS[verdictProvider],
+          }),
         }
       );
       const data = await res.json();
@@ -456,12 +486,16 @@ export default function EmailAnalyzer() {
     }
   };
 
+  // email addresses have no dedicated result page (email-result dead-ends in the
+  // scanner), so they are not scannable from here.
+  const SCANNABLE: Record<string, string> = {
+    ip: 'ip-result', domain: 'domain-result', url: 'url-result',
+  };
   const handleScanIOC = (ioc: ExtractedIOC) => {
-    const appIdMap: Record<string, string> = {
-      ip: 'ip-result', domain: 'domain-result', url: 'url-result', email: 'email-result',
-    };
+    const appId = SCANNABLE[ioc.type];
+    if (!appId) return;
     openWindow({
-      appId: appIdMap[ioc.type] as any,
+      appId: appId as any,
       title: `${ioc.type.toUpperCase()}: ${ioc.value}`,
       data: { value: ioc.value },
     });
@@ -503,15 +537,19 @@ export default function EmailAnalyzer() {
     { id: 'defender', label: 'Defender', icon: Shield, show: Boolean(result?.serverParsed) },
     { id: 'hops', label: 'Hops', icon: GitBranch, show: true },
     { id: 'iocs', label: `IOCs${result ? ` (${result.extractedIOCs.length})` : ''}`, icon: List, show: true },
+    { id: 'attach', label: `Attachments${result?.attachments?.length ? ` (${result.attachments.length})` : ''}`, icon: Paperclip, show: Boolean(result?.serverParsed && result?.attachments?.length) },
     { id: 'body', label: 'Body', icon: FileWarning, show: Boolean(result?.serverParsed) },
     { id: 'thamos', label: 'THAMOS', icon: Sparkles, show: Boolean(result?.serverParsed) },
     { id: 'raw', label: 'Raw', icon: FileText, show: true },
   ];
 
-  const IOC_COLOR: Record<string, string> = { ip: P.cyan, domain: P.green, url: '#ff0080', email: P.amber };
+  const IOC_COLOR: Record<string, string> = { ip: P.cyan, domain: P.green, url: P.pink, email: P.amber };
+
+  const RISK_COLOR: Record<AttachmentInfo['risk'], string> = { high: P.rose, medium: P.amber, low: P.dim };
+  const formatBytes = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: typography.mono }}>
       {!result ? (
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="flex items-center gap-2 mb-2">
@@ -521,10 +559,14 @@ export default function EmailAnalyzer() {
 
           {/* .eml / .txt upload */}
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Upload .eml or .txt email file"
             onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) analyzeFile(f); }}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onClick={() => fileRef.current?.click()}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
             className="rounded p-6 text-center cursor-pointer transition-all"
             style={{
               backgroundColor: dragOver ? `${P.cyan}10` : P.surfaceLight,
@@ -564,7 +606,7 @@ export default function EmailAnalyzer() {
               rows={8}
               placeholder="Paste raw email headers here...&#10;&#10;Get headers from:&#10;- Gmail: More (⋮) → Show original&#10;- Outlook: File → Properties → Internet headers"
               className="w-full px-3 py-2 text-xs rounded focus:outline-none resize-none"
-              style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: typography.mono }}
             />
           </div>
 
@@ -576,7 +618,7 @@ export default function EmailAnalyzer() {
               rows={5}
               placeholder="Paste email body here to extract URLs and IOCs..."
               className="w-full px-3 py-2 text-xs rounded focus:outline-none resize-none"
-              style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+              style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: typography.mono }}
             />
           </div>
 
@@ -868,17 +910,60 @@ export default function EmailAnalyzer() {
                             {score}
                           </span>
                         )}
-                        <button
-                          onClick={() => handleScanIOC(ioc)}
-                          className="text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-all"
-                          style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}
-                        >
-                          SCAN →
-                        </button>
+                        {SCANNABLE[ioc.type] && (
+                          <button
+                            onClick={() => handleScanIOC(ioc)}
+                            className="text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-all"
+                            style={{ backgroundColor: `${color}15`, color, border: `1px solid ${color}30` }}
+                          >
+                            SCAN →
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {activeTab === 'attach' && (
+              <div className="space-y-2">
+                {(result.attachments?.length ?? 0) === 0 ? (
+                  <div className="text-center py-10">
+                    <Paperclip className="w-6 h-6 mx-auto mb-2" style={{ color: P.dim }} />
+                    <p className="text-xs" style={{ color: P.dim }}>No attachments in this message</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[10px]" style={{ color: P.dim }}>
+                      Triaged by filename and type. HTML/script/archive and double-extension files are the
+                      common phishing and malware-delivery vectors.
+                    </p>
+                    {result.attachments!.map((att, i) => {
+                      const rc = RISK_COLOR[att.risk];
+                      return (
+                        <div key={i} className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${rc}30` }}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${rc}15`, color: rc }}>
+                              {att.risk.toUpperCase()}
+                            </span>
+                            {att.extension && (
+                              <span className="text-[9px] px-1 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.dim}20`, color: P.text }}>
+                                .{att.extension}
+                              </span>
+                            )}
+                            <code className="text-xs break-all flex-1" style={{ color: P.textLight }}>{att.filename}</code>
+                            <span className="text-[10px] flex-shrink-0" style={{ color: P.dim }}>{formatBytes(att.sizeBytes)}</span>
+                          </div>
+                          <div className="text-[10px] mb-1" style={{ color: P.dim }}>{att.contentType}</div>
+                          {att.reasons.map((r, j) => (
+                            <p key={j} className="text-xs leading-relaxed" style={{ color: att.risk === 'low' ? P.dim : rc }}>{r}</p>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             )}
 
@@ -896,7 +981,7 @@ export default function EmailAnalyzer() {
                 )}
                 <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
                   <span className="text-[10px] tracking-wider" style={{ color: P.dim }}>DECODED BODY TEXT (MIME + base64 decoded, HTML stripped)</span>
-                  <pre className="text-xs mt-2 whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.text, fontFamily: 'JetBrains Mono, monospace' }}>
+                  <pre className="text-xs mt-2 whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.text, fontFamily: typography.mono }}>
                     {result.bodyText || '(empty body)'}
                   </pre>
                 </div>
@@ -917,6 +1002,23 @@ export default function EmailAnalyzer() {
                     ) : (
                       <p className="text-[10px]" style={{ color: P.dim }}>Tip: run ENRICH ALL first to include threat-intel results.</p>
                     )}
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="text-[10px]" style={{ color: P.dim }}>Model:</span>
+                      {(['anthropic', 'openai'] as VerdictProvider[]).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setVerdictProvider(p)}
+                          className="text-[10px] px-2 py-0.5 rounded transition-all"
+                          style={{
+                            backgroundColor: verdictProvider === p ? `${P.cyan}15` : 'transparent',
+                            border: `1px solid ${verdictProvider === p ? `${P.cyan}40` : P.border}`,
+                            color: verdictProvider === p ? P.cyan : P.dim,
+                          }}
+                        >
+                          {p === 'anthropic' ? 'Claude' : 'GPT'}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       onClick={runThamosVerdict}
                       className="px-4 py-2 text-xs font-medium rounded transition-all"
@@ -1020,7 +1122,7 @@ export default function EmailAnalyzer() {
             )}
 
             {activeTab === 'raw' && (
-              <pre className="text-[10px] leading-relaxed overflow-auto" style={{ color: P.text, fontFamily: 'JetBrains Mono, monospace' }}>
+              <pre className="text-[10px] leading-relaxed overflow-auto" style={{ color: P.text, fontFamily: typography.mono }}>
                 {JSON.stringify(result.rawHeaders, null, 2)}
               </pre>
             )}

@@ -1,10 +1,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { parseEmail, isWrapperHost, type ParsedEmail } from "../_shared/email-parser.ts";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://t6.thamos.ca",
+]);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allowed = ALLOWED_ORIGINS.has(origin);
+  return {
+    ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Vary": "Origin",
+  };
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const TI_URL = `${SUPABASE_URL}/functions/v1/threat-intel`;
@@ -200,12 +212,14 @@ function transportParsed(parsed: ParsedEmail) {
     decodedBody: undefined,
     bodyText: parsed.bodyText.slice(0, 20_000),
     bodyHtmlPreview: parsed.decodedBody.slice(0, 60_000),
+    // attachments carry no body text, only metadata — keep them in full
     parts: parsed.parts.map((p) => ({ ...p, text: undefined })),
     headerList: undefined,
   };
 }
 
 serve(async (req) => {
+  const CORS = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: CORS });
   }
@@ -215,6 +229,13 @@ serve(async (req) => {
       status,
       headers: { ...CORS, "Content-Type": "application/json" },
     });
+
+  // Require an authenticated caller — even parse-only mode is server compute and
+  // should not be an open endpoint. The browser always sends the bearer token.
+  const auth = bearerToken(req);
+  if (!auth.toLowerCase().startsWith("bearer ")) {
+    return json({ error: "Authentication required" }, 401);
+  }
 
   try {
     const body = await req.json();
@@ -231,8 +252,6 @@ serve(async (req) => {
       /** in rawEmail mode: also fan out to threat-intel (default parse-only) */
       enrich?: boolean;
     };
-
-    const auth = bearerToken(req);
 
     // --- new path: full message source (.eml/.txt upload) ---
     if (rawEmail) {
