@@ -650,6 +650,14 @@ interface ScoreVariance {
   recommendation?: string;
 }
 
+interface AbuseCategory {
+  key: string;
+  label: string;
+  severity: "high" | "medium" | "low";
+  sources: string[];
+  evidence: string;
+}
+
 interface CalibratedScoring {
   calibrated: number;
   legacy: number | null;
@@ -657,6 +665,96 @@ interface CalibratedScoring {
   legacyDivergence: string | null;
   contributions: ScoreContribution[];
   variances: ScoreVariance[];
+  categories: AbuseCategory[];
+}
+
+// Maps each feed's raw signal to an operator-facing abuse category, so the
+// verdict answers "bad at WHAT" (login attack vs scanning vs spam) instead of a
+// single context-free number. AbuseIPDB category IDs are the canonical taxonomy.
+const ABUSEIPDB_CAT: Record<number, string> = {
+  1: "compromised", 2: "compromised", 3: "fraud", 4: "dos", 5: "credential_attack",
+  6: "dos", 7: "phishing", 8: "fraud", 9: "anonymizer", 10: "spam", 11: "spam",
+  12: "spam", 13: "anonymizer", 14: "scanning", 15: "credential_attack",
+  16: "web_attack", 18: "credential_attack", 19: "web_attack", 20: "compromised",
+  21: "web_attack", 22: "credential_attack", 23: "credential_attack",
+};
+
+const CATEGORY_META: Record<string, { label: string; severity: "high" | "medium" | "low" }> = {
+  credential_attack: { label: "Credential / login attack", severity: "high" },
+  web_attack: { label: "Web application attack", severity: "high" },
+  malware: { label: "Malware / C2", severity: "high" },
+  phishing: { label: "Phishing", severity: "high" },
+  compromised: { label: "Compromised / botnet host", severity: "high" },
+  scanning: { label: "Scanning / recon", severity: "medium" },
+  dos: { label: "DoS / DDoS", severity: "medium" },
+  fraud: { label: "Fraud", severity: "medium" },
+  spam: { label: "Spam source", severity: "medium" },
+  anonymizer: { label: "Anonymizer (Tor/VPN/proxy)", severity: "low" },
+  exposed: { label: "Exposed services / CVEs", severity: "low" },
+};
+const CATEGORY_ORDER = Object.keys(CATEGORY_META);
+
+function attributeCategories(results: ThreatResult[], enrichment?: IPEnrichment): AbuseCategory[] {
+  const find = (s: string) => results.find(r => r.source === s && !r.error);
+  const acc = new Map<string, { sources: Set<string>; evidence: string[] }>();
+  const add = (key: string, source: string, evidence?: string) => {
+    if (!CATEGORY_META[key]) return;
+    if (!acc.has(key)) acc.set(key, { sources: new Set(), evidence: [] });
+    const e = acc.get(key)!;
+    e.sources.add(source);
+    if (evidence && !e.evidence.includes(evidence)) e.evidence.push(evidence);
+  };
+
+  // AbuseIPDB per-report categories (verbose=true is already requested) — this is
+  // the richest source of WHAT the IP was reported doing.
+  const abuse = (find("abuseipdb")?.data as any)?.data;
+  if (abuse) {
+    const reports: any[] = Array.isArray(abuse.reports) ? abuse.reports : [];
+    const counts = new Map<string, number>();
+    for (const rep of reports) {
+      for (const cid of (rep.categories ?? [])) {
+        const key = ABUSEIPDB_CAT[Number(cid)];
+        if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    for (const [key, n] of counts) add(key, "abuseipdb", `${n} AbuseIPDB report${n !== 1 ? "s" : ""}`);
+    if (counts.size === 0 && Number(abuse.abuseConfidenceScore ?? 0) >= 25) {
+      add("credential_attack", "abuseipdb", `abuse confidence ${abuse.abuseConfidenceScore}%`);
+    }
+  }
+
+  const sh: string[] = ((find("spamhaus")?.data as any)?.listedIn ?? []);
+  if (sh.some(n => n.includes("XBL"))) add("compromised", "spamhaus", "Spamhaus XBL (exploited/botnet host)");
+  if (sh.some(n => n.includes("SBL"))) add("spam", "spamhaus", "Spamhaus SBL (verified spam source)");
+
+  for (const s of ["threatfox", "urlhaus", "urlhaus_url", "malwarebazaar"]) {
+    if (find(s)?.isMalicious) add("malware", s, undefined);
+  }
+  if ((find("hybrid_analysis")?.data as any)?.[0]?.verdict === "malicious") add("malware", "hybrid_analysis", "sandbox verdict: malicious");
+  for (const s of ["phishtank", "openphish", "google_safebrowsing"]) {
+    if (find(s)?.isMalicious) add("phishing", s, undefined);
+  }
+  if ((find("greynoise")?.data as any)?.classification === "malicious") add("scanning", "greynoise", "GreyNoise: malicious scanner");
+  const bde: string[] = ((find("blocklistde")?.data as any)?.listedIn ?? []);
+  if (bde.length > 0) add("credential_attack", "blocklistde", `blocklist.de attack reports (${bde.slice(0, 4).join(", ")})`);
+  const ds = find("dshield")?.data as any;
+  if (Number(ds?.attacks ?? 0) > 0) add("scanning", "dshield", `DShield: ${ds.attacks} reporting targets / ${ds.count} reports`);
+  const idb = find("shodan_internetdb")?.data as any;
+  if (Array.isArray(idb?.vulns) && idb.vulns.length > 0) add("exposed", "shodan_internetdb", `${idb.vulns.length} known CVE(s) on exposed services`);
+
+  if (enrichment?.isTor) add("anonymizer", "tor_exit_list", "Tor exit node");
+  if (enrichment?.isVPN) add("anonymizer", "vpn_check", enrichment.vpnService ? `VPN (${enrichment.vpnService})` : "VPN exit");
+  if (enrichment?.isProxy) add("anonymizer", "proxy_check", "Open / anonymous proxy");
+
+  return [...acc.entries()]
+    .map(([key, v]) => ({
+      key,
+      label: CATEGORY_META[key].label,
+      severity: CATEGORY_META[key].severity,
+      sources: [...v.sources],
+      evidence: v.evidence.join("; "),
+    }))
+    .sort((a, b) => CATEGORY_ORDER.indexOf(a.key) - CATEGORY_ORDER.indexOf(b.key));
 }
 
 function vtCurve(malicious: number, suspicious: number): number {
@@ -717,8 +815,11 @@ function computeCalibratedScoring(
       const sbl = listed.some(n => n.includes("SBL"));
       const xbl = listed.some(n => n.includes("XBL"));
       const pblOnly = !sbl && !xbl;
-      if (xbl) up.push({ source: "spamhaus", points: 85, weight: "high", note: "XBL: hijacked/exploited host (bot, open proxy)" });
-      else if (sbl) up.push({ source: "spamhaus", points: 80, weight: "high", note: "SBL: verified spam source" });
+      if (xbl) up.push({ source: "spamhaus", points: 85, weight: "high", note: "XBL: hijacked/exploited host (bot, open proxy) — relevant to auth/network abuse" });
+      // SBL is mail-sending reputation, not auth/network abuse. Weighted medium so
+      // a spam-only listing reads "suspicious", not "malicious", unless an actual
+      // abuse source (AbuseIPDB/DShield/blocklist.de/GreyNoise) corroborates.
+      else if (sbl) up.push({ source: "spamhaus", points: 50, weight: "medium", note: "SBL: verified spam source (mail reputation only — does not by itself indicate login/scan abuse)" });
       if (pblOnly) info.push({ source: "spamhaus", points: 0, weight: "low", note: "PBL only — residential/dynamic IP policy listing, NOT a malicious signal (legacy scored this +60 and boosted +25)" });
     }
   }
@@ -890,6 +991,7 @@ function computeCalibratedScoring(
     legacyDivergence,
     contributions: [...sortedUp, ...down, ...info],
     variances,
+    categories: attributeCategories(results, enrichment),
   };
 }
 

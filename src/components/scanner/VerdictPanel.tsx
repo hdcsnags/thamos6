@@ -47,6 +47,12 @@ const SCORING_VERDICT_LABEL: Record<CalibratedScoring['verdict'], { label: strin
   no_signal: { label: 'NO SIGNAL', cls: 'text-emerald-400' },
 };
 
+const CATEGORY_SEVERITY_STYLE: Record<'high' | 'medium' | 'low', string> = {
+  high: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+  medium: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  low: 'bg-slate-500/15 text-slate-300 border-slate-600/40',
+};
+
 export default function VerdictPanel({ lookupType, value, scoring }: VerdictPanelProps) {
   const [verdict, setVerdict] = useState<IOCVerdict | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,6 +108,24 @@ export default function VerdictPanel({ lookupType, value, scoring }: VerdictPane
               <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Calibrated read</div>
             </div>
           </div>
+          {/* Abuse categories — what the IOC is actually seen doing, not just how bad */}
+          {scoring.categories && scoring.categories.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Abuse categories</div>
+              <div className="flex flex-wrap gap-2">
+                {scoring.categories.map((c) => (
+                  <span
+                    key={c.key}
+                    title={`${c.evidence}${c.sources.length ? ` — ${c.sources.join(', ')}` : ''}`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${CATEGORY_SEVERITY_STYLE[c.severity]}`}
+                  >
+                    {c.label}
+                    <span className="text-[10px] opacity-60">{c.sources.length}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {scoring.legacyDivergence && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
               <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />

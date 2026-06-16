@@ -43,6 +43,14 @@ export interface ScoreVariance {
   recommendation?: string;
 }
 
+export interface AbuseCategory {
+  key: string;
+  label: string;
+  severity: 'high' | 'medium' | 'low';
+  sources: string[];
+  evidence: string;
+}
+
 export interface CalibratedScoring {
   calibrated: number;
   legacy: number | null;
@@ -50,6 +58,7 @@ export interface CalibratedScoring {
   legacyDivergence: string | null;
   contributions: ScoreContribution[];
   variances: ScoreVariance[];
+  categories?: AbuseCategory[];
 }
 
 export interface IPLookupResult {
