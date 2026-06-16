@@ -146,3 +146,97 @@ domain. References: **daedalOS** (https://github.com/DustinBrett/daedalOS),
 > thamos6 to become AGPL too. Draw architectural *ideas* from it, do not paste
 > code. daedalOS/OS.js are permissive (MIT-ish) but still require attribution if
 > code is reused. Keep proprietary code clean of copied snippets.
+
+---
+
+## 7. Architecture decision — t6 vs. tenant (companion split vs. full fork)
+
+**Status:** under active design (brainstorm in progress). This section is the
+working record; revise as decisions firm up.
+
+### The problem
+
+t6 today is fully externally hosted. For real enterprise/SOC use it must touch
+tenant-confidential things — PII, Entra auth, Azure Logic App playbooks, data
+lake / Sentinel queries, TopDesk secrets in Key Vault. Putting those in an
+external SaaS is wrong. Two ways to resolve it:
+
+- **Option A — Companion app (split).** A static web app deployed *inside the
+  Entra tenant* (e.g. Azure Static Web Apps) holds all UI, PII handling, and
+  tenant-privileged actions. It calls *out* to externally-hosted t6 for
+  enrichment/scanning. Sensitive data and secrets never leave the tenant.
+- **Option B — Full redeployable t6 in-tenant.** Package the entire t6 stack
+  (edge functions, DB, all third-party API keys) to run inside each tenant. The
+  deployment is then either fully org-hosted or fully external — no split.
+
+### Decision (current lean): Option A, boundary drawn by data sensitivity
+
+Not "thin UI vs. all brains" — draw the line by **what the data is**:
+
+> **Send indicators, never identities.**
+
+IPs, hashes, domains, defanged URLs = indicators (already sent to VT/Shodan/etc;
+fine to send to t6). Recipient names, internal UPNs, raw email bodies, sign-in
+logs, data-lake rows = identities/tenant data (must not cross the boundary).
+
+### Three-layer shape
+
+1. **Tenant-side companion** (Azure SWA, Entra-protected): all UI, PII handling,
+   Logic App triggers, data-lake/Sentinel queries, TopDesk via Key Vault, **plus
+   the portable pure logic** — email parser, calibrated scoring, category
+   attribution. These already live as near-pure functions in `_shared/`; extract
+   them as a small shared package so the companion runs them locally with zero
+   PII egress.
+2. **t6 enrichment API** (external, proprietary): third-party-feed aggregation +
+   your keys, behind a clean contract — `POST /enrich { type, value } →
+   { aggregate, scoring }`. The companion receives t6's *output*, never its code
+   or keys. ("Return all enrichment" = return results; the logic stays
+   server-side, which is what protects the IP.)
+3. **Tenant LLM** (Azure OpenAI in-tenant) for verdicts needing body/identity
+   grounding, so even AI grounding stays home.
+
+### The email PII trap (must-fix for Option A)
+
+The analyzer currently ships **raw `.eml`** to `analyze-email` / `email-verdict`
+— raw mail *is* PII, so naive Option A would leak it. Fix: run the dependency-
+free `_shared/email-parser.ts` **tenant-side**; only extracted indicators go out.
+Run the grounded verdict against **Azure OpenAI in-tenant** (or redact the body
+before sending).
+
+### Why not Option B (full fork)
+
+- **API keys / licenses.** t6's value is aggregated VT/Shodan/AbuseIPDB/abuse.ch/
+  GreyNoise keys — several under per-org or non-commercial terms. Replicating the
+  backend per tenant duplicates secrets into customer environments (security +
+  ToS + cost) and scatters them.
+- **Drift.** Every tenant runs a fork; you patch each bug N times.
+- **IP exposure.** The whole proprietary codebase ships into customer
+  environments — against the LICENSE. Central enrichment keeps the brains + keys
+  in one protected place.
+- Only viable if you're a single self-hosting tenant forever and never share it —
+  and even then it's more ops for no security gain over the split.
+
+### Auth
+
+Static API key = MVP only (long-lived secret). Preferred: **Entra app-to-app
+(OAuth2 client-credentials)** or a per-tenant key in the tenant's Key Vault with
+rotation. t6 validates, scopes, and rate-limits per tenant → free per-tenant
+audit + billing. Foundations already exist: org tier, `user_api_keys`, and the
+`ALLOWED_ORIGINS` CORS allowlist.
+
+### License synergy
+
+The split reinforces the proprietary LICENSE: brains + feed keys stay
+server-side (uncopyable); the companion is a thinner client you could let tenants
+self-deploy. Posture: **source-available companion, closed enrichment engine.**
+
+### Open questions (to resolve while brainstorming)
+
+- Exact field-level data-egress contract: what crosses, what's redacted/tokenized?
+- Does the tenant have Azure OpenAI available for in-tenant verdicts?
+- Auth mechanism: Entra app-to-app vs. per-tenant Key Vault key for v1?
+- Which capabilities are IOC-only (safe to externalize) vs. PII-touching
+  (tenant-side)? Draw the full per-feature map.
+- Caching/availability: how does the companion degrade if t6 is unreachable?
+- Multi-tenant future: one shared enrichment engine for many tenants, or
+  per-customer isolation?
