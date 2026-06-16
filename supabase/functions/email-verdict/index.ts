@@ -9,6 +9,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { parseEmail } from "../_shared/email-parser.ts";
+import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
@@ -186,6 +187,13 @@ Deno.serve(async (req: Request) => {
     // Server-side truth: re-derive everything from the raw artifact
     const parsed = parseEmail(raw_email);
 
+    // Grounded sender-domain DNS posture (is the From domain even spoofable?)
+    const fromDomain = senderDomain(parsed.from);
+    const senderAuth = fromDomain ? await lookupDomainAuth(fromDomain) : null;
+    const senderAuthStr = senderAuth
+      ? `${senderAuth.assessment} (SPF: ${senderAuth.hasSpf ? "present" : "none"}; DMARC: ${senderAuth.dmarc ?? "none"}; MX: ${senderAuth.hasMx ? "present" : "none"})`
+      : "Not evaluated.";
+
     const defenderStr = parsed.defender.signals.length > 0
       ? parsed.defender.signals.map(s => `[${s.severity.toUpperCase()}] ${s.key}=${s.value} — ${s.meaning}`).join("\n")
       : "No Defender/EOP headers present (message may not have transited Microsoft 365).";
@@ -238,6 +246,9 @@ Origin IP (innermost public Received): ${parsed.originIP ?? "unknown"}
 
 DEFENDER / EOP VERDICT HEADERS (computed by Microsoft before delivery):
 ${defenderStr}
+
+SENDER-DOMAIN DNS POSTURE (live lookup of the From domain):
+${senderAuthStr}
 
 HEADER CROSS-CHECK INDICATORS (server-derived):
 ${indicatorsStr}

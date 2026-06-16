@@ -90,6 +90,19 @@ interface AttachmentInfo {
   reasons: string[];
 }
 
+interface SenderAuth {
+  domain: string;
+  hasMx: boolean;
+  mx: string[];
+  hasSpf: boolean;
+  spf: string | null;
+  hasDmarc: boolean;
+  dmarc: string | null;
+  dmarcPolicy: 'reject' | 'quarantine' | 'none' | null;
+  spoofable: boolean;
+  assessment: string;
+}
+
 interface AnalysisResult {
   headers: {
     from: string;
@@ -113,6 +126,7 @@ interface AnalysisResult {
   bodyText?: string;
   urls?: UrlIntel[];
   attachments?: AttachmentInfo[];
+  senderAuth?: SenderAuth | null;
 }
 
 interface EnrichIOCItem {
@@ -411,7 +425,7 @@ export default function EmailAnalyzer() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       setRawEmail(text);
-      setResult(mapServerParsed(data.parsed));
+      setResult({ ...mapServerParsed(data.parsed), senderAuth: data.senderAuth ?? null });
       setActiveTab(data.parsed?.defender?.present ? 'defender' : 'headers');
     } catch (e) {
       setUploadError(String(e));
@@ -729,6 +743,27 @@ export default function EmailAnalyzer() {
                     </p>
                   </div>
                 )}
+                {result.senderAuth && (() => {
+                  const sa = result.senderAuth!;
+                  const sc = sa.spoofable ? P.rose : sa.dmarcPolicy === 'quarantine' ? P.amber : P.green;
+                  return (
+                    <div className="p-4 rounded space-y-2" style={{ backgroundColor: P.surface, border: `1px solid ${sc}30` }}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs tracking-wider font-bold" style={{ color: P.textLight }}>SENDER DOMAIN POSTURE</span>
+                        <code className="text-[10px]" style={{ color: P.dim }}>{sa.domain}</code>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-bold ml-auto" style={{ backgroundColor: `${sc}15`, color: sc }}>
+                          {sa.spoofable ? 'SPOOFABLE' : `DMARC ${sa.dmarcPolicy?.toUpperCase()}`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px]" style={{ color: P.dim }}>
+                        <span style={{ color: sa.hasDmarc ? P.green : P.rose }}>DMARC {sa.hasDmarc ? sa.dmarcPolicy ?? 'set' : 'none'}</span>
+                        <span style={{ color: sa.hasSpf ? P.green : P.amber }}>SPF {sa.hasSpf ? 'present' : 'none'}</span>
+                        <span style={{ color: sa.hasMx ? P.text : P.amber }}>MX {sa.hasMx ? 'present' : 'none'}</span>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: P.text }}>{sa.assessment}</p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

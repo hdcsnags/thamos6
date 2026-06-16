@@ -38,6 +38,15 @@ const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") ?? "";
 const TRUSTED_DOMAIN = "dsbn.org";
 
+// abuse.ch (URLhaus / ThreatFox / MalwareBazaar) deprecated anonymous access —
+// every request now needs a free Auth-Key sent in the Auth-Key header. Without
+// it these three sources return 401. Get one at https://auth.abuse.ch/ and set
+// ABUSECH_AUTH_KEY in the function secrets.
+const ABUSECH_AUTH_KEY = Deno.env.get("ABUSECH_AUTH_KEY") ?? "";
+function abusechHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return ABUSECH_AUTH_KEY ? { "Auth-Key": ABUSECH_AUTH_KEY, ...extra } : extra;
+}
+
 type UserTier = "anon" | "dsbn" | "external";
 
 interface TierContext {
@@ -82,6 +91,8 @@ interface IPEnrichment {
 const FREE_SOURCES = [
   "ipapi", "threatfox", "urlhaus", "rdap", "teoh", "spamhaus", "alienvault", "teamcymru", "blocklistde", "malwarebazaar",
   "phishtank", "openphish", "tranco",
+  // no-key IP enrichers
+  "shodan_internetdb", "dshield",
   // Phase 1 — new IOC types
   "nvd", "cisa_kev", "epss",
   "blockchain_info", "ethplorer",
@@ -916,7 +927,7 @@ async function checkThreatFox(ctx: TierContext, ip: string): Promise<ThreatResul
   const cached = await getCachedResponse(ctx, "threatfox", ip);
   if (cached) return { source: "threatfox", data: cached, isMalicious: ((cached as any)?.query_status === "ok" && (cached as any)?.data?.length > 0) };
   try {
-    const response = await fetchWithTimeout("https://threatfox-api.abuse.ch/api/v1/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: "search_ioc", search_term: ip }) });
+    const response = await fetchWithTimeout("https://threatfox-api.abuse.ch/api/v1/", { method: "POST", headers: abusechHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ query: "search_ioc", search_term: ip }) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     await setCachedResponse(ctx, "threatfox", ip, data);
@@ -932,13 +943,78 @@ async function checkURLhaus(ctx: TierContext, ip: string): Promise<ThreatResult>
   try {
     const formData = new FormData();
     formData.append("host", ip);
-    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/host/", { method: "POST", body: formData });
+    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/host/", { method: "POST", headers: abusechHeaders(), body: formData });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     await setCachedResponse(ctx, "urlhaus", ip, data);
     return { source: "urlhaus", data, isMalicious: data?.query_status === "ok" };
   } catch (e) {
     return { source: "urlhaus", data: {}, error: String(e) };
+  }
+}
+
+// Shodan InternetDB — free, no API key. Returns exposed ports, known CVEs,
+// CPEs, hostnames and tags for an IP. Treated as attack-surface context, not a
+// malice verdict, so it deliberately does NOT set isMalicious/threatScore.
+async function checkShodanInternetDB(ctx: TierContext, ip: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "shodan_internetdb", ip);
+  if (cached) return { source: "shodan_internetdb", data: cached };
+  try {
+    const response = await fetchWithTimeout(`https://internetdb.shodan.io/${ip}`);
+    if (response.status === 404) {
+      const empty = { ip, found: false, ports: [], vulns: [], cpes: [], hostnames: [], tags: [], source: "Shodan InternetDB" };
+      await setCachedResponse(ctx, "shodan_internetdb", ip, empty);
+      return { source: "shodan_internetdb", data: empty };
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const raw = await response.json();
+    const data = {
+      ip,
+      found: true,
+      ports: raw?.ports ?? [],
+      vulns: raw?.vulns ?? [],
+      cpes: raw?.cpes ?? [],
+      hostnames: raw?.hostnames ?? [],
+      tags: raw?.tags ?? [],
+      source: "Shodan InternetDB",
+    };
+    await setCachedResponse(ctx, "shodan_internetdb", ip, data);
+    return { source: "shodan_internetdb", data };
+  } catch (e) {
+    return { source: "shodan_internetdb", data: {}, error: String(e) };
+  }
+}
+
+// SANS Internet Storm Center / DShield — free, no API key. `attacks` = distinct
+// targets that reported this IP, `count` = total reports. A genuine corroborating
+// IP-reputation source; modest log-scaled score so it nudges rather than dominates.
+async function checkDShield(ctx: TierContext, ip: string): Promise<ThreatResult> {
+  const cached = await getCachedResponse(ctx, "dshield", ip);
+  if (cached) return { source: "dshield", data: cached, isMalicious: Number((cached as any)?.attacks ?? 0) > 0 };
+  try {
+    const response = await fetchWithTimeout(`https://isc.sans.edu/api/ip/${ip}?json`, {
+      headers: { "User-Agent": "Thamos6 ThreatIntel (defensive SOC tooling)" },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const node = json?.ip ?? json ?? {};
+    const attacks = Number(node?.attacks ?? 0);
+    const count = Number(node?.count ?? 0);
+    const data = {
+      ip,
+      attacks,
+      count,
+      mindate: node?.mindate ?? null,
+      maxdate: node?.maxdate ?? null,
+      asabusecontact: node?.asabusecontact ?? null,
+      network: node?.network ?? null,
+      source: "SANS ISC / DShield",
+    };
+    await setCachedResponse(ctx, "dshield", ip, data);
+    const threatScore = attacks > 0 ? Math.min(Math.round(20 + Math.log10(attacks + 1) * 20), 70) : undefined;
+    return { source: "dshield", data, isMalicious: attacks > 0, threatScore };
+  } catch (e) {
+    return { source: "dshield", data: {}, error: String(e) };
   }
 }
 
@@ -1418,7 +1494,7 @@ async function checkURLhausURL(ctx: TierContext, url: string): Promise<ThreatRes
   try {
     const formData = new FormData();
     formData.append("url", url);
-    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/url/", { method: "POST", body: formData });
+    const response = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/url/", { method: "POST", headers: abusechHeaders(), body: formData });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     return { source: "urlhaus_url", data, isMalicious: data?.query_status === "ok" };
@@ -1573,6 +1649,7 @@ async function checkMalwareBazaarHash(ctx: TierContext, hash: string): Promise<T
 
     const response = await fetchWithTimeout("https://mb-api.abuse.ch/api/v1/", {
       method: "POST",
+      headers: abusechHeaders(),
       body: formData
     });
 
@@ -2567,6 +2644,8 @@ Deno.serve(async (req: Request) => {
       if (allowedSources.includes("abuseipdb")) sourcePromises.push(checkAbuseIPDB(ctx, ip, apiKeys.abuseipdb ?? ""));
       if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, ip, apiKeys.alienvault ?? ""));
       if (allowedSources.includes("shodan")) sourcePromises.push(checkShodan(ctx, ip, apiKeys.shodan ?? ""));
+      if (allowedSources.includes("shodan_internetdb")) sourcePromises.push(checkShodanInternetDB(ctx, ip));
+      if (allowedSources.includes("dshield")) sourcePromises.push(checkDShield(ctx, ip));
       if (allowedSources.includes("ipqualityscore")) sourcePromises.push(checkIPQualityScore(ctx, ip, apiKeys.ipqualityscore ?? ""));
       if (allowedSources.includes("threatfox")) sourcePromises.push(checkThreatFox(ctx, ip));
       if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhaus(ctx, ip));

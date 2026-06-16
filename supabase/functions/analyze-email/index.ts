@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { parseEmail, isWrapperHost, type ParsedEmail } from "../_shared/email-parser.ts";
+import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
@@ -260,11 +261,18 @@ serve(async (req) => {
       }
       const parsed = parseEmail(rawEmail);
       const targets = targetsFromParsed(parsed);
-      const enrichment = enrich ? await runEnrichment(targets, auth) : null;
+      // Sender-domain DNS posture (could the From domain even be spoofed?) runs
+      // alongside any IOC enrichment.
+      const fromDomain = senderDomain(parsed.from);
+      const [enrichment, senderAuth] = await Promise.all([
+        enrich ? runEnrichment(targets, auth) : Promise.resolve(null),
+        fromDomain ? lookupDomainAuth(fromDomain) : Promise.resolve(null),
+      ]);
       return json({
         mode: "parsed",
         parsed: transportParsed(parsed),
         targets,
+        senderAuth,
         enrichment,
       });
     }
