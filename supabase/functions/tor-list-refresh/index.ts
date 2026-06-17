@@ -15,6 +15,18 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Destructive refresh (deletes + rewrites the table via the service role).
+  // Restrict to callers holding the service-role key — i.e. a scheduled job /
+  // cron, never the public anon client. Point any scheduler at the service-role
+  // key (not the anon key) in its Authorization header.
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!token || token !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -124,7 +136,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       }),
       {
         status: 500,

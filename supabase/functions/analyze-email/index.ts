@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { parseEmail, isWrapperHost, type ParsedEmail } from "../_shared/email-parser.ts";
 import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
@@ -20,12 +21,26 @@ function getCorsHeaders(req: Request): Record<string, string> {
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const TI_URL = `${SUPABASE_URL}/functions/v1/threat-intel`;
 
 const MAX_RAW_EMAIL_BYTES = 5 * 1024 * 1024;
 
 function bearerToken(req: Request): string {
   return req.headers.get("authorization") ?? "";
+}
+
+/** Validate the JWT (not just its presence) — parsing + DNS lookups are server
+ *  compute and must not be an open endpoint. */
+async function verifyUser(req: Request): Promise<boolean> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const token = authHeader.slice(7);
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data: { user }, error } = await userClient.auth.getUser(token);
+  return Boolean(user) && !error;
 }
 
 function extractURLs(text: string): string[] {
@@ -231,12 +246,12 @@ serve(async (req) => {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
 
-  // Require an authenticated caller — even parse-only mode is server compute and
-  // should not be an open endpoint. The browser always sends the bearer token.
-  const auth = bearerToken(req);
-  if (!auth.toLowerCase().startsWith("bearer ")) {
+  // Require a VALID authenticated caller — even parse-only mode is server compute
+  // and must not be an open endpoint.
+  if (!(await verifyUser(req))) {
     return json({ error: "Authentication required" }, 401);
   }
+  const auth = bearerToken(req);
 
   try {
     const body = await req.json();
