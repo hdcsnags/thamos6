@@ -212,9 +212,12 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
       ...prev,
       windows: {
         ...prev.windows,
-        [id]: { ...prev.windows[id], maximized: false, minimized: false },
+        // Raise to the top on restore (z-index bump) so clicking a minimized
+        // window's taskbar tab brings it in front of everything, like a real OS.
+        [id]: { ...prev.windows[id], maximized: false, minimized: false, zIndex: prev.maxZIndex + 1 },
       },
       activeWindowId: id,
+      maxZIndex: prev.maxZIndex + 1,
     }));
   }, []);
 
