@@ -3,6 +3,7 @@ import { Sparkles, AlertTriangle, Scale, ChevronDown, ChevronUp } from 'lucide-r
 import { supabase } from '../../lib/supabase';
 import type { CalibratedScoring } from '../../types';
 import VarianceCard from './VarianceCard';
+import { SCORING_VERDICT_LABEL, CATEGORY_SEVERITY_STYLE } from './verdictStyles';
 
 interface IOCVerdict {
   verdict: 'MALICIOUS' | 'SUSPICIOUS' | 'LIKELY_BENIGN' | 'INCONCLUSIVE';
@@ -38,19 +39,6 @@ const ASSESSMENT_STYLE: Record<string, string> = {
   FALSE_POSITIVE: 'bg-emerald-500/20 text-emerald-400',
   CONTEXT_ONLY: 'bg-cyan-500/20 text-cyan-400',
   NO_SIGNAL: 'bg-slate-500/20 text-slate-400',
-};
-
-const SCORING_VERDICT_LABEL: Record<CalibratedScoring['verdict'], { label: string; cls: string }> = {
-  malicious: { label: 'MALICIOUS', cls: 'text-rose-400' },
-  suspicious: { label: 'SUSPICIOUS', cls: 'text-amber-400' },
-  low_signal: { label: 'LOW SIGNAL', cls: 'text-cyan-400' },
-  no_signal: { label: 'NO SIGNAL', cls: 'text-emerald-400' },
-};
-
-const CATEGORY_SEVERITY_STYLE: Record<'high' | 'medium' | 'low', string> = {
-  high: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-  medium: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  low: 'bg-slate-500/15 text-slate-300 border-slate-600/40',
 };
 
 export default function VerdictPanel({ lookupType, value, scoring }: VerdictPanelProps) {

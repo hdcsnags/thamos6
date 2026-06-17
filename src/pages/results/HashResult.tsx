@@ -1,18 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Shield, AlertTriangle, Database, FileText, Target, FileJson, Zap,
-  Copy, Check, Activity, Code, ExternalLink, Search
+  Copy, Check, Activity, Code, ExternalLink, Search, Scale
 } from 'lucide-react';
 import { lookupHash } from '../../lib/threatIntel';
 import type { HashLookupResult } from '../../types';
-import ThreatScore from '../../components/ThreatScore';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
+import VerdictStrip from '../../components/scanner/VerdictStrip';
 
 interface HashResultProps {
   hash: string;
 }
 
-type MenuItem = 'overview' | 'file-info' | 'detections' | 'behavior' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'verdict' | 'file-info' | 'detections' | 'behavior' | 'sources' | 'raw';
 
 export default function HashResult({ hash }: HashResultProps) {
   const [loading, setLoading] = useState(true);
@@ -100,6 +100,7 @@ export default function HashResult({ hash }: HashResultProps) {
 
   const menuItems = [
     { id: 'overview' as MenuItem, label: 'Overview', icon: Target },
+    { id: 'verdict' as MenuItem, label: 'Verdict', icon: Scale },
     { id: 'file-info' as MenuItem, label: 'File Info', icon: FileText },
     { id: 'detections' as MenuItem, label: 'Detections', icon: AlertTriangle },
     { id: 'behavior' as MenuItem, label: 'Behavior', icon: Activity },
@@ -182,6 +183,7 @@ export default function HashResult({ hash }: HashResultProps) {
           {/* Content Sections */}
           {activeMenu === 'overview' && (
             <div className="space-y-6">
+              <VerdictStrip scoring={result.scoring} />
               <OverviewSection
                 result={result}
                 vtData={vtData}
@@ -191,9 +193,9 @@ export default function HashResult({ hash }: HashResultProps) {
                 copiedSummary={copiedSummary}
                 copiedJson={copiedJson}
               />
-              <VerdictPanel lookupType="hash" value={hash} scoring={result.scoring} />
             </div>
           )}
+          {activeMenu === 'verdict' && <VerdictPanel lookupType="hash" value={hash} scoring={result.scoring} />}
 
           {activeMenu === 'file-info' && (
             <FileInfoSection vtData={vtData} proMode={proMode} />
@@ -227,11 +229,6 @@ function OverviewSection({ result, vtData, malwareBazaarData, copySummary, copyJ
 
   return (
     <div className="space-y-6">
-      {/* Threat Score */}
-      <div className="flex items-center justify-center py-6">
-        <ThreatScore score={result.overallThreatScore} size="lg" />
-      </div>
-
       {/* Quick Actions */}
       <div className="flex items-center justify-center gap-3">
         <button

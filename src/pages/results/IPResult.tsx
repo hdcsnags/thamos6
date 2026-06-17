@@ -1,20 +1,20 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Globe, AlertTriangle, Shield, Database, MapPin, Server, Wifi,
-  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search, GitBranch
+  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search, GitBranch, Scale
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
 import { lookupIP } from '../../lib/threatIntel';
 import type { IPLookupResult } from '../../types';
-import ThreatScore from '../../components/ThreatScore';
 import { RelatedIOCs } from '../../components/RelatedIOCs';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
+import VerdictStrip from '../../components/scanner/VerdictStrip';
 
 interface IPResultProps {
   ip: string;
 }
 
-type MenuItem = 'overview' | 'network' | 'threats' | 'vpn' | 'location' | 'pivot' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'verdict' | 'network' | 'threats' | 'vpn' | 'location' | 'pivot' | 'sources' | 'raw';
 
 export default function IPResult({ ip }: IPResultProps) {
   const { theme } = useTheme();
@@ -110,6 +110,7 @@ export default function IPResult({ ip }: IPResultProps) {
 
   const menuItems = [
     { id: 'overview' as MenuItem, label: 'Overview', icon: Target },
+    { id: 'verdict' as MenuItem, label: 'Verdict', icon: Scale },
     { id: 'network' as MenuItem, label: 'Network', icon: Server },
     { id: 'threats' as MenuItem, label: 'Threats', icon: AlertTriangle },
     { id: 'vpn' as MenuItem, label: 'VPN/Proxy', icon: Wifi },
@@ -221,6 +222,7 @@ export default function IPResult({ ip }: IPResultProps) {
           {/* Content Sections */}
           {activeMenu === 'overview' && (
             <div className="space-y-6">
+              <VerdictStrip scoring={result.scoring} />
               <OverviewSection
                 result={result}
                 enrichment={enrichment}
@@ -232,8 +234,11 @@ export default function IPResult({ ip }: IPResultProps) {
                 copiedSummary={copiedSummary}
                 copiedJson={copiedJson}
               />
-              <VerdictPanel lookupType="ip" value={ip} scoring={result.scoring} />
             </div>
+          )}
+
+          {activeMenu === 'verdict' && (
+            <VerdictPanel lookupType="ip" value={ip} scoring={result.scoring} />
           )}
 
           {activeMenu === 'network' && (
@@ -279,11 +284,6 @@ export default function IPResult({ ip }: IPResultProps) {
 function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, virusTotalData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
   return (
     <div className="space-y-6">
-      {/* Threat Score */}
-      <div className="flex items-center justify-center py-6">
-        <ThreatScore score={result.overallThreatScore} size="lg" />
-      </div>
-
       {/* Quick Actions */}
       <div className="flex items-center justify-center gap-3">
         <button

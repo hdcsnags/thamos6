@@ -1,19 +1,19 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Globe, AlertTriangle, Shield, Database, Link as LinkIcon, Target, FileJson, Zap,
-  Copy, Check, ExternalLink, Code, Search
+  Copy, Check, ExternalLink, Code, Search, Scale
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
 import { scanURL } from '../../lib/threatIntel';
 import type { URLLookupResult } from '../../types';
-import ThreatScore from '../../components/ThreatScore';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
+import VerdictStrip from '../../components/scanner/VerdictStrip';
 
 interface URLResultProps {
   url: string;
 }
 
-type MenuItem = 'overview' | 'analysis' | 'threats' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'verdict' | 'analysis' | 'threats' | 'sources' | 'raw';
 
 export default function URLResult({ url }: URLResultProps) {
   const { theme } = useTheme();
@@ -96,6 +96,7 @@ export default function URLResult({ url }: URLResultProps) {
 
   const menuItems = [
     { id: 'overview' as MenuItem, label: 'Overview', icon: Target },
+    { id: 'verdict' as MenuItem, label: 'Verdict', icon: Scale },
     { id: 'analysis' as MenuItem, label: 'Analysis', icon: Code },
     { id: 'threats' as MenuItem, label: 'Threats', icon: AlertTriangle },
     { id: 'sources' as MenuItem, label: 'Sources', icon: Database },
@@ -186,10 +187,11 @@ export default function URLResult({ url }: URLResultProps) {
 
           {activeMenu === 'overview' && (
             <div className="space-y-6">
+              <VerdictStrip scoring={result.scoring} />
               <OverviewSection result={result} vtData={vtData} urlscanData={urlscanData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />
-              <VerdictPanel lookupType="url" value={url} scoring={result.scoring} />
             </div>
           )}
+          {activeMenu === 'verdict' && <VerdictPanel lookupType="url" value={url} scoring={result.scoring} />}
           {activeMenu === 'analysis' && <AnalysisSection vtData={vtData} urlscanData={urlscanData} proMode={proMode} />}
           {activeMenu === 'threats' && <ThreatsSection vtData={vtData} proMode={proMode} />}
           {activeMenu === 'sources' && <SourcesSection results={results} proMode={proMode} />}
@@ -203,7 +205,6 @@ export default function URLResult({ url }: URLResultProps) {
 function OverviewSection({ result, vtData, urlscanData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-center py-6"><ThreatScore score={result.overallThreatScore} size="lg" /></div>
       <div className="flex items-center justify-center gap-3">
         <button onClick={copySummary} className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2">
           {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />} COPY SUMMARY
