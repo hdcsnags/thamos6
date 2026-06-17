@@ -849,7 +849,15 @@ export function nonPiiIocs(parsed: ParsedEmail, victimDomains: string[]): GraphI
     .map((u) => u.final);
   const domains = parsed.domains.filter((d) => d.includes(".") && !onVictimDomain(d));
   const hashes = parsed.attachments.map((a) => a.sha256).filter((h): h is string => Boolean(h));
-  const emails = parsed.emails.filter((e) => !isVictimAddr(e));
+  // Only the SENDER/attacker identity addresses go to the graph — never arbitrary
+  // body-extracted addresses, which are noisy and can be victims on non-org
+  // domains (e.g. a student's personal Gmail) that the domain filter can't catch.
+  const pick = (h: string) => h.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i)?.[0]?.toLowerCase() ?? "";
+  const emails = [...new Set(
+    [parsed.from, parsed.replyTo, parsed.returnPath, parsed.defender.authenticatedSender ?? ""]
+      .map(pick)
+      .filter((a) => a && !isVictimAddr(a)),
+  )];
 
   return {
     ips: [...new Set(parsed.ips)],

@@ -141,6 +141,12 @@ Deno.serve(async (req: Request) => {
     }).select("id, created_at").single();
     if (insErr) {
       await serviceClient.storage.from(BUCKET).remove([storagePath]);
+      // Race backstop: the eml_sha256 UNIQUE constraint caught a concurrent save.
+      if ((insErr as { code?: string }).code === "23505") {
+        const { data: dup } = await serviceClient
+          .from("email_verdicts").select("id, created_at").eq("eml_sha256", emlSha).maybeSingle();
+        if (dup) return json({ id: dup.id, eml_sha256: emlSha, deduped: true });
+      }
       return json({ error: `persist failed: ${insErr.message}` }, 500);
     }
 
