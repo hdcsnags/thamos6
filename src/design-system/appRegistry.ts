@@ -14,7 +14,6 @@ import {
   MonitorIcon,
   SettingsIcon,
   SearchResultIcon,
-  TopDeskIcon,
   DecoderIcon,
   DefangIcon,
   EmailAnalyzerIcon,
@@ -155,17 +154,6 @@ export const appRegistry: Record<string, AppDefinition> = {
     defaultSize: { width: 800, height: 600 },
     showOnDesktop: true,
   },
-  topdesk: {
-    id: 'topdesk',
-    name: 'TopDesk',
-    icon: TopDeskIcon,
-    description: 'Ticket search, deduplication, and enrichment',
-    accentColor: palette.blue,
-    category: 'tools',
-    keywords: ['topdesk', 'ticket', 'incident', 'support', 'helpdesk'],
-    defaultSize: { width: 1000, height: 700 },
-    showOnDesktop: true,
-  },
   'ip-result': {
     id: 'ip-result',
     name: 'IP Result',
@@ -275,6 +263,7 @@ export const appRegistry: Record<string, AppDefinition> = {
     category: 'tools',
     keywords: ['email', 'header', 'spf', 'dkim', 'dmarc', 'phishing', 'analyzer', 'eml', 'ioc'],
     defaultSize: { width: 800, height: 600 },
+    showOnDesktop: true,
   },
   'ioc-extractor': {
     id: 'ioc-extractor',

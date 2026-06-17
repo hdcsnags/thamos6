@@ -25,7 +25,6 @@ import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
-import { DesktopTopDesk } from './DesktopTopDesk';
 import { DesktopGitHub } from './DesktopGitHub';
 import { DesktopCodeEditor } from '../editor/DesktopCodeEditor';
 import { DesktopClock } from './DesktopClock';
@@ -464,8 +463,6 @@ function renderWindowContent(appId: string, data?: any) {
       return <DesktopSystemMonitor />;
     case 'settings':
       return <DesktopSettings />;
-    case 'topdesk':
-      return <DesktopTopDesk />;
     case 'ip-result':
       return <IPResult ip={data?.value} />;
     case 'url-result':

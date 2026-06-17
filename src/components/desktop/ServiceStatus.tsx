@@ -1,7 +1,7 @@
-import { Shield, Zap, Ticket, Globe } from 'lucide-react';
+import { Shield, Zap, Globe } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
 
-export type ServiceName = 'topdesk' | 'sentinel' | 'defender' | 'entra';
+export type ServiceName = 'sentinel' | 'defender' | 'entra';
 
 export interface ServiceState {
   id: ServiceName;
@@ -14,7 +14,6 @@ export interface ServiceState {
 const SERVICES: ServiceState[] = [
   { id: 'sentinel', name: 'Microsoft Sentinel', status: 'online', icon: Shield, color: palette.cyan },
   { id: 'defender', name: 'Microsoft Defender', status: 'online', icon: Zap, color: palette.blue },
-  { id: 'topdesk', name: 'TopDesk', status: 'online', icon: Ticket, color: palette.teal },
   { id: 'entra', name: 'Entra ID / SSO', status: 'online', icon: Globe, color: palette.green },
 ];
 

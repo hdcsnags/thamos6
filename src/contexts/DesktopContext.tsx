@@ -14,7 +14,6 @@ export type AppId =
   | 'editor'
   | 'monitor'
   | 'settings'
-  | 'topdesk'
   | 'ip-result'
   | 'url-result'
   | 'domain-result'

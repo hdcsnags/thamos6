@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopSettings } from './DesktopSettings';
-import { DesktopTopDesk } from './DesktopTopDesk';
 import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useDesktop } from '../../contexts/DesktopContext';
 
@@ -37,7 +36,6 @@ const INTERNAL_PAGES: Record<string, { title: string; component: React.Component
   'thamos://home': { title: 'Home', component: HomePage },
   'thamos://news': { title: 'Intel Stream', component: DesktopIntelDashboard },
   'thamos://cases': { title: 'Case Manager', component: DesktopCaseManager },
-  'thamos://topdesk': { title: 'TopDesk', component: DesktopTopDesk },
   'thamos://settings': { title: 'Settings', component: DesktopSettings },
   'thamos://history': { title: 'History', component: HistoryPage },
   'thamos://ransomware': { title: 'Ransomware Intel', component: RansomwarePage },
@@ -47,7 +45,6 @@ const DEFAULT_BOOKMARKS = [
   { label: 'Home', url: 'thamos://home' },
   { label: 'Intel', url: 'thamos://news' },
   { label: 'Cases', url: 'thamos://cases' },
-  { label: 'TopDesk', url: 'thamos://topdesk' },
   { label: 'History', url: 'thamos://history' },
   { label: 'Ransomware', url: 'thamos://ransomware' },
   { label: 'Settings', url: 'thamos://settings' },
@@ -527,7 +524,6 @@ function HomePage() {
           {[
             { url: 'thamos://news', label: 'Intel Stream', color: P.cyan, desc: 'Threat feeds' },
             { url: 'thamos://cases', label: 'Case Manager', color: P.green, desc: 'Investigations' },
-            { url: 'thamos://topdesk', label: 'TopDesk', color: P.blue, desc: 'Tickets' },
             { url: 'thamos://history', label: 'Scan History', color: P.amber, desc: 'Past lookups' },
             { url: 'thamos://settings', label: 'Settings', color: P.text, desc: 'Configuration' },
           ].map(link => (
