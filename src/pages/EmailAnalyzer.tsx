@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip } from 'lucide-react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
 import { supabase } from '../lib/supabase';
 import { palette, typography } from '../design-system/tokens';
@@ -213,6 +213,8 @@ export default function EmailAnalyzer() {
   const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictError, setVerdictError] = useState<string | null>(null);
   const [verdictProvider, setVerdictProvider] = useState<VerdictProvider>('anthropic');
+  const [savingWorkbench, setSavingWorkbench] = useState(false);
+  const [savedWorkbench, setSavedWorkbench] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const enrichMap = useMemo(() => {
@@ -676,7 +678,26 @@ export default function EmailAnalyzer() {
                 {t.label}
               </button>
             ))}
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              {rawEmail && (
+                <button
+                  onClick={async () => {
+                    if (savingWorkbench) return;
+                    setSavingWorkbench(true);
+                    try {
+                      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-email`, {
+                        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ raw_email: rawEmail }),
+                      });
+                      if (res.ok) { setSavedWorkbench(true); setTimeout(() => setSavedWorkbench(false), 2500); }
+                    } catch { /* noop */ } finally { setSavingWorkbench(false); }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                  style={{ color: savedWorkbench ? P.green : P.cyan, border: `1px solid ${(savedWorkbench ? P.green : P.cyan)}40` }}
+                  title="Encrypt + persist this email and feed its non-PII IOCs into the pivot graph"
+                >
+                  <Save className="w-3 h-3" /> {savingWorkbench ? 'Saving…' : savedWorkbench ? 'Saved' : 'Save to Workbench'}
+                </button>
+              )}
               <button
                 onClick={async () => {
                   await navigator.clipboard.writeText(JSON.stringify({ ...result, verdict }, null, 2)).catch(() => {});

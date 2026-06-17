@@ -682,6 +682,15 @@ function findBodyFindings(html: string, text: string): string[] {
     findings.push("QR code referenced in body ('quishing') — payload likely a QR image leading off-platform; the destination is not visible as a normal link.");
   }
 
+  // Device-code-flow phishing — attacker gets the victim to approve the attacker's
+  // sign-in by entering a device code at a real Microsoft endpoint.
+  const deviceUrl = /aka\.ms\/devicelogin|microsoft(online)?\.com\/[^\s"'<>]*device(login|auth)|\/oauth2\/deviceauth/i.test(html + " " + text);
+  const deviceLang = /\bdevice code\b/i.test(text) ||
+    (/\benter\b/i.test(text) && /\bcode\b/i.test(text) && /\b(microsoft|office\s?365|azure|outlook|teams)\b/i.test(text));
+  if (deviceUrl || deviceLang) {
+    findings.push("Device-code-flow lure: references a Microsoft device-login / 'enter this code' flow — hallmark of device-code phishing, where the victim unknowingly authorizes the attacker's session.");
+  }
+
   for (const m of findAnchorMismatches(html)) findings.push(m);
   return findings;
 }
@@ -806,6 +815,50 @@ export async function fillAttachmentHashes(parsed: ParsedEmail): Promise<void> {
   }
   // bytes are transient — never transport them
   for (const p of parsed.parts) p.bytes = null;
+}
+
+export interface GraphIocs {
+  ips: string[];
+  urls: string[];
+  domains: string[];
+  hashes: string[];
+  senderDomain: string | null;
+  emails: string[];
+}
+
+/**
+ * Attacker-side IOCs safe to persist in the pivot graph — excludes victim
+ * identity (recipient addresses, decoded UPN artifacts, and any host on a
+ * protected/victim domain). victimDomains comes from config (e.g.
+ * "dsbn.org,studentsdsbn.org"); nothing PII is hardcoded in the parser.
+ */
+export function nonPiiIocs(parsed: ParsedEmail, victimDomains: string[]): GraphIocs {
+  const vic = victimDomains.map((d) => d.trim().toLowerCase()).filter(Boolean);
+  const onVictimDomain = (host: string) => {
+    const h = host.toLowerCase();
+    return vic.some((v) => h === v || h.endsWith("." + v));
+  };
+  const isVictimAddr = (addr: string) => onVictimDomain(addr.split("@")[1] ?? "");
+
+  const fromAddr = parsed.from.match(/<([^>]+)>|([^\s<>]+@[^\s<>]+)/)?.[1]
+    ?? parsed.from.match(/([^\s<>]+@[^\s<>]+)/)?.[1] ?? "";
+  const senderDomain = fromAddr.split("@")[1]?.toLowerCase() || null;
+
+  const urls = parsed.urls
+    .filter((u) => u.finalHost && u.finalHost.includes(".") && !isWrapperHost(u.finalHost) && !onVictimDomain(u.finalHost))
+    .map((u) => u.final);
+  const domains = parsed.domains.filter((d) => d.includes(".") && !onVictimDomain(d));
+  const hashes = parsed.attachments.map((a) => a.sha256).filter((h): h is string => Boolean(h));
+  const emails = parsed.emails.filter((e) => !isVictimAddr(e));
+
+  return {
+    ips: [...new Set(parsed.ips)],
+    urls: [...new Set(urls)],
+    domains: [...new Set(domains)],
+    hashes: [...new Set(hashes)],
+    senderDomain: senderDomain && !onVictimDomain(senderDomain) ? senderDomain : senderDomain,
+    emails: [...new Set(emails)],
+  };
 }
 
 /** From: "Display Name" <addr@dom> — pull the quoted/leading display name. */
@@ -945,6 +998,23 @@ export function parseEmail(raw: string): ParsedEmail {
         break;
       }
     }
+  }
+
+  // Job-scam targeting (free-webmail sender + hiring + payout) — the student-money
+  // pattern: a personal webmail account dangling a remote job that needs a payment,
+  // gift card, or check handled.
+  const FREE_WEBMAIL = /^(gmail|googlemail|outlook|hotmail|live|yahoo|ymail|rocketmail|icloud|me|aol|proton|protonmail|gmx|mail)\.[a-z.]+$/i;
+  const hiring = /\b(job (offer|opportunit|opening|vacanc)|hiring|now recruiting|remote (job|work|position)|part[-\s]?time (job|work|position)|work[-\s]?from[-\s]?home|employment opportunit|position (is )?available|payroll (clerk|assistant)|personal assistant)\b/i.test(plainBody);
+  const payout = /\b(gift\s?cards?|cheque|(check|cheque) (will|has been|is being) (sent|mailed|deposited)|zelle|venmo|cash\s?app|wire (the|you|funds|transfer)|western union|money\s?gram|reimburse|deposit .* (account|check)|purchase .* (cards?|equipment|supplies))\b/i.test(plainBody);
+  if (FREE_WEBMAIL.test(fromDomain) && hiring && payout) {
+    indicators.push("Job-scam pattern: free-webmail sender + hiring/remote-job language + a payment/gift-card/check request — classic advance-fee job scam (frequently targets students).");
+  }
+
+  // Rapport-chain hint — AI-written chains often stay benign for several replies
+  // before the ask. A deep Re: thread with references is worth a second look.
+  const subjReplies = ((headers["subject"] ?? "").match(/re\s*:/gi) ?? []).length;
+  if ((headers["references"] || headers["in-reply-to"]) && subjReplies >= 2) {
+    indicators.push("Deep reply chain (Re: Re: …) with thread references — watch for rapport-building chains that only turn malicious in a later reply.");
   }
 
   // Return-Path / Reply-To divergence is NORMAL for legitimate ESPs and mailing
