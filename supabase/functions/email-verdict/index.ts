@@ -8,7 +8,7 @@
 // Client-supplied threat-intel enrichment is accepted but labeled as such.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { parseEmail } from "../_shared/email-parser.ts";
+import { parseEmail, fillAttachmentHashes } from "../_shared/email-parser.ts";
 import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -186,6 +186,7 @@ Deno.serve(async (req: Request) => {
 
     // Server-side truth: re-derive everything from the raw artifact
     const parsed = parseEmail(raw_email);
+    await fillAttachmentHashes(parsed);
 
     // Grounded sender-domain DNS posture (is the From domain even spoofable?)
     const fromDomain = senderDomain(parsed.from);
@@ -215,7 +216,7 @@ Deno.serve(async (req: Request) => {
     const bodyFindingsStr = parsed.bodyFindings.map(f => `- ${f}`).join("\n") || "None";
     const attachmentsStr = parsed.attachments.length > 0
       ? parsed.attachments.map(a =>
-          `[${a.risk.toUpperCase()}] ${a.filename} (${a.contentType}, ${a.sizeBytes} bytes) — ${a.reasons.join(" ")}`
+          `[${a.risk.toUpperCase()}] ${a.filename} (${a.contentType}, ${a.sizeBytes} bytes${a.sha256 ? `, sha256 ${a.sha256}` : ""}) — ${a.reasons.join(" ")}`
         ).join("\n")
       : "None";
 

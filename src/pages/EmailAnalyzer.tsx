@@ -86,6 +86,7 @@ interface AttachmentInfo {
   sizeBytes: number;
   disposition: string;
   extension: string;
+  sha256: string | null;
   risk: 'high' | 'medium' | 'low';
   reasons: string[];
 }
@@ -994,6 +995,19 @@ export default function EmailAnalyzer() {
                           {att.reasons.map((r, j) => (
                             <p key={j} className="text-xs leading-relaxed" style={{ color: att.risk === 'low' ? P.dim : rc }}>{r}</p>
                           ))}
+                          {att.sha256 && (
+                            <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${P.border}` }}>
+                              <span className="text-[10px] flex-shrink-0" style={{ color: P.dim }}>SHA-256</span>
+                              <code className="text-[10px] break-all flex-1 min-w-0" style={{ color: P.text }}>{att.sha256}</code>
+                              <button
+                                onClick={() => openWindow({ appId: 'hash-result' as any, title: `HASH: ${att.sha256!.slice(0, 12)}…`, data: { value: att.sha256 } })}
+                                className="text-[10px] px-2 py-0.5 rounded flex-shrink-0 transition-all"
+                                style={{ backgroundColor: `${P.cyan}15`, color: P.cyan, border: `1px solid ${P.cyan}30` }}
+                              >
+                                SCAN →
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

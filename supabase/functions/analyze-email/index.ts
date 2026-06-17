@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { parseEmail, isWrapperHost, type ParsedEmail } from "../_shared/email-parser.ts";
+import { parseEmail, isWrapperHost, fillAttachmentHashes, type ParsedEmail } from "../_shared/email-parser.ts";
 import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -229,7 +229,7 @@ function transportParsed(parsed: ParsedEmail) {
     bodyText: parsed.bodyText.slice(0, 20_000),
     bodyHtmlPreview: parsed.decodedBody.slice(0, 60_000),
     // attachments carry no body text, only metadata — keep them in full
-    parts: parsed.parts.map((p) => ({ ...p, text: undefined })),
+    parts: parsed.parts.map((p) => ({ ...p, text: undefined, bytes: undefined })),
     headerList: undefined,
   };
 }
@@ -275,6 +275,7 @@ serve(async (req) => {
         return json({ error: "Email too large (max 5MB)" }, 413);
       }
       const parsed = parseEmail(rawEmail);
+      await fillAttachmentHashes(parsed);
       const targets = targetsFromParsed(parsed);
       // Sender-domain DNS posture (could the From domain even be spoofed?) runs
       // alongside any IOC enrichment.

@@ -16,6 +16,9 @@ export interface MimePart {
   filename: string | null;
   /** decoded text for text/* parts, null for binary */
   text: string | null;
+  /** decoded bytes for binary attachment parts — transient, used to compute
+   *  the SHA-256 then stripped before transport. null for text parts. */
+  bytes: Uint8Array | null;
   sizeBytes: number;
 }
 
@@ -36,7 +39,7 @@ export interface UrlIntel {
   final: string;
   /** hosts traversed while unwrapping (wrapper → … → final) */
   unwrapChain: string[];
-  wrapper: "safelinks" | "mimecast" | "urldefense" | null;
+  wrapper: "safelinks" | "mimecast" | "urldefense" | "barracuda" | "symantec" | null;
   finalHost: string;
   decodedArtifacts: DecodedArtifact[];
 }
@@ -55,6 +58,8 @@ export interface AttachmentInfo {
   disposition: string;
   /** lowercased final extension, e.g. "htm" */
   extension: string;
+  /** SHA-256 of the decoded attachment bytes (filled by fillAttachmentHashes) */
+  sha256: string | null;
   risk: "high" | "medium" | "low";
   reasons: string[];
 }
@@ -264,6 +269,11 @@ function buildPart(
   const isText = /^(text\/|message\/)/i.test(contentType.trim());
   const filename =
     getHeaderParam(disposition, "filename") ?? getHeaderParam(contentType, "name");
+  // Decode binary attachment bytes once (base64) so we can hash them later.
+  let bytes: Uint8Array | null = null;
+  if (!isText && encoding.trim().toLowerCase() === "base64") {
+    bytes = b64ToBytes(body);
+  }
   return {
     contentType: contentType.split(";")[0].trim().toLowerCase(),
     charset,
@@ -271,7 +281,8 @@ function buildPart(
     disposition: disposition.split(";")[0].trim().toLowerCase(),
     filename,
     text: isText ? decodePartBody(body, encoding, charset) : null,
-    sizeBytes: body.length,
+    bytes,
+    sizeBytes: bytes ? bytes.length : body.length,
   };
 }
 
@@ -286,6 +297,8 @@ const WRAPPER_HOSTS = [
   "mimecastprotect.com",
   "urldefense.com",
   "urldefense.proofpoint.com",
+  "linkprotect.cudasvc.com",
+  "clicktime.symantec.com",
 ];
 
 export function isWrapperHost(host: string): boolean {
@@ -308,11 +321,26 @@ function unwrapOnce(url: string): { url: string; wrapper: UrlIntel["wrapper"] } 
     // Proofpoint v3: https://urldefense.com/v3/__<url>__;<b64>!!...
     const v3 = url.match(/\/v3\/__(.+?)__;/);
     if (v3) return { url: v3[1], wrapper: "urldefense" };
+    // Proofpoint v2: ?u=<url> where '-'→'%' and '_'→'/'
+    const v2 = u.searchParams.get("u");
+    if (v2) {
+      try { return { url: decodeURIComponent(v2.replace(/-/g, "%").replace(/_/g, "/")), wrapper: "urldefense" }; } catch { /* fall through */ }
+    }
   }
   if (host.endsWith("mimecastprotect.com")) {
     // Mimecast keeps only a token; the `domain` param names the real target host
     const domain = u.searchParams.get("domain");
     if (domain) return { url: `https://${domain}/`, wrapper: "mimecast" };
+  }
+  if (host.endsWith("linkprotect.cudasvc.com")) {
+    // Barracuda Link Protection: ?a=<url-encoded real target>
+    const a = u.searchParams.get("a");
+    if (a) return { url: decodeURIComponent(a), wrapper: "barracuda" };
+  }
+  if (host.endsWith("clicktime.symantec.com")) {
+    // Symantec Click-time URL Protection: ?u=<real target>
+    const inner = u.searchParams.get("u");
+    if (inner) return { url: decodeURIComponent(inner), wrapper: "symantec" };
   }
   return null;
 }
@@ -637,6 +665,23 @@ function findBodyFindings(html: string, text: string): string[] {
   if (/url=data:text\/html|javascript:/i.test(html)) {
     findings.push("Body contains data:/javascript: URI — possible HTML smuggling.");
   }
+
+  // Social-engineering language (lure pressure). These are supporting signals,
+  // not verdicts — reported so the analyst/THAMOS can weigh tone.
+  const urgency = /\b(urgent(ly)?|immediately|within \d+\s*(hours?|minutes?)|action required|final (notice|warning|reminder)|account (will be )?(suspend|lock|disabl|clos|terminat)|expir(e|es|ing|ed) (today|soon|in \d))/i.test(text);
+  const credReq = /\b(verify your (account|identity|email|password)|confirm your (password|credentials|account|identity)|re-?authenticate|re-?validate|update your (password|payment|billing|account)|unusual (sign|login|activity)|(sign|log) ?in to (avoid|keep|restore|verify))/i.test(text);
+  const financial = /\b(wire transfer|bank (details|account|transfer)|invoice (attached|enclosed|overdue)|payment (overdue|pending|failed|declined)|gift ?cards?|update.{0,15}(bank|payment) (details|info)|change.{0,15}bank)/i.test(text);
+  if (urgency) findings.push("Urgency/pressure language in body (suspension/expiry/'action required') — classic phishing lure.");
+  if (credReq) findings.push("Credential-action language in body (verify/confirm/re-authenticate your account) — consistent with credential phishing.");
+  if (financial) findings.push("Financial-action language in body (wire/bank/invoice/payment/gift card) — consistent with BEC / payment fraud.");
+
+  // Quishing — a QR code the recipient is told to scan moves the payload off the
+  // wire (and onto a phone), bypassing URL reputation in the mail body.
+  if (/\bQR[\s-]?code\b/i.test(text) || /scan (the |this )?(code|qr)/i.test(text) ||
+      /<img[^>]+(?:src|alt)\s*=\s*["'][^"'>]*qr[^"'>]*/i.test(html)) {
+    findings.push("QR code referenced in body ('quishing') — payload likely a QR image leading off-platform; the destination is not visible as a normal link.");
+  }
+
   for (const m of findAnchorMismatches(html)) findings.push(m);
   return findings;
 }
@@ -730,11 +775,37 @@ function analyzeAttachments(parts: MimePart[]): AttachmentInfo[] {
       sizeBytes: p.sizeBytes,
       disposition: p.disposition || "attachment",
       extension: ext,
+      sha256: null,
       risk,
       reasons,
     });
   }
   return out;
+}
+
+function isAttachmentPart(p: MimePart): boolean {
+  return p.disposition === "attachment" || Boolean(p.filename);
+}
+
+/**
+ * Fill in each attachment's SHA-256 from its decoded bytes, then drop the bytes.
+ * Async (crypto.subtle), so callers await it after parseEmail. Attachments and
+ * their source parts are in the same order, so they align by index.
+ */
+export async function fillAttachmentHashes(parsed: ParsedEmail): Promise<void> {
+  const attParts = parsed.parts.filter(isAttachmentPart);
+  for (let i = 0; i < parsed.attachments.length; i++) {
+    const bytes = attParts[i]?.bytes;
+    if (bytes && bytes.length > 0) {
+      try {
+        const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+        parsed.attachments[i].sha256 = [...new Uint8Array(digest)]
+          .map((b) => b.toString(16).padStart(2, "0")).join("");
+      } catch { /* leave null */ }
+    }
+  }
+  // bytes are transient — never transport them
+  for (const p of parsed.parts) p.bytes = null;
 }
 
 /** From: "Display Name" <addr@dom> — pull the quoted/leading display name. */
@@ -854,6 +925,24 @@ export function parseEmail(raw: string): ParsedEmail {
         indicators.push(
           `Display name impersonates "${displayName}" (brand: ${brand}) but the message came from ${fromDomain}, which is not a ${brand} domain.`
         );
+      }
+    }
+  }
+
+  // Lookalike / homoglyph sender domain (low-FP checks only).
+  if (fromDomain) {
+    if (/(^|\.)xn--/.test(fromDomain)) {
+      indicators.push(`Sender domain ${fromDomain} is an IDN/punycode (xn--) domain — possible homoglyph lookalike of a trusted brand.`);
+    }
+    const labels = fromDomain.split(".");
+    const reg = labels.slice(-2).join(".");
+    const subLabels = labels.slice(0, -2);
+    for (const b of BRANDS) {
+      if (b.includes(" ")) continue;
+      // a brand sitting in a SUBDOMAIN label while the registered domain is unrelated
+      if (subLabels.includes(b) && !reg.includes(b)) {
+        indicators.push(`Sender domain ${fromDomain} places "${b}" in a subdomain while the registered domain is ${reg} — brand impersonation via subdomain.`);
+        break;
       }
     }
   }
