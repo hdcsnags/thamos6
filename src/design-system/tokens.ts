@@ -21,6 +21,17 @@ export const palette = {
   blue: '#00b4d8',
   teal: '#2dd4bf',
 
+  mailPreviewBg: '#f8fafc',
+  mailPreviewChrome: '#f1f5f9',
+  mailPreviewBorder: '#e2e8f0',
+  mailPreviewText: '#111827',
+  mailPreviewMuted: '#64748b',
+  mailPreviewChip: '#e2e8f0',
+  mailPreviewLink: '#2563eb',
+  mailPreviewDanger: '#dc2626',
+  mailPreviewAvatarBg: '#dbeafe',
+  mailPreviewAvatarText: '#1e40af',
+
   agentX: '#00ff9d',
   agentY: '#fbbf24',
   agentZ: '#00d9ff',

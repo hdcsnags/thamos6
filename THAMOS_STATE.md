@@ -211,6 +211,62 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## Sprint Log
 
+### Sprint 2026-06-19 — Email Workbench Phase 1
+**Agent:** GitHub Copilot CLI (GPT-5.5)
+**Scope:** Built the first Desktop Email Workbench slice from the t1 bridge findings.
+
+**Completed:**
+- [x] Refactored `src/pages/EmailAnalyzer.tsx` result mode into a two-pane workbench: safe reconstructed message preview on the left, evidence tabs on the right.
+- [x] Added a sanitized inert HTML email preview path using the existing `bodyHtmlPreview` returned by `analyze-email`; scripts, forms, remote loads, styles, active media, and live link navigation are stripped before rendering.
+- [x] Preserved the existing t6 forensic pipeline: `.eml` upload, server parse, Defender/EOP signals, SafeLinks/base64 handling, attachments, IOC enrichment, grounded THAMOS verdict, and encrypted Save to Workbench.
+- [x] Made enrichment and Save to Workbench failures visible instead of silently swallowing them.
+- [x] Added dedicated mail-preview design tokens in `src/design-system/tokens.ts` instead of hardcoding Outlook-style preview colors in the component.
+- [x] Cleaned local `EmailAnalyzer.tsx` lint debt touched by this sprint (`any` casts, regex escapes, AppId typing).
+
+**Validation:**
+- `npx eslint src/pages/EmailAnalyzer.tsx src/design-system/tokens.ts` passes.
+- `npm run build` passes.
+- `npm run typecheck -- --pretty false` still fails on the existing repo-wide baseline; no `EmailAnalyzer.tsx` or `tokens.ts` errors remain in the output.
+
+**Deferred / Next Sprint:**
+- Add "Send to Case" directly from Email Workbench.
+- Add workbench history/recall for encrypted saved `.eml` artifacts.
+- Consider a richer URL hover/inspection overlay in the safe preview, backed by extracted IOC data rather than live anchors.
+
+### Sprint 2026-06-19 — Desktop-First Architecture Audit
+**Agent:** GitHub Copilot CLI (GPT-5.5)
+**Scope:** Reviewed architecture docs, upgrade path, Supabase migrations/functions, Desktop shell, scanner, verdict, case, T6, and theme/auth surfaces.
+
+**Completed:**
+- [x] Confirmed product direction from maintainer: Desktop is the new standard mode replacing Tactical; Tactical should be treated as legacy/compat unless explicitly targeted.
+- [x] Verified GitHub push access via `gh auth status`, Supabase CLI availability, linked project ref, and local/remote migration parity through `20260618002000`.
+- [x] Confirmed core drift pattern: backend/Tactical capabilities exist but are not consistently surfaced in Desktop.
+- [x] Confirmed Desktop is not yet the default in `themecontext.tsx`; fresh visitors still fall back to Tactical.
+- [x] Confirmed CVE, wallet, and email threat-intel endpoints/tables exist, but frontend client/result routing is incomplete.
+- [x] Confirmed Desktop scanner and result windows still dead-end or placeholder some detected IOC types.
+- [x] Confirmed verdict tables/functions exist but history/recall UI is still missing.
+- [x] Confirmed Case Manager is not yet the investigation spine: scans, verdicts, email analysis, and T6 syntheses need "Send to Case" wiring.
+- [x] Confirmed T6 has manual context snippets but no automatic scan/email/verdict context injection.
+- [x] Ran `npm run typecheck`; current baseline fails with existing TypeScript errors, including active Desktop issues.
+- [x] Reviewed the `C:\Thamos\t1` PhishBowl reference project for the Email Analyzer bridge. Useful source material is the Outlook-style shell (`OutlookLayout.tsx`), inbox/message/side-panel interaction (`Simulator.tsx`), URL hover/reveal pattern (`UrlTooltip.tsx`), and structured red-flag explanation model (`ThinkBreakdownCard.tsx`).
+- [x] Confirmed t6 already has the stronger forensic foundation for email work: MIME parsing, Defender/EOP header intelligence, SafeLinks/base64 artifact handling, attachment triage, grounded email verdicts, encrypted `.eml` persistence, and non-PII IOC graph edges.
+
+**Decisions Made:**
+- Desktop-first work should take priority over Tactical parity. New login/default-theme work should land in the Desktop shell.
+- Next upgrades should surface existing capabilities before adding more backend sources.
+- The tenant companion/data-egress contract should enforce: indicators may leave the tenant; identities, raw email, and body text should remain tenant-side.
+- The t1 bridge should be adapted as an analyst Email Workbench UX, not ported as a training simulator. Reuse the Outlook-like reader concept and side-by-side red-flag explanation pattern, but keep t6's parser/verdict/persistence pipeline as the source of truth.
+- Do not reuse t1's `dangerouslySetInnerHTML` email-body renderer directly. Any email recreation in t6 must be sanitized/isolated, link-disabled or defanged, and unable to load active remote content.
+
+**Deferred / Next Sprint:**
+- Make Desktop the default entry mode and design the OS-style login screen.
+- Fix Desktop/typecheck blockers.
+- Add Desktop result/client support for CVE, wallet, email, and extension flows.
+- Add "Send to Case" across scan results, IOC verdicts, email verdicts, and T6 synthesis.
+- Add verdict history/workbench recall surfaces.
+- Update `UPGRADE_PATH.md` with a Desktop-first resurfacing roadmap.
+- Refactor Email Analyzer into a Desktop Email Workbench: reconstructed/safe message preview on one side; Defender/auth/body/IOC/attachment/verdict flags on the other; save-to-workbench and pivot-graph actions visible without hiding the email.
+
 ### Sprint 2026-06-10 — Extension Scanner Phase B (Grounded AI Verdict)
 **Agent:** GitHub Copilot CLI (Claude)
 **Scope:** Move THAMOS verdict server-side, ground it in actual code evidence, persist verdicts

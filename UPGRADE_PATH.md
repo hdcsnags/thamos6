@@ -96,6 +96,36 @@ a fresh checkout knows the current baseline.
 - Pre-flight token/cost estimate before the 3-provider fan-out.
 - One-click "send synthesis to Case."
 
+## 3.5 Email Workbench — t1 bridge, adapted not ported
+
+Reference project: `C:\Thamos\t1` / PhishBowl. The useful material is UX
+shape, not threat-intel logic:
+
+- `src/components/OutlookLayout.tsx` — Outlook-like mail shell and folder chrome.
+- `src/pages/Simulator.tsx` — inbox/message/analysis three-pane interaction.
+- `src/components/UrlTooltip.tsx` — hover-to-reveal actual URL destination.
+- `src/components/ThinkBreakdownCard.tsx` — structured red-flag explanation side
+  panel.
+- `src/data/scenarios.ts` — realistic AiTM/device-code/base64-prefill scenario
+  language that can inform analyzer detections and sample tests.
+
+Brutal constraint: do **not** direct-port the simulator. t1 is a training app;
+t6 needs an analyst evidence viewer. The right upgrade is a Desktop Email
+Workbench that keeps the reconstructed message visible while a side panel shows
+Defender/EOP signals, auth posture, SafeLinks unwraps, base64 artifacts,
+attachments, IOCs, and the grounded THAMOS verdict.
+
+Security rules for this workbench:
+
+- Render email content as sanitized inert evidence, not live web content. No
+  active scripts, form posts, remote loads, or clickable live links.
+- Do not copy t1's `dangerouslySetInnerHTML` renderer without a sanitizer and
+  isolation strategy.
+- Keep t6's existing parser/verdict/persistence pipeline as source of truth:
+  `analyze-email`, `_shared/email-parser.ts`, `email-verdict`, and `store-email`.
+- Surface failures explicitly. Current Email Analyzer paths still swallow some
+  enrichment/save errors; an analyst workbench should not silently succeed.
+
 ## 4. Threat-intel sources & data
 
 - **ip-api.com is non-commercial-only** (`threat-intel/index.ts`). If thamos6

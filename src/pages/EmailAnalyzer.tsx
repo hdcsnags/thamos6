@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from 'react';
 import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
+import type { AppId } from '../contexts/DesktopContext';
 import { supabase } from '../lib/supabase';
 import { palette, typography } from '../design-system/tokens';
 
@@ -20,6 +22,16 @@ const P = {
   amber: palette.amber,
   pink: palette.teal, // URL/secondary accent — on-brand, distinct from rose
   rose: palette.rose,
+  mailBg: palette.mailPreviewBg,
+  mailChrome: palette.mailPreviewChrome,
+  mailBorder: palette.mailPreviewBorder,
+  mailText: palette.mailPreviewText,
+  mailMuted: palette.mailPreviewMuted,
+  mailChip: palette.mailPreviewChip,
+  mailLink: palette.mailPreviewLink,
+  mailDanger: palette.mailPreviewDanger,
+  mailAvatarBg: palette.mailPreviewAvatarBg,
+  mailAvatarText: palette.mailPreviewAvatarText,
 };
 
 interface AuthResult {
@@ -125,14 +137,22 @@ interface AnalysisResult {
   defender?: DefenderIntel;
   bodyFindings?: string[];
   bodyText?: string;
+  bodyHtmlPreview?: string;
   urls?: UrlIntel[];
   attachments?: AttachmentInfo[];
   senderAuth?: SenderAuth | null;
 }
 
+interface ThreatIntelEnrichment extends Record<string, unknown> {
+  overallThreatScore?: number;
+  maxThreatScore?: number;
+  isMalicious?: boolean;
+  suspicious?: boolean;
+}
+
 interface EnrichIOCItem {
   value: string;
-  enrichment: any;
+  enrichment: ThreatIntelEnrichment;
   isIDN?: boolean;
 }
 
@@ -167,6 +187,29 @@ interface EmailVerdict {
 
 type Tab = 'headers' | 'auth' | 'defender' | 'hops' | 'iocs' | 'attach' | 'body' | 'thamos' | 'raw';
 
+interface ServerParsedEmail {
+  from?: string;
+  to?: string;
+  subject?: string;
+  date?: string;
+  messageId?: string;
+  returnPath?: string;
+  replyTo?: string;
+  defender?: DefenderIntel;
+  hops?: HopInfo[];
+  originIP?: string | null;
+  suspiciousIndicators?: string[];
+  headers?: Record<string, string>;
+  bodyFindings?: string[];
+  bodyText?: string;
+  bodyHtmlPreview?: string;
+  urls?: UrlIntel[];
+  domains?: string[];
+  ips?: string[];
+  emails?: string[];
+  attachments?: AttachmentInfo[];
+}
+
 type VerdictProvider = 'anthropic' | 'openai';
 const VERDICT_MODELS: Record<VerdictProvider, string> = {
   anthropic: 'claude-sonnet-4-20250514',
@@ -174,6 +217,76 @@ const VERDICT_MODELS: Record<VerdictProvider, string> = {
 };
 
 const MAX_UPLOAD_MB = 5;
+
+const BLOCKED_EMAIL_TAGS = [
+  'script',
+  'style',
+  'iframe',
+  'object',
+  'embed',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+  'link',
+  'meta',
+  'base',
+  'video',
+  'audio',
+  'source',
+  'canvas',
+  'svg',
+  'math',
+];
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeEmailHtml(html: string): string {
+  if (!html.trim()) return '';
+  if (typeof document === 'undefined') return escapeHtml(html);
+
+  const doc = document.implementation.createHTMLDocument('email-preview');
+  doc.body.innerHTML = html;
+
+  doc.body.querySelectorAll(BLOCKED_EMAIL_TAGS.join(',')).forEach((node) => node.remove());
+
+  doc.body.querySelectorAll('*').forEach((el) => {
+    let blockedHref = '';
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      if (el instanceof HTMLAnchorElement && (name === 'href' || name === 'xlink:href')) {
+        blockedHref = attr.value;
+      }
+      if (
+        name.startsWith('on') ||
+        ['src', 'srcset', 'href', 'xlink:href', 'background', 'poster', 'action', 'formaction', 'style'].includes(name)
+      ) {
+        el.removeAttribute(attr.name);
+      }
+    }
+    if (el instanceof HTMLAnchorElement) {
+      if (blockedHref) el.setAttribute('data-original-href', blockedHref);
+      el.removeAttribute('href');
+      el.setAttribute('class', `${el.getAttribute('class') ?? ''} thamos-disabled-link`.trim());
+      el.setAttribute('title', 'Link disabled by ThamOS evidence viewer');
+    }
+
+    if (el instanceof HTMLImageElement) {
+      el.setAttribute('alt', el.getAttribute('alt') || '[remote image blocked]');
+      el.setAttribute('class', `${el.getAttribute('class') ?? ''} thamos-blocked-image`.trim());
+    }
+  });
+
+  return doc.body.innerHTML;
+}
 
 function extractURLs(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s<>"'\])}]+/gi;
@@ -188,12 +301,123 @@ function extractIPs(text: string): string[] {
 }
 
 function extractEmails(text: string): string[] {
-  const emailRegex = /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g;
+  const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g;
   return [...new Set(text.match(emailRegex) || [])];
 }
 
 function extractDomain(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
+}
+
+function EmailWorkbenchPreview({ result }: { result: AnalysisResult }) {
+  const sanitizedHtml = useMemo(
+    () => sanitizeEmailHtml(result.bodyHtmlPreview ?? ''),
+    [result.bodyHtmlPreview]
+  );
+  const sender = result.headers.from || 'Unknown sender';
+  const subject = result.headers.subject || '(no subject)';
+  const attachmentCount = result.attachments?.length ?? 0;
+  const urlCount = result.urls?.length ?? result.extractedIOCs.filter((ioc) => ioc.type === 'url').length;
+
+  return (
+    <div className="h-full min-h-0 flex flex-col" style={{ backgroundColor: P.surface }}>
+      <div className="px-4 py-3 shrink-0" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] tracking-[0.22em] font-bold" style={{ color: P.cyan }}>SAFE MESSAGE PREVIEW</div>
+            <div className="text-xs truncate mt-1" style={{ color: P.textLight }}>{subject}</div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {attachmentCount > 0 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber, border: `1px solid ${P.amber}30` }}>
+                {attachmentCount} ATT
+              </span>
+            )}
+            {urlCount > 0 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.cyan}15`, color: P.cyan, border: `1px solid ${P.cyan}30` }}>
+                {urlCount} URL
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-[10px] mt-2" style={{ color: P.dim }}>
+          Active content, remote loads, forms, and live links are stripped before rendering.
+        </p>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="rounded-xl overflow-hidden shadow-2xl" style={{ backgroundColor: P.mailBg, border: `1px solid ${P.mailBorder}`, fontFamily: typography.ui }}>
+          <div className="px-4 py-3" style={{ backgroundColor: P.mailChrome, borderBottom: `1px solid ${P.mailBorder}` }}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: P.mailAvatarBg, color: P.mailAvatarText }}>
+                {sender.replace(/["<>]/g, '').trim().slice(0, 1).toUpperCase() || '?'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-semibold leading-snug" style={{ color: P.mailText }}>{subject}</h2>
+                <p className="text-xs mt-1 break-all" style={{ color: P.mailMuted }}>From: {sender}</p>
+                <p className="text-xs break-all" style={{ color: P.mailMuted }}>To: {result.headers.to || 'Unknown recipient'}</p>
+              </div>
+              <span className="text-xs shrink-0" style={{ color: P.mailMuted }}>{result.headers.date || ''}</span>
+            </div>
+          </div>
+
+          {attachmentCount > 0 && (
+            <div className="px-4 py-2 flex flex-wrap gap-2" style={{ backgroundColor: P.mailBg, borderBottom: `1px solid ${P.mailBorder}` }}>
+              {result.attachments!.map((att, i) => (
+                <span key={`${att.filename}-${i}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: P.mailChip, color: P.mailText }}>
+                  <Paperclip className="w-3 h-3" />
+                  {att.filename}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="px-5 py-5 min-h-[320px]" style={{ color: P.mailText }}>
+            {sanitizedHtml ? (
+              <>
+                <style>{`
+                  .thamos-email-preview {
+                    color: ${P.mailText};
+                    font: 14px/1.55 ${typography.ui};
+                    overflow-wrap: anywhere;
+                  }
+                  .thamos-email-preview * {
+                    max-width: 100%;
+                  }
+                  .thamos-email-preview table {
+                    border-collapse: collapse;
+                  }
+                  .thamos-email-preview a.thamos-disabled-link {
+                    color: ${P.mailLink};
+                    text-decoration: underline;
+                    cursor: not-allowed;
+                  }
+                  .thamos-email-preview a.thamos-disabled-link::after {
+                    content: " [link disabled]";
+                    color: ${P.mailDanger};
+                    font-size: 11px;
+                    font-weight: 700;
+                  }
+                  .thamos-email-preview img.thamos-blocked-image {
+                    display: inline-block;
+                    min-width: 120px;
+                    min-height: 32px;
+                    border: 1px dashed ${P.mailMuted};
+                    background: ${P.mailChrome};
+                  }
+                `}</style>
+                <div className="thamos-email-preview" dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+              </>
+            ) : (
+              <pre className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.mailText, fontFamily: typography.ui }}>
+                {result.bodyText || 'No decoded body preview available. Use the evidence tabs for headers, IOCs, and verdict details.'}
+              </pre>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function EmailAnalyzer() {
@@ -206,6 +430,7 @@ export default function EmailAnalyzer() {
   const [activeTab, setActiveTab] = useState<Tab>('headers');
   const [enrichResult, setEnrichResult] = useState<EnrichResult | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
   const [rawEmail, setRawEmail] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -215,10 +440,11 @@ export default function EmailAnalyzer() {
   const [verdictProvider, setVerdictProvider] = useState<VerdictProvider>('anthropic');
   const [savingWorkbench, setSavingWorkbench] = useState(false);
   const [savedWorkbench, setSavedWorkbench] = useState(false);
+  const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const enrichMap = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, ThreatIntelEnrichment>();
     if (!enrichResult) return m;
     for (const list of [
       enrichResult.iocs.urls,
@@ -277,8 +503,8 @@ export default function EmailAnalyzer() {
 
     const hops: HopInfo[] = (raw.match(/^Received:[\s\S]*?(?=^[A-Za-z-]+:|$)/gim) || [])
       .map(r => ({
-        from: (r.match(/from\s+([\w.\-]+)/i) || [])[1] || 'Unknown',
-        by: (r.match(/by\s+([\w.\-]+)/i) || [])[1] || 'Unknown',
+        from: (r.match(/from\s+([\w.-]+)/i) || [])[1] || 'Unknown',
+        by: (r.match(/by\s+([\w.-]+)/i) || [])[1] || 'Unknown',
         with: (r.match(/with\s+(\w+)/i) || [])[1] || 'Unknown',
         timestamp: (r.match(/;\s*(.+)$/m) || [])[1]?.trim() || 'Unknown',
       }))
@@ -351,8 +577,8 @@ export default function EmailAnalyzer() {
   };
 
   /** Map the server parse (analyze-email rawEmail mode) into the result shape. */
-  const mapServerParsed = (parsed: any): AnalysisResult => {
-    const defender: DefenderIntel = parsed.defender;
+  const mapServerParsed = (parsed: ServerParsedEmail): AnalysisResult => {
+    const defender = parsed.defender;
     const toAuth = (value: string | null, key: string): AuthResult => {
       if (!value) return { status: 'none', details: 'Not found in headers' };
       if (value === 'bestguesspass') {
@@ -400,6 +626,7 @@ export default function EmailAnalyzer() {
       defender,
       bodyFindings: parsed.bodyFindings ?? [],
       bodyText: parsed.bodyText ?? '',
+      bodyHtmlPreview: parsed.bodyHtmlPreview ?? '',
       urls: parsed.urls ?? [],
       attachments: parsed.attachments ?? [],
     };
@@ -413,8 +640,10 @@ export default function EmailAnalyzer() {
     }
     setLoading(true);
     setEnrichResult(null);
+    setEnrichError(null);
     setVerdict(null);
     setVerdictError(null);
+    setWorkbenchError(null);
     try {
       const text = await file.text();
       const res = await fetch(
@@ -441,9 +670,11 @@ export default function EmailAnalyzer() {
     if (!rawInput.trim()) return;
     setLoading(true);
     setEnrichResult(null);
+    setEnrichError(null);
     setRawEmail(null);
     setVerdict(null);
     setVerdictError(null);
+    setWorkbenchError(null);
     setTimeout(() => {
       setResult(parseAnalysis());
       setActiveTab('headers');
@@ -454,6 +685,7 @@ export default function EmailAnalyzer() {
   const handleEnrich = async () => {
     if (!result || enrichLoading) return;
     setEnrichLoading(true);
+    setEnrichError(null);
     try {
       const body = rawEmail
         ? { rawEmail, enrich: true }
@@ -462,12 +694,13 @@ export default function EmailAnalyzer() {
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-email`,
         { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body) }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setEnrichResult(rawEmail ? data.enrichment : data);
-      }
-    } catch {
-      // local parse remains usable
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Server error: ${res.status}`);
+      const nextEnrichment = rawEmail ? data.enrichment : data;
+      if (!nextEnrichment) throw new Error('No enrichment payload returned');
+      setEnrichResult(nextEnrichment as EnrichResult);
+    } catch (e) {
+      setEnrichError(e instanceof Error ? e.message : String(e));
     } finally {
       setEnrichLoading(false);
     }
@@ -505,14 +738,14 @@ export default function EmailAnalyzer() {
 
   // email addresses have no dedicated result page (email-result dead-ends in the
   // scanner), so they are not scannable from here.
-  const SCANNABLE: Record<string, string> = {
+  const SCANNABLE: Partial<Record<ExtractedIOC['type'], AppId>> = {
     ip: 'ip-result', domain: 'domain-result', url: 'url-result',
   };
   const handleScanIOC = (ioc: ExtractedIOC) => {
     const appId = SCANNABLE[ioc.type];
     if (!appId) return;
     openWindow({
-      appId: appId as any,
+      appId,
       title: `${ioc.type.toUpperCase()}: ${ioc.value}`,
       data: { value: ioc.value },
     });
@@ -548,7 +781,7 @@ export default function EmailAnalyzer() {
     UNCERTAIN: P.amber,
   };
 
-  const TABS: { id: Tab; label: string; icon: any; show: boolean }[] = [
+  const TABS: { id: Tab; label: string; icon: LucideIcon; show: boolean }[] = [
     { id: 'headers', label: 'Headers', icon: Mail, show: true },
     { id: 'auth', label: 'Auth', icon: CheckCircle, show: true },
     { id: 'defender', label: 'Defender', icon: Shield, show: Boolean(result?.serverParsed) },
@@ -653,78 +886,111 @@ export default function EmailAnalyzer() {
           </button>
         </div>
       ) : (
-        <>
-          {/* Tab bar */}
-          <div className="flex items-center px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
-            <button
-              onClick={() => { setResult(null); setRawEmail(null); setVerdict(null); setEnrichResult(null); }}
-              className="text-xs px-2 py-2.5 mr-3 transition-all"
-              style={{ color: P.dim }}
-            >
-              ← Back
-            </button>
-            <div className="w-px h-4 mr-3" style={{ backgroundColor: P.border }} />
-            {TABS.filter(t => t.show).map(t => (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="px-3 py-2 shrink-0" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
+            <div className="flex items-center gap-3">
               <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className="flex items-center gap-1.5 px-3 py-2.5 text-xs transition-all border-b-2 whitespace-nowrap"
-                style={{
-                  borderBottomColor: activeTab === t.id ? P.cyan : 'transparent',
-                  color: activeTab === t.id ? P.cyan : P.dim,
+                onClick={() => {
+                  setResult(null);
+                  setRawEmail(null);
+                  setVerdict(null);
+                  setEnrichResult(null);
+                  setEnrichError(null);
+                  setWorkbenchError(null);
+                  setSavedWorkbench(false);
                 }}
-              >
-                <t.icon className="w-3 h-3" />
-                {t.label}
-              </button>
-            ))}
-            <div className="ml-auto flex items-center gap-2">
-              {rawEmail && (
-                <button
-                  onClick={async () => {
-                    if (savingWorkbench) return;
-                    setSavingWorkbench(true);
-                    try {
-                      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-email`, {
-                        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ raw_email: rawEmail }),
-                      });
-                      if (res.ok) { setSavedWorkbench(true); setTimeout(() => setSavedWorkbench(false), 2500); }
-                    } catch { /* noop */ } finally { setSavingWorkbench(false); }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
-                  style={{ color: savedWorkbench ? P.green : P.cyan, border: `1px solid ${(savedWorkbench ? P.green : P.cyan)}40` }}
-                  title="Encrypt + persist this email and feed its non-PII IOCs into the pivot graph"
-                >
-                  <Save className="w-3 h-3" /> {savingWorkbench ? 'Saving…' : savedWorkbench ? 'Saved' : 'Save to Workbench'}
-                </button>
-              )}
-              <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(JSON.stringify({ ...result, verdict }, null, 2)).catch(() => {});
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                className="text-xs px-2 py-1.5 transition-all rounded"
                 style={{ color: P.dim, border: `1px solid ${P.border}` }}
               >
-                {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Export</>}
+                ← Back
               </button>
-            </div>
-          </div>
-
-          {/* Suspicious indicators banner */}
-          {result.suspiciousIndicators.length > 0 && (
-            <div className="flex items-start gap-3 px-4 py-2.5 shrink-0 max-h-32 overflow-y-auto" style={{ backgroundColor: `${P.rose}10`, borderBottom: `1px solid ${P.rose}30` }}>
-              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: P.rose }} />
-              <div className="space-y-0.5">
-                {result.suspiciousIndicators.map((ind, i) => (
-                  <p key={i} className="text-xs" style={{ color: P.rose }}>{ind}</p>
-                ))}
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] tracking-[0.22em] font-bold" style={{ color: P.cyan }}>EMAIL WORKBENCH</div>
+                <div className="text-xs truncate" style={{ color: P.textLight }}>{result.headers.subject || '(no subject)'}</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {rawEmail && (
+                  <button
+                    onClick={async () => {
+                      if (savingWorkbench) return;
+                      setSavingWorkbench(true);
+                      setWorkbenchError(null);
+                      try {
+                        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-email`, {
+                          method: 'POST', headers: await authHeaders(), body: JSON.stringify({ raw_email: rawEmail }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data?.error || `Server error: ${res.status}`);
+                        setSavedWorkbench(true);
+                        setTimeout(() => setSavedWorkbench(false), 2500);
+                      } catch (e) {
+                        setWorkbenchError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setSavingWorkbench(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                    style={{ color: savedWorkbench ? P.green : P.cyan, border: `1px solid ${(savedWorkbench ? P.green : P.cyan)}40` }}
+                    title="Encrypt + persist this email and feed its non-PII IOCs into the pivot graph"
+                  >
+                    <Save className="w-3 h-3" /> {savingWorkbench ? 'Saving…' : savedWorkbench ? 'Saved' : 'Save to Workbench'}
+                  </button>
+                )}
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(JSON.stringify({ ...result, verdict }, null, 2)).catch(() => {});
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                  style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                >
+                  {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Export</>}
+                </button>
               </div>
             </div>
-          )}
+            {workbenchError && (
+              <div className="mt-2 text-xs" style={{ color: P.rose }}>
+                Save failed: {workbenchError}
+              </div>
+            )}
+          </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 min-h-0 grid grid-cols-[minmax(360px,46%)_minmax(0,1fr)] overflow-hidden">
+            <div className="min-h-0 border-r" style={{ borderColor: P.border }}>
+              <EmailWorkbenchPreview result={result} />
+            </div>
+
+            <div className="min-h-0 flex flex-col overflow-hidden">
+              <div className="flex items-center px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
+                {TABS.filter(t => t.show).map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className="flex items-center gap-1.5 px-3 py-2.5 text-xs transition-all border-b-2 whitespace-nowrap"
+                    style={{
+                      borderBottomColor: activeTab === t.id ? P.cyan : 'transparent',
+                      color: activeTab === t.id ? P.cyan : P.dim,
+                    }}
+                  >
+                    <t.icon className="w-3 h-3" />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {result.suspiciousIndicators.length > 0 && (
+                <div className="flex items-start gap-3 px-4 py-2.5 shrink-0 max-h-32 overflow-y-auto" style={{ backgroundColor: `${P.rose}10`, borderBottom: `1px solid ${P.rose}30` }}>
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: P.rose }} />
+                  <div className="space-y-0.5">
+                    {result.suspiciousIndicators.map((ind, i) => (
+                      <p key={i} className="text-xs" style={{ color: P.rose }}>{ind}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 min-h-0 overflow-y-auto p-4">
             {activeTab === 'headers' && (
               <div className="space-y-3">
                 {[
@@ -903,6 +1169,11 @@ export default function EmailAnalyzer() {
                     </button>
                   </div>
                 )}
+                {enrichError && (
+                  <div className="p-3 rounded text-xs" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}30`, color: P.rose }}>
+                    Enrichment failed: {enrichError}
+                  </div>
+                )}
                 {result.extractedIOCs.length === 0 && (
                   <div className="text-center py-10">
                     <div className="text-2xl opacity-20 mb-2">⬡</div>
@@ -1021,7 +1292,7 @@ export default function EmailAnalyzer() {
                               <span className="text-[10px] flex-shrink-0" style={{ color: P.dim }}>SHA-256</span>
                               <code className="text-[10px] break-all flex-1 min-w-0" style={{ color: P.text }}>{att.sha256}</code>
                               <button
-                                onClick={() => openWindow({ appId: 'hash-result' as any, title: `HASH: ${att.sha256!.slice(0, 12)}…`, data: { value: att.sha256 } })}
+                                onClick={() => openWindow({ appId: 'hash-result', title: `HASH: ${att.sha256!.slice(0, 12)}…`, data: { value: att.sha256 } })}
                                 className="text-[10px] px-2 py-0.5 rounded flex-shrink-0 transition-all"
                                 style={{ backgroundColor: `${P.cyan}15`, color: P.cyan, border: `1px solid ${P.cyan}30` }}
                               >
@@ -1196,8 +1467,10 @@ export default function EmailAnalyzer() {
                 {JSON.stringify(result.rawHeaders, null, 2)}
               </pre>
             )}
+              </div>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
