@@ -211,6 +211,29 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## Sprint Log
 
+### Sprint 2026-07-03 — Scanner: close the detection→result gap (CVE / wallet / email) + graphify RAG
+**Agent:** Claude Fable 5 (Claude Code)
+**Scope:** Set up graphify knowledge-graph RAG, then wire the scanner's detected-but-dead IOC types to their existing backends.
+
+**Completed:**
+- [x] Set up graphify (`graphify-out/`: graph.json, graph.html, GRAPH_REPORT.md, Obsidian vault + graph.canvas). `graphify-out/` gitignored; rebuild with `graphify update .` (AST-only, no tokens). CLAUDE.md + PreToolUse hooks added by `graphify claude install` (note: hooks call `python3`, the MS Store stub on this machine, so they no-op harmlessly).
+- [x] **Root cause found:** `detectIOCType` recognizes 9 IOC types but every result switch only handled ip/url/domain/hash. The `threat-intel` edge function already serves `/cve`, `/wallet`, `/email` (full NVD+KEV+EPSS / blockchain.info+ethplorer / DNS+EmailRep+HIBP) — but the frontend had no client fns or result pages, so those verdicts were unreachable.
+- [x] Added `lookupCVE`, `lookupWallet`, `lookupEmail` to `src/lib/threatIntel.ts` + types (`CVELookupResult`, `WalletLookupResult`, `EmailLookupResult`).
+- [x] New result pages: `src/pages/results/{CVEResult,WalletResult,EmailResult}.tsx` (tactical house style; CVE has KEV banner + CVSS/EPSS, wallet has sanctions/balance, email has SPF/DMARC/MX + breach/reputation).
+- [x] Wired cve/wallet/email through all live routers: `App.tsx` (tactical + terminal switches), `components/desktop/DesktopScanner.tsx`, and `DesktopLayout.tsx` `renderWindowContent` (cve-result/wallet-result/email-result now render real pages instead of a `DesktopScanner initialScan` placeholder).
+- [x] **Extension consistency fix:** Desktop smart-scanner now routes detected extensions to `ExtensionScanner` (was dead-ending on "coming soon" while Tactical already routed it).
+- [x] **Cleanup:** deleted `src/pages/DesktopScanner.tsx` — the unreachable fake-CLI (mock nmap/whois/git + hardcoded "VirusTotal CONNECTED"); its only caller was the never-invoked `renderDesktopPage()` in `App.tsx`, also removed. Removed the dead `ExtensionResult` import.
+- [x] Verified: `tsc` adds 0 new errors (baseline 123→117); `vite build` passes; graph updated.
+
+**Decisions Made:**
+- Detected email address → `/email` intel page (sender triage), NOT the `.eml` EmailAnalyzer — different artifacts.
+- Did NOT auto-delete substantive unwired features (`OrchestraMode.tsx` 1220 lines, `IntelHub.tsx` 671) — those are salvage-or-delete decisions for the maintainer, not safe to nuke in auto mode.
+
+**Deferred / Next:**
+- Decide wire-vs-delete for orphans: `OrchestraMode.tsx`, `IntelHub.tsx`, `ExtensionResult.tsx` (dead result page), `AnalysisHistory.tsx`, and the abandoned scanner UI kit (`ActionsBar/EvidenceCard/KeyFacts/RawJsonCollapse/SourceStatus`).
+- Community labels reset to placeholders on `graphify update`; re-label with `graphify label .` if a Gemini key is set.
+- Add "Send to Case" from the new CVE/wallet/email result pages.
+
 ### Sprint 2026-06-19 — Email Workbench Phase 1
 **Agent:** GitHub Copilot CLI (GPT-5.5)
 **Scope:** Built the first Desktop Email Workbench slice from the t1 bridge findings.

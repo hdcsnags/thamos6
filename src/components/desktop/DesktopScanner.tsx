@@ -4,6 +4,10 @@ import IPResult from '../../pages/results/IPResult';
 import URLResult from '../../pages/results/URLResult';
 import DomainResult from '../../pages/results/DomainResult';
 import HashResult from '../../pages/results/HashResult';
+import CVEResult from '../../pages/results/CVEResult';
+import WalletResult from '../../pages/results/WalletResult';
+import EmailResult from '../../pages/results/EmailResult';
+import ExtensionScanner from '../../pages/ExtensionScanner';
 import { palette, typography } from '../../design-system/tokens';
 import { ArrowLeft } from 'lucide-react';
 
@@ -68,7 +72,11 @@ export function DesktopScanner({ initialScan }: DesktopScannerProps = {}) {
         {scanState.type === 'url' && <URLResult url={scanState.value} />}
         {scanState.type === 'domain' && <DomainResult domain={scanState.value} />}
         {scanState.type === 'hash' && <HashResult hash={scanState.value} />}
-        {!['ip', 'url', 'domain', 'hash'].includes(scanState.type) && (
+        {scanState.type === 'cve' && <CVEResult cve={scanState.value} />}
+        {scanState.type === 'wallet' && <WalletResult address={scanState.value} />}
+        {scanState.type === 'email' && <EmailResult email={scanState.value} />}
+        {scanState.type === 'extension' && <ExtensionScanner initialUrl={scanState.value} />}
+        {!['ip', 'url', 'domain', 'hash', 'cve', 'wallet', 'email', 'extension'].includes(scanState.type) && (
           <div className="h-full flex items-center justify-center" style={{ backgroundColor: palette.void }}>
             <div className="text-center space-y-2">
               <div className="text-2xl opacity-20">⬡</div>

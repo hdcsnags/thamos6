@@ -12,6 +12,9 @@ import IPResult from '../../pages/results/IPResult';
 import URLResult from '../../pages/results/URLResult';
 import DomainResult from '../../pages/results/DomainResult';
 import HashResult from '../../pages/results/HashResult';
+import CVEResult from '../../pages/results/CVEResult';
+import WalletResult from '../../pages/results/WalletResult';
+import EmailResult from '../../pages/results/EmailResult';
 import ExtensionScanner from '../../pages/ExtensionScanner';
 import DecoderTool from '../../pages/DecoderTool';
 import DefangTool from '../../pages/DefangTool';
@@ -474,11 +477,11 @@ function renderWindowContent(appId: string, data?: any) {
     case 'extension-result':
       return <ExtensionScanner initialUrl={data?.value} />;
     case 'cve-result':
-      return <DesktopScanner initialScan={data?.value ? { type: 'cve', value: data.value } : undefined} />;
+      return data?.value ? <CVEResult cve={data.value} /> : <DesktopScanner />;
     case 'wallet-result':
-      return <DesktopScanner initialScan={data?.value ? { type: 'wallet', value: data.value } : undefined} />;
+      return data?.value ? <WalletResult address={data.value} /> : <DesktopScanner />;
     case 'email-result':
-      return <DesktopScanner initialScan={data?.value ? { type: 'email', value: data.value } : undefined} />;
+      return data?.value ? <EmailResult email={data.value} /> : <DesktopScanner />;
     case 'decoder':
       return <DecoderTool />;
     case 'defang':

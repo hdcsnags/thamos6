@@ -161,6 +161,57 @@ export interface DomainLookupResult {
   sourcesAvailable?: string[];
 }
 
+export interface CVELookupResult {
+  cve_id: string;
+  description: string | null;
+  cvss_v3_score: number | null;
+  cvss_v3_severity: string | null;
+  cvss_v2_score: number | null;
+  cwe: string | null;
+  published: string | null;
+  last_modified: string | null;
+  vuln_status: string | null;
+  is_kev: boolean;
+  kev_date_added: string | null;
+  kev_due_date: string | null;
+  kev_ransomware_use: string | null;
+  epss_score: number | null;
+  epss_percentile: number | null;
+  references: string[];
+  is_malicious: boolean;
+  overall_threat_score: number;
+  sources: Record<string, { data: Record<string, unknown>; error?: string }>;
+  checked_at: string;
+  tier?: string;
+}
+
+export interface WalletLookupResult {
+  address: string;
+  currency: 'btc' | 'eth' | 'unknown';
+  is_sanctioned: boolean;
+  balance: number | null;
+  tx_count: number | null;
+  sources: Record<string, { data: Record<string, unknown>; error?: string }>;
+  checked_at: string;
+  tier?: string;
+}
+
+export interface EmailLookupResult {
+  email: string;
+  reputation: string | null;
+  is_suspicious: boolean;
+  is_breached: boolean;
+  breach_count: number | null;
+  has_valid_mx: boolean;
+  has_spf: boolean | null;
+  has_dmarc: boolean | null;
+  is_disposable: boolean | null;
+  is_free_provider: boolean | null;
+  sources: Record<string, { data: Record<string, unknown>; error?: string }>;
+  checked_at: string;
+  tier?: string;
+}
+
 export interface BulkIPResult {
   ip: string;
   threatScore: number;

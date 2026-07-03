@@ -1,5 +1,5 @@
 import { supabase, EDGE_FUNCTION_URL } from './supabase';
-import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult, DomainLookupResult } from '../types';
+import type { IPLookupResult, URLLookupResult, BulkIPResult, ConfiguredSources, HashLookupResult, DomainLookupResult, CVELookupResult, WalletLookupResult, EmailLookupResult } from '../types';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -148,6 +148,75 @@ export async function lookupDomain(domain: string): Promise<DomainLookupResult> 
 
   if (!response.ok) {
     throw new Error(`Failed to lookup domain: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function lookupCVE(cve: string): Promise<CVELookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/cve`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ cve }),
+  });
+
+  if (!response.ok) {
+    let message = `Failed to lookup CVE: ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // response had no JSON body; keep the status-based message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+export async function lookupWallet(address: string): Promise<WalletLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/wallet`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ address }),
+  });
+
+  if (!response.ok) {
+    let message = `Failed to lookup wallet: ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // no JSON body; keep the status-based message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+export async function lookupEmail(email: string): Promise<EmailLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/email`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email }),
+  });
+
+  if (!response.ok) {
+    let message = `Failed to lookup email: ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // no JSON body; keep the status-based message
+    }
+    throw new Error(message);
   }
 
   return response.json();

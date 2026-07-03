@@ -5,12 +5,13 @@ import { DesktopLayout } from './components/desktop/DesktopLayout';
 import { DesktopProvider } from './contexts/DesktopContext';
 import Scanner from './pages/Scanner';
 import TerminalScanner from './pages/terminalscanner';
-import DesktopScanner from './pages/DesktopScanner';
 import IPResult from './pages/results/IPResult';
 import URLResult from './pages/results/URLResult';
 import DomainResult from './pages/results/DomainResult';
 import HashResult from './pages/results/HashResult';
-import ExtensionResult from './pages/results/ExtensionResult';
+import CVEResult from './pages/results/CVEResult';
+import WalletResult from './pages/results/WalletResult';
+import EmailResult from './pages/results/EmailResult';
 import TerminalIPResult from './pages/results/terminalipresult';
 import TerminalURLResult from './pages/results/TerminalURLResult';
 import TerminalDomainResult from './pages/results/TerminalDomainResult';
@@ -57,26 +58,6 @@ function App() {
     setScanResult(null);
   };
 
-  // ─── Desktop Theme Renderer ──────────────────────────────
-  const renderDesktopPage = () => {
-    if (currentPage === 'scanner' && scanResult) {
-      switch (scanResult.type) {
-        case 'ip':
-          return <IPResult ip={scanResult.value} />;
-        case 'url':
-          return <URLResult url={scanResult.value} />;
-        case 'domain':
-          return <DomainResult domain={scanResult.value} />;
-        case 'hash':
-          return <HashResult hash={scanResult.value} />;
-        default:
-          // Fallback to terminal results for types not yet built
-          return <DesktopScanner onScan={handleScan} />;
-      }
-    }
-    return <DesktopScanner onScan={handleScan} />;
-  };
-
   // ─── Terminal Theme Renderer ──────────────────────────────
   const renderTerminalPage = () => {
     if (currentPage === 'scanner' && scanResult) {
@@ -89,6 +70,12 @@ function App() {
           return <TerminalDomainResult domain={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
         case 'hash':
           return <TerminalHashResult hash={scanResult.value} flags={scanResult.flags} onBack={handleBackToScanner} />;
+        case 'cve':
+          return <CVEResult cve={scanResult.value} />;
+        case 'wallet':
+          return <WalletResult address={scanResult.value} />;
+        case 'email':
+          return <EmailResult email={scanResult.value} />;
         default:
           return <TerminalScanner onScan={handleScan} />;
       }
@@ -108,6 +95,12 @@ function App() {
           return <DomainResult domain={scanResult.value} />;
         case 'hash':
           return <HashResult hash={scanResult.value} />;
+        case 'cve':
+          return <CVEResult cve={scanResult.value} />;
+        case 'wallet':
+          return <WalletResult address={scanResult.value} />;
+        case 'email':
+          return <EmailResult email={scanResult.value} />;
         case 'extension':
           return <ExtensionScanner initialUrl={scanResult.value} />;
         default:
