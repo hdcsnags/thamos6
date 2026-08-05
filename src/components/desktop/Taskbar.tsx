@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useAlerts } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -85,10 +85,10 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
   return (
     <div
       data-taskbar="true"
-      className="fixed bottom-0 left-0 right-0 h-12 flex items-center justify-between px-3 gap-2 backdrop-blur-xl z-50"
+      className="fixed bottom-0 left-0 right-0 h-12 flex items-center justify-between px-2 gap-2 z-50"
       style={{
-        backgroundColor: `${palette.base}cc`,
-        borderTop: `1px solid ${palette.borderSubtle}`,
+        backgroundColor: palette.base,
+        borderTop: `1px solid ${palette.borderDefault}`,
         fontFamily: typography.ui,
       }}
       onDoubleClick={(e) => {
@@ -101,20 +101,20 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
       <div className="flex items-center gap-2">
         {/* Zone 1: Launcher + Workspaces */}
         <div
-          className="flex items-center gap-1.5 px-2 py-1 rounded-xl"
-          style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
+          className="flex items-center gap-1.5 h-10"
         >
           <button
             onClick={onOpenLauncher}
-            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-            style={{ color: palette.cyan }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}10`; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            className="flex items-center justify-center gap-2 h-8 px-3 rounded transition-colors"
+            style={{ color: palette.textPrimary, backgroundColor: palette.elevated, border: `1px solid ${palette.borderSubtle}` }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = palette.surface; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = palette.elevated; }}
             aria-label="Open App Launcher"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" />
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z" />
             </svg>
+            <span className="text-xs font-medium">Applications</span>
           </button>
 
           <div className="w-px h-5" style={{ backgroundColor: palette.borderSubtle }} />
@@ -128,11 +128,11 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 <button
                   key={num}
                   onClick={() => desktop.switchWorkspace(num)}
-                  className="relative flex items-center justify-center w-7 h-7 rounded-lg text-xs font-medium transition-all"
+                  className="relative flex items-center justify-center w-7 h-7 rounded text-xs font-medium transition-colors"
                   style={{
-                    backgroundColor: isActive ? `${palette.cyan}15` : 'transparent',
-                    color: isActive ? palette.cyan : hasWindows ? palette.textSecondary : palette.textTertiary,
-                    border: isActive ? `1px solid ${palette.cyan}30` : '1px solid transparent',
+                    backgroundColor: isActive ? palette.surface : 'transparent',
+                    color: isActive ? palette.textPrimary : hasWindows ? palette.textSecondary : palette.textTertiary,
+                    borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
                   }}
                   aria-label={`Switch to workspace ${num} (${winCount} windows)`}
                 >
@@ -140,7 +140,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   {hasWindows && !isActive && (
                     <span
                       className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: palette.cyan, opacity: 0.6 }}
+                      style={{ backgroundColor: palette.textTertiary }}
                     />
                   )}
                 </button>
@@ -151,8 +151,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
 
         {/* Zone 2: Window List */}
         <div
-          className="flex items-center gap-1.5 px-2 py-1 rounded-xl overflow-x-auto max-w-2xl"
-          style={{ backgroundColor: `${palette.surface}40`, border: `1px solid ${palette.borderSubtle}` }}
+          className="flex items-center gap-1 px-1 py-1 overflow-x-auto max-w-2xl"
         >
           {openWindows.map((win: any) => {
             if (win._isGroup) {
@@ -164,16 +163,16 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                     onClick={() => setExpandedResultGroup(prev => !prev)}
                     className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
                     style={{
-                      backgroundColor: activeInGroup ? `${palette.cyan}15` : expandedResultGroup ? `${palette.cyan}08` : 'transparent',
-                      color: activeInGroup ? palette.cyan : palette.textTertiary,
-                      border: `1px solid ${activeInGroup ? palette.cyan + '30' : expandedResultGroup ? palette.cyan + '20' : 'transparent'}`,
+                      backgroundColor: activeInGroup || expandedResultGroup ? palette.surface : 'transparent',
+                      color: activeInGroup ? palette.textPrimary : palette.textTertiary,
+                      borderBottom: `2px solid ${activeInGroup ? palette.accent : 'transparent'}`,
                     }}
                   >
                     <span style={{ fontSize: '12px' }}>⬡</span>
                     <span>Results</span>
                     <span
                       className="px-1 rounded-full text-[9px] font-bold"
-                      style={{ backgroundColor: palette.cyan + '30', color: palette.cyan }}
+                      style={{ backgroundColor: palette.float, color: palette.textSecondary }}
                     >
                       {win.count}
                     </span>
@@ -236,14 +235,14 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 }}
                 className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
                 style={{
-                  backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : 'transparent',
-                  color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary,
-                  border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '30' : 'transparent'}`,
+                  backgroundColor: desktop.activeWindowId === win.id ? palette.surface : 'transparent',
+                  color: desktop.activeWindowId === win.id ? palette.textPrimary : palette.textTertiary,
+                  borderBottom: `2px solid ${desktop.activeWindowId === win.id ? palette.accent : 'transparent'}`,
                   opacity: win.minimized ? 0.5 : 1,
                 }}
                 aria-label={`Focus ${win.title}`}
               >
-                <span style={{ color: desktop.activeWindowId === win.id ? win.accentColor : palette.textTertiary }}>
+                <span style={{ color: desktop.activeWindowId === win.id ? palette.accent : palette.textTertiary }}>
                   <win.icon size={14} />
                 </span>
                 <span className="max-w-[100px] truncate">{win.title}</span>

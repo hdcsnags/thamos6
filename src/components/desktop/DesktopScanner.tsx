@@ -68,9 +68,9 @@ export function DesktopScanner({ initialScan }: DesktopScannerProps = {}) {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {scanState.type === 'ip' && <IPResult ip={scanState.value} />}
+        {scanState.type === 'ip' && <IPResult ip={scanState.value} onScan={handleScan} />}
         {scanState.type === 'url' && <URLResult url={scanState.value} />}
-        {scanState.type === 'domain' && <DomainResult domain={scanState.value} />}
+        {scanState.type === 'domain' && <DomainResult domain={scanState.value} onScan={handleScan} />}
         {scanState.type === 'hash' && <HashResult hash={scanState.value} />}
         {scanState.type === 'cve' && <CVEResult cve={scanState.value} />}
         {scanState.type === 'wallet' && <WalletResult address={scanState.value} />}

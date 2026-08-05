@@ -174,7 +174,7 @@ export function DesktopIcons() {
                 },
               ]);
             }}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-xl pointer-events-auto group absolute"
+            className="flex flex-col items-center gap-1.5 p-3 rounded-md pointer-events-auto group absolute"
             style={{
               width: `${GRID_COL - 8}px`,
               // Position is always explicitly set — never undefined — so the icon
@@ -192,8 +192,8 @@ export function DesktopIcons() {
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
           >
             <div
-              className="transition-transform group-hover:scale-110"
-              style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.8))', color: app.accentColor }}
+              className="transition-colors"
+              style={{ color: palette.textSecondary }}
             >
               <app.icon size={28} />
             </div>

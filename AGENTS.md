@@ -3,7 +3,7 @@
 > **For:** Kimi Code CLI, Claude Code, Cursor Agent, GitHub Copilot Chat, or any other AI coding agent
 > **Project:** ThamOS v6 — Browser-based Threat Intelligence OS (https://t6.thamOS.ca)
 > **Maintainer:** hdcsnags / thamos6.git
-> **Last Updated:** 2026-05-04
+> **Last Updated:** 2026-08-05
 
 ---
 
@@ -32,9 +32,11 @@ The architecture docs historically documented only **Tactical** and **Terminal**
 | `tactical` | `src/components/Layout.tsx` | `App.tsx` → `<Layout>` |
 | `terminal` | `src/components/terminallayout.tsx` | `App.tsx` → `<TerminalLayout>` |
 | `desktop` | `src/components/desktop/DesktopLayout.tsx` | `App.tsx` → `<DesktopProvider>` + `<DesktopLayout>` |
-| `mission-control` | Stub only | `themecontext.tsx` type only |
+| `mission-control` | Legacy theme value; no dedicated `App.tsx` branch | Use the Desktop overlay instead |
 
-**Desktop is the most complete theme** and is currently active in production. If you are asked to work on "the UI" without specification, assume Desktop theme.
+**Desktop is the product direction and the most complete theme.** Fresh local/production sessions still fall back to Tactical in `themecontext.tsx`, so do not confuse intended direction with the current default. If asked to work on "the UI" without specification, assume Desktop unless the user says otherwise.
+
+**Mission Control reality:** the working implementation is the window-overview overlay inside `src/components/desktop/DesktopLayout.tsx`, toggled with `Ctrl+Shift+M`. The `mission-control` theme value is legacy/incomplete routing and should not be treated as a separate finished shell.
 
 ### Key Directories
 
@@ -46,7 +48,6 @@ src/
     editor/            ← CodeMirror editor components
     Layout.tsx         ← Tactical mode layout
     terminallayout.tsx ← Terminal mode layout
-    DesktopLayout.tsx  ← ⚠️ DEAD CODE (old monolithic version). Do not use.
   contexts/
     DesktopContext.tsx ← Window manager state for Desktop theme
     themecontext.tsx   ← Theme switcher (tactical | terminal | desktop | mission-control)
@@ -59,7 +60,7 @@ src/
     [...other pages]
 ```
 
-**Dead code warning:** `src/components/DesktopLayout.tsx` (old 561-line monolithic version) is **not imported anywhere**. The active Desktop layout is at `src/components/desktop/DesktopLayout.tsx`.
+The old `src/components/DesktopLayout.tsx` monolith has been deleted. The only active Desktop layout is `src/components/desktop/DesktopLayout.tsx`.
 
 ---
 
@@ -68,21 +69,16 @@ src/
 ### Colors (`src/design-system/tokens.ts`)
 
 ```typescript
-palette.void      // '#050508' — Deepest background
-palette.base      // '#0a0d12' — Desktop background
-palette.elevated  // '#11141a' — Window backgrounds
-palette.float     // '#181b22' — Floating elements
-palette.surface   // '#1e222b' — Title bars, cards
+palette.void      // '#0f1215' — Deepest graphite background
+palette.base      // '#14181c' — Desktop/panel background
+palette.elevated  // '#1a1f24' — Window background
+palette.float     // '#20262c' — Floating controls
+palette.surface   // '#272e35' — Active chrome/cards
 
-palette.cyan      // '#00d9ff' — Primary accent
-palette.green     // '#00ff9d' — Success / Terminal
-palette.amber     // '#fbbf24' — Warning
-palette.rose      // '#f43f5e' — Danger / Close button
-
-palette.textPrimary    // '#e2e8f0'
-palette.textSecondary  // '#94a3b8'
-palette.textTertiary   // '#64748b'
-palette.textDisabled   // '#475569'
+palette.accent    // '#5f8fa8' — Restrained workstation accent
+palette.green     // '#6f9a7c' — Success / terminal prompt
+palette.amber     // '#bd965d' — Warning
+palette.rose      // '#bd6969' — Danger
 ```
 
 **Rule:** Do not hardcode colors. Import from `tokens.ts`. If a color doesn't exist there, add it.
@@ -94,7 +90,17 @@ typography.ui   // 'Inter, system-ui, -apple-system, sans-serif'
 typography.mono // "'JetBrains Mono', 'Fira Code', monospace"
 ```
 
-**Rule:** Desktop theme uses `typography.ui` for chrome, `typography.mono` for content.
+**Rule:** Desktop chrome and ordinary application UI use `typography.ui`. Use `typography.mono` only for commands, IOCs, hashes, logs, code, and evidence that benefits from fixed-width alignment.
+
+### Visual Direction
+
+Desktop follows a restrained Kali/Ubuntu-inspired **operator workstation** direction:
+
+- Neutral graphite surfaces carry the hierarchy; accent color is sparse.
+- Do not add neon glows, decorative telemetry, fake latency/session/security claims, scanlines, or cyber-HUD ornament outside explicitly themed terminal content.
+- Application icons are neutral by default. Use accent/semantic color for selection, activity, warnings, and verdicts.
+- Window structure should come from border, surface, and shadow—not a per-app colored halo.
+- Status colors must convey real state. “Green” means a verified positive state, not decoration.
 
 ### App Registry (`src/design-system/appRegistry.ts`)
 
@@ -103,7 +109,21 @@ All Desktop apps are defined here. If you add a new desktop app, you **must**:
 2. Add it to `AppId` type in `DesktopContext.tsx`
 3. Add a case in `renderWindowContent` in `desktop/DesktopLayout.tsx`
 
-**Current apps:** terminal, vps-terminal, scanner, browser, workshop (Maestro), intel, cases, files (GitHub), editor, monitor, settings.
+**Current launchable apps:** terminal, VPS terminal, scanner, browser, Thamos/Maestro, intel dashboard, case manager, file manager, code editor, system monitor, settings, decoder, defang/refang, email analyzer, IOC extractor, bulk lookup, extension scanner, and document analyzer. Result-window IDs for IP, URL, domain, hash, extension, CVE, wallet, and email are also registered.
+
+### Primary Scan Workflows
+
+- IP reputation is the primary scan workflow.
+- Desktop Terminal is a first-class scanner interface: `scan -ip 8.8.8.8`, `scan -hash <value>`, or auto-detect with `scan <value>`.
+- The graphical Scanner must stay consistent with the terminal routes and `detectIOCType`; when a new IOC type is detected, it must have an honest result route.
+
+### Threat Graph Data Rules
+
+- `scan_observations` is the append-only event layer. Do not collapse repeat scans into a single mutable row.
+- `ioc_relationships` is the cumulative graph layer. Write through `record_ioc_relationship` so observation counts and first/last-seen windows advance atomically.
+- ASN, provider, organisation, VPN, country, and region nodes are context. Never infer a malicious verdict from association alone.
+- Keep sensitive scan history analyst/tenant scoped. The shared relationship graph must remain non-PII unless a future tenant-isolated schema explicitly changes that boundary.
+- The current longitudinal implementation is IP-first. When adding another scanner route, record its observation and typed edges deliberately; do not claim full graph coverage until that route writes both layers.
 
 ---
 
@@ -284,7 +304,8 @@ When you finish a code sprint, append to `THAMOS_STATE.md` Sprint Log with:
 
 ## Emergency Contacts & Context
 
-- **Project repo:** `thamos6.git` (hdcsnags)
+- **Public upstream:** `https://github.com/hdcsnags/thamos6` (`main` branch)
+- **Local checkout note:** the transferred `C:\Thamos\SoFaSo\t6\thamos6-main` folder currently has no `.git` metadata. Do not claim a push or commit from that folder until it is cloned from or explicitly linked to the upstream repository.
 - **Production URL:** https://t6.thamOS.ca
 - **Active theme:** Desktop (dark, terminal-centric with sidebar dock)
 - **Backend:** Supabase (PostgreSQL + Edge Functions)
@@ -307,3 +328,17 @@ When you finish a code sprint, append to `THAMOS_STATE.md` Sprint Log with:
 - **Frontend-first.** Unless explicitly asked, avoid Supabase/backend changes.
 - **Preserve working code.** Don't break Terminal or Tactical modes when modifying Desktop.
 - **Update the state document.** Always log your work in `THAMOS_STATE.md`.
+
+---
+
+## Deployment Direction (Current Decision)
+
+The long-term target is a **full in-tenant deployment**, not the older external-enrichment/tenant-companion split:
+
+- Migrate Supabase Edge Function responsibilities to Azure Functions where practical.
+- Store third-party credentials and service secrets in Azure Key Vault; do not add new browser/localStorage credential storage.
+- Use Entra ID and tenant controls as the security boundary.
+- Keep raw email, identities, PII, Log Analytics/Data Lake results, and investigation artifacts inside the tenant.
+- Gate application and service access through tenant identity, authorization, network controls, and—where appropriate—education-centre IP restrictions.
+- Maestro/T6 access to Log Analytics or the Data Lake is future design work. Do not grant query or action authority implicitly.
+- The TopDesk prototype was abandoned. Do not prioritize or extend it unless the maintainer explicitly revives it.

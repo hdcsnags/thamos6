@@ -80,6 +80,8 @@ api_cache - API response caching
 tor_exit_nodes - Tor detection
 vpn_providers - VPN detection
 user_api_keys - User API keys (encrypted)
+scan_observations - Append-only per-analyst scan event history (IP-first)
+ioc_relationships - Non-PII cumulative typed relationship graph
 ```
 
 ### Database Schema
@@ -102,7 +104,15 @@ created_at (timestamptz)
 - **Edge Function**: `POST /threat-intel/ip` with body `{"ip": "8.8.8.8"}`
 - **Response**: Returns `IPLookupResult` type with aggregated data
 - **Display**: Shows threat score, enrichment data, per-source results
+- **Pivot graph**: `RelatedIOCs.tsx` reads cumulative edges plus the signed-in analyst's scan timeline
 - **Connected To**: Bulk Lookup, Smart IOC Intake, Email Analyzer
+
+### Longitudinal graph behavior
+- Each persisted IP scan appends one `scan_observations` row.
+- IP context writes `announced_by`, `located_in`, `operated_by`, and `uses_vpn_provider` edges.
+- pDNS/certificate observations write `resolves_to` and `cert_san` edges.
+- Graph edges are accumulated through the `record_ioc_relationship` database function; repeated observations increment counts and update time bounds.
+- Infrastructure and geography are context, not threat verdicts.
 
 ### API Keys Used
 - **Free sources** (always available): IP-API, ThreatFox, URLhaus, RDAP, Teoh VPN, Spamhaus, AlienVault OTX, Team Cymru, Blocklist.de, Tor Exit List

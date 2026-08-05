@@ -288,18 +288,18 @@ function DesktopContent() {
       onContextMenu={handleDesktopRightClick}
     >
       <div className="absolute inset-0" style={getWallpaperById(wallpaper).style}>
-        {/* Dot grid overlay — kept for all wallpapers for consistency */}
+        {/* Quiet texture keeps the browser-desktop illusion without a HUD grid. */}
         <div
-          className="absolute inset-0 opacity-[0.02]"
+          className="absolute inset-0 opacity-[0.012]"
           style={{
-            backgroundImage: `radial-gradient(circle, rgba(148, 163, 184, 0.3) 1px, transparent 1px)`,
-            backgroundSize: '32px 32px',
+            backgroundImage: `radial-gradient(circle, rgba(184, 196, 207, 0.24) 1px, transparent 1px)`,
+            backgroundSize: '40px 40px',
           }}
         />
         <div
           className="absolute inset-0"
           style={{
-            background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.6) 100%)',
+            background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.34) 100%)',
           }}
         />
       </div>
@@ -314,8 +314,8 @@ function DesktopContent() {
               fontSize: '120px',
               fontWeight: 200,
               fontFamily: typography.mono,
-              color: palette.cyan,
-              opacity: 0.12,
+              color: palette.textSecondary,
+              opacity: 0.09,
               letterSpacing: '-0.05em',
             }}
           >
@@ -523,10 +523,10 @@ function MissionControl({ onClose }: { onClose: () => void }) {
     <div
       className="fixed inset-0 z-[9990] flex flex-col"
       onClick={onClose}
-      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)' }}
+      style={{ backgroundColor: 'rgba(10,12,14,0.84)', backdropFilter: 'blur(8px)' }}
     >
       <div className="flex items-center justify-between px-8 pt-6 pb-3">
-        <span style={{ color: palette.cyan, fontFamily: typography.mono, fontSize: '12px', letterSpacing: '0.1em' }}>MISSION CONTROL</span>
+        <span style={{ color: palette.textPrimary, fontFamily: typography.ui, fontSize: '13px', fontWeight: 600 }}>Window overview</span>
         <span style={{ color: palette.textTertiary, fontFamily: typography.mono, fontSize: '11px' }}>Ctrl+Shift+M · Esc to close</span>
       </div>
 
@@ -549,17 +549,17 @@ function MissionControl({ onClose }: { onClose: () => void }) {
                       if (win.workspaceId && !win.pinned) desktop.switchWorkspace(win.workspaceId);
                       onClose();
                     }}
-                    className="flex flex-col items-start gap-2 p-3 rounded-xl transition-all text-left"
+                    className="flex flex-col items-start gap-2 p-3 rounded-md transition-colors text-left"
                     style={{
                       width: '160px',
-                      backgroundColor: desktop.activeWindowId === win.id ? `${win.accentColor}15` : `${palette.surface}80`,
-                      border: `1px solid ${desktop.activeWindowId === win.id ? win.accentColor + '40' : palette.borderSubtle}`,
+                      backgroundColor: desktop.activeWindowId === win.id ? palette.surface : palette.elevated,
+                      border: `1px solid ${desktop.activeWindowId === win.id ? palette.borderActive : palette.borderSubtle}`,
                     }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = `${win.accentColor}20`; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = desktop.activeWindowId === win.id ? `${win.accentColor}15` : `${palette.surface}80`; }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = palette.surface; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = desktop.activeWindowId === win.id ? palette.surface : palette.elevated; }}
                   >
                     <div className="flex items-center gap-2 w-full">
-                      <span style={{ color: win.accentColor }}><win.icon size={14} /></span>
+                      <span style={{ color: desktop.activeWindowId === win.id ? palette.accent : palette.textSecondary }}><win.icon size={14} /></span>
                       <span className="text-xs font-medium truncate flex-1" style={{ color: palette.textPrimary, fontFamily: typography.ui }}>
                         {win.title.length > 18 ? win.title.slice(0, 18) + '…' : win.title}
                       </span>

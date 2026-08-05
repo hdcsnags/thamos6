@@ -821,3 +821,15 @@ The `Cannot read properties of undefined (reading 'abuseipdb')` error was caused
 - Trying to access `result.results.abuseipdb` before checking if result exists
 - Not handling both `results` and `sources` key variations
 - **This has been fixed for IP and URL, but needs same fix for Hash/Domain**
+# Current Addendum — Longitudinal IP Graph (2026-08-05)
+
+The primary IP scan now writes two connected persistence layers:
+
+1. `scan_observations`: append-only, analyst-readable scan events containing time, verdict/score, enrichment snapshot, and checked sources.
+2. `ioc_relationships`: cumulative non-PII graph edges. The `record_ioc_relationship` function atomically advances observation counts and first/last-seen windows.
+
+The initial typed context edges are IP→ASN (`announced_by`), IP→country/region (`located_in`), IP→ISP/organization (`operated_by`), and IP→named VPN provider (`uses_vpn_provider`). These are contextual relationships and do not make a node malicious by association. Existing pDNS and certificate edges use the same cumulative write path.
+
+`src/components/RelatedIOCs.tsx` exposes graph, relationship-list, and scan-history views. The implementation is IP-first; world maps, intel-feed overlays, case/document/email connections, and multi-IOC observation coverage remain future work.
+
+---

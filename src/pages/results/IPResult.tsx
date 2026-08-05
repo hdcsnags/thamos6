@@ -12,11 +12,12 @@ import VerdictStrip from '../../components/scanner/VerdictStrip';
 
 interface IPResultProps {
   ip: string;
+  onScan?: (type: string, value: string) => void;
 }
 
 type MenuItem = 'overview' | 'verdict' | 'network' | 'threats' | 'vpn' | 'location' | 'pivot' | 'sources' | 'raw';
 
-export default function IPResult({ ip }: IPResultProps) {
+export default function IPResult({ ip, onScan }: IPResultProps) {
   const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -263,7 +264,7 @@ export default function IPResult({ ip }: IPResultProps) {
                 <GitBranch className="w-6 h-6 text-cyan-400" />
                 IOC PIVOT GRAPH
               </h2>
-              <RelatedIOCs iocType="ip" iocValue={ip} />
+              <RelatedIOCs iocType="ip" iocValue={ip} onScan={onScan} />
             </div>
           )}
 

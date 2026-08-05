@@ -1,25 +1,32 @@
 export const palette = {
-  void: '#050508',
-  base: '#0a0d12',
-  elevated: '#11141a',
-  float: '#181b22',
-  surface: '#1e222b',
+  // Operator workstation: neutral graphite surfaces with one restrained accent.
+  // Semantic colors are intentionally muted so they communicate state instead
+  // of turning every control into a competing light source.
+  void: '#0f1215',
+  base: '#14181c',
+  elevated: '#1a1f24',
+  float: '#20262c',
+  surface: '#272e35',
 
-  borderSubtle: 'rgba(148, 163, 184, 0.06)',
-  borderDefault: 'rgba(148, 163, 184, 0.10)',
-  borderActive: 'rgba(148, 163, 184, 0.20)',
+  borderSubtle: 'rgba(184, 196, 207, 0.10)',
+  borderDefault: 'rgba(184, 196, 207, 0.16)',
+  borderActive: 'rgba(184, 196, 207, 0.28)',
 
-  textPrimary: '#e2e8f0',
-  textSecondary: '#94a3b8',
-  textTertiary: '#64748b',
-  textDisabled: '#475569',
+  textPrimary: '#e6eaed',
+  textSecondary: '#a4adb5',
+  textTertiary: '#79848e',
+  textDisabled: '#59636c',
 
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  rose: '#f43f5e',
-  blue: '#00b4d8',
-  teal: '#2dd4bf',
+  accent: '#5f8fa8',
+  cyan: '#5f8fa8',
+  green: '#6f9a7c',
+  amber: '#bd965d',
+  rose: '#bd6969',
+  blue: '#668eaa',
+  teal: '#67978f',
+  // Compatibility aliases used by older Desktop components.
+  pink: '#67978f',
+  orange: '#bd965d',
 
   mailPreviewBg: '#f8fafc',
   mailPreviewChrome: '#f1f5f9',
@@ -32,9 +39,9 @@ export const palette = {
   mailPreviewAvatarBg: '#dbeafe',
   mailPreviewAvatarText: '#1e40af',
 
-  agentX: '#00ff9d',
-  agentY: '#fbbf24',
-  agentZ: '#00d9ff',
+  agentX: '#6f9a7c',
+  agentY: '#bd965d',
+  agentZ: '#5f8fa8',
 } as const;
 
 export const typography = {
@@ -71,8 +78,8 @@ export const radii = {
   sm: '4px',
   md: '6px',
   lg: '8px',
-  xl: '12px',
-  '2xl': '16px',
+  xl: '9px',
+  '2xl': '12px',
   full: '9999px',
 } as const;
 

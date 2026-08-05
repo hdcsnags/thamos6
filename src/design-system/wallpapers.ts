@@ -8,11 +8,11 @@ export interface Wallpaper {
 export const WALLPAPERS: Wallpaper[] = [
   {
     id: 'default',
-    name: 'ThamOS',
+    name: 'Graphite',
     style: {
-      background: 'radial-gradient(ellipse at 50% 40%, #0a0d12 0%, #050508 100%)',
+      background: 'linear-gradient(145deg, #1a2025 0%, #111519 52%, #0d1013 100%)',
     },
-    preview: 'radial-gradient(circle at 50% 40%, #0a0d12, #050508)',
+    preview: 'linear-gradient(145deg, #1a2025, #0d1013)',
   },
   {
     id: 'void',
@@ -139,9 +139,9 @@ export const WALLPAPER_STORAGE_KEY = 'thamos6-wallpaper';
 
 export function getSavedWallpaper(): string {
   try {
-    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'thamos-type';
+    return localStorage.getItem(WALLPAPER_STORAGE_KEY) || 'default';
   } catch {
-    return 'thamos-type';
+    return 'default';
   }
 }
 

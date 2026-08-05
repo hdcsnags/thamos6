@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Search, AlertTriangle, Shield, Newspaper } from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
 import { supabase } from '../lib/supabase';
+import { palette, typography } from '../design-system/tokens';
 
 interface ScannerProps {
   onScan: (type: string, value: string) => void;
@@ -96,12 +97,12 @@ export default function Scanner({ onScan }: ScannerProps) {
     setError('');
 
     if (!input.trim()) {
-      setError('Please enter an IP, URL, domain, hash, or extension ID');
+      setError('Please enter an IP, URL, domain, hash, CVE, wallet, email address, or extension ID');
       return;
     }
 
     if (detection.type === 'unknown') {
-      setError('Unable to detect input type. Please enter a valid IP, URL, domain, hash, or Chrome extension ID.');
+      setError('Unable to detect the input type. Check the value and try again.');
       return;
     }
 
@@ -119,11 +120,14 @@ export default function Scanner({ onScan }: ScannerProps) {
     }
 
     const typeMap: Record<string, { text: string; color: string }> = {
-      ip: { text: 'IP DETECTED', color: 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300' },
-      url: { text: 'URL DETECTED', color: 'bg-violet-500/20 border-violet-500/40 text-violet-300' },
-      domain: { text: 'DOMAIN DETECTED', color: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' },
-      hash: { text: 'HASH DETECTED', color: 'bg-amber-500/20 border-amber-500/40 text-amber-300' },
-      extension: { text: 'EXTENSION DETECTED', color: 'bg-rose-500/20 border-rose-500/40 text-rose-300' },
+      ip: { text: 'IP DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      url: { text: 'URL DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      domain: { text: 'DOMAIN DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      hash: { text: 'HASH DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      extension: { text: 'EXTENSION DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      cve: { text: 'CVE DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      wallet: { text: 'WALLET DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+      email: { text: 'EMAIL DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
     };
 
     return typeMap[detection.type] || { text: 'CHECK INPUT', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
@@ -145,70 +149,46 @@ export default function Scanner({ onScan }: ScannerProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto" style={{ backgroundColor: palette.void, color: palette.textPrimary, fontFamily: typography.ui }}>
       {/* Local styles for cursor animation */}
       <style>{`
         @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .cursor-blink {
           width: 10px;
           height: 20px;
-          background: rgba(34, 211, 238, 0.85);
+          background: ${palette.accent};
           border-radius: 2px;
           display: inline-block;
           animation: cursorBlink 1s infinite;
           margin-left: 4px;
           vertical-align: middle;
         }
-        
-        /* Scanline effect */
-        @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
-        .scanline {
-          position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: linear-gradient(to bottom, transparent 40%, rgba(34, 211, 238, 0.02) 50%, transparent 60%);
-          animation: scanline 8s linear infinite;
-          pointer-events: none;
-          opacity: 0.3;
-        }
       `}</style>
 
-      {/* Scanline effect */}
-      <div className="scanline absolute inset-0 pointer-events-none z-0" />
-
       {/* Top status bar */}
-      <header className="h-12 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center justify-between px-8 z-40 relative">
-        <div className="flex items-center gap-6">
-          <h1 className="text-sm font-bold mono text-white uppercase tracking-wider">
-            SCANNER<span className="text-slate-600 font-normal"> / </span><span className="text-cyan-400">CORE</span>
-          </h1>
+      <header className="h-12 flex items-center justify-between px-6 relative" style={{ backgroundColor: palette.base, borderBottom: `1px solid ${palette.borderSubtle}` }}>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold" style={{ color: palette.textPrimary }}>Threat intelligence scanner</h1>
+          <span className="text-[11px]" style={{ color: palette.textTertiary }}>Primary: IP reputation</span>
         </div>
         
-        <div className="flex items-center gap-6 text-[10px] mono text-slate-500 uppercase tracking-wider">
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: palette.textTertiary }}>
           <span className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            ENGINE_ONLINE
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: palette.green }}></span>
+            Engine online
           </span>
-          <span>SESSION: <span className="text-slate-400">0x8A2F</span></span>
-          <span>LATENCY: <span className="text-emerald-400">24MS</span></span>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="px-8 py-12 relative z-10">
-        <div className="max-w-7xl mx-auto space-y-10">
+      <div className="px-6 py-8 relative z-10">
+        <div className="max-w-7xl mx-auto space-y-8">
           
           {/* Hero Header */}
-          <div className="text-center mb-10">
-            <h1 
-              className="text-6xl md:text-7xl font-black tracking-tighter mb-4"
-              style={{ textShadow: '0 0 40px rgba(34, 211, 238, 0.3)' }}
-            >
-              <span className="text-white">THAMOS</span>
-              <span className="bg-gradient-to-r from-cyan-400 via-cyan-500 to-emerald-400 bg-clip-text text-transparent">6</span>
-            </h1>
-            <div className="mono text-[10px] tracking-[0.35em] text-slate-600 uppercase mb-3">Neural Router v4.0</div>
-            <p className="text-sm text-slate-400 max-w-2xl mx-auto">
-              Inject IP, URL, hash, domain, or Chrome extension ID for intelligence correlation
+          <div className="max-w-5xl mx-auto">
+            <h1 className="text-2xl font-semibold mb-1" style={{ color: palette.textPrimary }}>Investigate an indicator</h1>
+            <p className="text-sm" style={{ color: palette.textSecondary }}>
+              Start with an IP address, or enter a URL, domain, hash, CVE, wallet, email address, or extension ID.
             </p>
           </div>
           
@@ -216,30 +196,22 @@ export default function Scanner({ onScan }: ScannerProps) {
           <div className="max-w-5xl mx-auto">
             <form onSubmit={handleSubmit}>
               <div 
-                className="rounded-2xl overflow-hidden transition-all duration-300"
+                className="rounded-lg overflow-hidden transition-colors duration-200"
                 style={{
-                  background: 'rgba(2, 6, 23, 0.75)',
-                  border: '1px solid rgba(148, 163, 184, 0.12)',
-                  boxShadow: input.trim() 
-                    ? '0 30px 140px rgba(34, 211, 238, 0.15)' 
-                    : '0 26px 120px rgba(0, 0, 0, 0.8)'
+                  background: palette.elevated,
+                  border: `1px solid ${input.trim() ? palette.borderActive : palette.borderDefault}`,
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.28)'
                 }}
               >
-                {/* Terminal chrome */}
-                <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-black/40">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50"></div>
-                    <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50"></div>
-                    <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50"></div>
-                  </div>
-                  <div className="mono text-[10px] text-slate-600 uppercase tracking-widest">root@thamos6:~</div>
-                  <div className="w-16"></div>
+                <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: palette.surface, borderBottom: `1px solid ${palette.borderSubtle}` }}>
+                  <span className="text-xs font-medium" style={{ color: palette.textSecondary }}>Indicator lookup</span>
+                  <span className="text-[10px]" style={{ color: palette.textTertiary }}>Enter to scan</span>
                 </div>
                 
                 {/* Input area */}
                 <div className="p-6 md:p-8">
                   <div className="flex items-center gap-4">
-                    <span className="mono text-cyan-400 text-2xl font-bold select-none">&gt;_</span>
+                    <Search className="w-5 h-5 shrink-0" style={{ color: palette.accent }} />
                     <div className="flex-1 flex items-center gap-2">
                       <input
                         type="text"
@@ -248,8 +220,9 @@ export default function Scanner({ onScan }: ScannerProps) {
                           setInput(e.target.value);
                           setError('');
                         }}
-                        placeholder="awaiting_input..."
-                        className="w-full bg-transparent border-none outline-none mono text-xl text-white placeholder-slate-700 caret-cyan-400 focus:ring-0"
+                        placeholder="8.8.8.8"
+                        className="w-full bg-transparent border-none outline-none mono text-xl focus:ring-0"
+                        style={{ color: palette.textPrimary, caretColor: palette.accent }}
                         autoComplete="off"
                         spellCheck={false}
                       />
@@ -257,9 +230,11 @@ export default function Scanner({ onScan }: ScannerProps) {
                     </div>
                     <button 
                       type="submit"
-                      className="h-11 w-11 rounded-xl bg-slate-900/50 border border-slate-700/50 hover:border-cyan-500/30 hover:bg-slate-900/70 transition-all grid place-items-center"
+                      className="h-11 px-4 rounded-md transition-colors flex items-center gap-2"
+                      style={{ backgroundColor: palette.accent, color: palette.void }}
                     >
-                      <Search className="w-5 h-5 text-slate-300" />
+                      <Search className="w-4 h-4" />
+                      <span className="text-xs font-semibold">Scan</span>
                     </button>
                   </div>
                   
@@ -273,21 +248,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                       </div>
                     </div>
                     
-                    {/* Source dots indicator */}
-                    <div className="flex items-center gap-2">
-                      <div className="grid grid-cols-7 gap-1">
-                        {[...Array(7)].map((_, i) => (
-                          <div 
-                            key={i}
-                            className={`w-1.5 h-1.5 rounded-full transition-all ${
-                              (input.trim() && Math.random() > 0.5) || i < 3
-                                ? 'bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)]'
-                                : 'bg-slate-700'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                    <span className="text-[10px]" style={{ color: palette.textTertiary }}>Sources run in parallel; availability depends on your tier and configured keys.</span>
                   </div>
                 </div>
               </div>
@@ -363,7 +324,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                     </div>
                   ))
                 ) : recentLookups.length > 0 ? (
-                  recentLookups.map((lookup, idx) => {
+                  recentLookups.map((lookup) => {
                     const isIP = lookup.type === 'ip';
                     const isMalicious = isIP ? lookup.threat_score > 50 : lookup.is_malicious;
                     const severity = isMalicious ? 'high' : 'clean';
@@ -378,9 +339,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                           background: 'rgba(0, 0, 0, 0.3)',
                           border: '1px solid rgba(148, 163, 184, 0.1)'
                         }}
-                        onClick={() => {
-                          // Could navigate to the result page here if desired
-                        }}
+                        onClick={() => onScan(lookup.type, displayValue)}
                       >
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-2">
@@ -551,15 +510,11 @@ export default function Scanner({ onScan }: ScannerProps) {
       </div>
 
       {/* Bottom status bar */}
-      <footer className="h-10 border-t border-white/5 bg-black/50 backdrop-blur-md flex items-center justify-between px-8 z-40 relative">
-        <div className="flex items-center gap-6 text-[10px] mono text-slate-600 uppercase tracking-wider">
-          <span>Region: <span className="text-slate-400">US-EAST</span></span>
-          <span>Encryption: <span className="text-slate-400">AES-256</span></span>
-          <span>Protocol: <span className="text-emerald-400">TLS 1.3</span></span>
+      <footer className="h-9 flex items-center justify-between px-6 relative" style={{ backgroundColor: palette.base, borderTop: `1px solid ${palette.borderSubtle}` }}>
+        <div className="text-[10px]" style={{ color: palette.textTertiary }}>
+          Terminal workflow: <span style={{ fontFamily: typography.mono, color: palette.textSecondary }}>scan -ip 8.8.8.8</span> or <span style={{ fontFamily: typography.mono, color: palette.textSecondary }}>scan 8.8.8.8</span>
         </div>
-        <div className="text-[10px] mono text-slate-600 uppercase tracking-wider">
-          THAMOS_OS v6.0_TACTICAL
-        </div>
+        <div className="text-[10px]" style={{ color: palette.textDisabled }}>ThamOS 6</div>
       </footer>
     </div>
   );

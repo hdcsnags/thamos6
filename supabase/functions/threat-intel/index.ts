@@ -2078,19 +2078,20 @@ async function savePDNSEdges(records: PDNSRecord[]): Promise<void> {
       target_type: "ip",
       target_value: r.rdata.toLowerCase(),
       edge_type: "resolves_to",
-      first_seen: r.first_seen ?? null,
-      last_seen: r.last_seen ?? null,
-      observation_count: r.count ?? 1,
+      observed_at: new Date().toISOString(),
+      observation_count: 1,
       confidence: "high",
       source_dataset: r.source.toLowerCase().replace(/[^a-z0-9]/g, "_"),
-      metadata: { rrtype: r.rrtype },
-      updated_at: new Date().toISOString(),
+      metadata: {
+        rrtype: r.rrtype,
+        feed_first_seen: r.first_seen,
+        feed_last_seen: r.last_seen,
+        feed_observation_count: r.count,
+      },
     }));
 
   if (edges.length === 0) return;
-  await serviceClient.from("ioc_relationships")
-    .upsert(edges, { onConflict: "source_type,source_value,target_type,target_value,edge_type,source_dataset" })
-    .catch(e => console.error("savePDNSEdges:", e));
+  await Promise.all(edges.map(edge => recordGraphEdge(edge)));
 }
 
 async function saveCertEdges(domain: string, subdomains: string[]): Promise<void> {
@@ -2105,11 +2106,113 @@ async function saveCertEdges(domain: string, subdomains: string[]): Promise<void
     confidence: "high",
     source_dataset: "crtsh",
     metadata: {},
-    updated_at: new Date().toISOString(),
   }));
-  await serviceClient.from("ioc_relationships")
-    .upsert(edges, { onConflict: "source_type,source_value,target_type,target_value,edge_type,source_dataset" })
-    .catch(e => console.error("saveCertEdges:", e));
+  await Promise.all(edges.map(edge => recordGraphEdge(edge)));
+}
+
+interface GraphEdgeInput {
+  source_type: string;
+  source_value: string;
+  target_type: string;
+  target_value: string;
+  edge_type: string;
+  source_dataset: string;
+  observed_at?: string;
+  observation_count?: number;
+  confidence?: "high" | "medium" | "low";
+  metadata?: Record<string, unknown>;
+}
+
+async function recordGraphEdge(edge: GraphEdgeInput): Promise<void> {
+  const { error } = await serviceClient.rpc("record_ioc_relationship", {
+    p_source_type: edge.source_type,
+    p_source_value: edge.source_value,
+    p_target_type: edge.target_type,
+    p_target_value: edge.target_value,
+    p_edge_type: edge.edge_type,
+    p_source_dataset: edge.source_dataset,
+    p_observed_at: edge.observed_at ?? new Date().toISOString(),
+    p_observation_count: edge.observation_count ?? 1,
+    p_confidence: edge.confidence ?? "medium",
+    p_metadata: edge.metadata ?? {},
+  });
+  if (error) console.error("recordGraphEdge:", error);
+}
+
+async function saveIPScanGraph(
+  ctx: TierContext,
+  ip: string,
+  enrichment: IPEnrichment,
+  threatScore: number,
+  isMalicious: boolean,
+  confidence: string,
+  sourcesChecked: string[],
+  observedAt: string,
+): Promise<void> {
+  const verdict = isMalicious
+    ? "malicious"
+    : threatScore >= 40
+      ? "suspicious"
+      : "no_known_threat";
+
+  const { error: observationError } = await serviceClient.from("scan_observations").insert({
+    ioc_type: "ip",
+    ioc_value: ip.toLowerCase(),
+    verdict,
+    is_malicious: isMalicious,
+    threat_score: threatScore,
+    confidence,
+    context: ctx.cacheContext,
+    user_id: ctx.userId,
+    enrichment,
+    sources_checked: sourcesChecked,
+    metadata: { tier: ctx.tier },
+    observed_at: observedAt,
+  });
+  if (observationError) console.error("saveIPScanGraph observation:", observationError);
+
+  const contextEdges: GraphEdgeInput[] = [];
+  const addContextEdge = (
+    targetType: string,
+    targetValue: string | undefined,
+    edgeType: string,
+    metadata: Record<string, unknown> = {},
+  ) => {
+    const value = targetValue?.trim();
+    if (!value) return;
+    contextEdges.push({
+      source_type: "ip",
+      source_value: ip,
+      target_type: targetType,
+      target_value: value,
+      edge_type: edgeType,
+      source_dataset: "scan_enrichment",
+      observed_at: observedAt,
+      confidence: "medium",
+      metadata: { contextual: true, ...metadata },
+    });
+  };
+
+  addContextEdge("asn", enrichment.asn, "announced_by");
+  addContextEdge("country", enrichment.country || enrichment.countryCode, "located_in", {
+    display_name: enrichment.country,
+    country_code: enrichment.countryCode,
+    latitude: enrichment.lat,
+    longitude: enrichment.lon,
+  });
+  addContextEdge("region", enrichment.region, "located_in", {
+    country: enrichment.country,
+    country_code: enrichment.countryCode,
+    city: enrichment.city,
+  });
+
+  const operators = new Set([enrichment.org, enrichment.isp].filter(Boolean) as string[]);
+  for (const operator of operators) addContextEdge("organization", operator, "operated_by");
+  if (enrichment.isVPN) {
+    addContextEdge("vpn_provider", enrichment.vpnService, "uses_vpn_provider");
+  }
+
+  await Promise.all(contextEdges.map(edge => recordGraphEdge(edge)));
 }
 
 // ── Phase 1: CVE sources ──────────────────────────────────────────────────────
@@ -2834,6 +2937,16 @@ Deno.serve(async (req: Request) => {
         });
 
         savePDNSEdges(pdnsRecords).catch(e => console.error("ip savePDNSEdges:", e));
+        await saveIPScanGraph(
+          ctx,
+          ip,
+          enrichment,
+          aggregated.overallThreatScore,
+          aggregated.isMalicious,
+          aggregated.detectionConfidence,
+          results.map(r => r.source),
+          aggregated.checkedAt,
+        );
         await logAuditEvent(req, ctx, "ip_lookup", "ip", ip, { sources: results.map(r => r.source), threat_score: aggregated.overallThreatScore });
       }
 

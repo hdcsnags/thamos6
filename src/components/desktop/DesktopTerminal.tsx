@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { useToast } from './ToastNotifications';
-import { parseFlags, type ScanFlags } from '../../lib/cliFlags';
+import { parseFlags } from '../../lib/cliFlags';
 import { detectIOCType } from '../../lib/iocDetection';
 import { palette, typography } from '../../design-system/tokens';
 
@@ -737,7 +737,7 @@ export function DesktopTerminal() {
           fontFamily: typography.mono,
         }}
       >
-        <span className="text-sm font-bold" style={{ color: palette.green }}>\u279C</span>
+        <span className="text-sm font-bold" style={{ color: palette.green }}>➜</span>
         <span className="text-sm" style={{ color: palette.cyan }}>~</span>
         <input
           ref={inputRef}

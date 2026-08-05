@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import type { IconProps } from '../design-system/icons';
+import { SearchResultIcon } from '../design-system/icons';
 import { getApp } from '../design-system/appRegistry';
+import { palette } from '../design-system/tokens';
 
 export type AppId =
   | 'terminal'
@@ -78,8 +80,7 @@ interface DesktopContextType {
 
 const DesktopContext = createContext<DesktopContextType | undefined>(undefined);
 
-import { SearchResultIcon } from '../design-system/icons';
-const FALLBACK_DEFAULTS = { icon: SearchResultIcon, accentColor: '#00d9ff', defaultSize: { width: 800, height: 600 } };
+const FALLBACK_DEFAULTS = { icon: SearchResultIcon, accentColor: palette.accent, defaultSize: { width: 800, height: 600 } };
 const LAYOUT_STORAGE_KEY = 'thamos6-desktop-layout';
 
 interface SavedLayout {
@@ -91,6 +92,8 @@ interface SavedLayout {
     workspaceId: number;
     pinned: boolean;
     maximized: boolean;
+    minimized: boolean;
+    data?: any;
   }>;
   activeWorkspace: number;
 }
@@ -116,6 +119,8 @@ function saveLayout(state: DesktopState) {
         workspaceId: w.workspaceId,
         pinned: w.pinned,
         maximized: w.maximized,
+        minimized: w.minimized,
+        data: w.data,
       })),
       activeWorkspace: state.activeWorkspace,
     };
@@ -319,11 +324,12 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
           accentColor: defaults.accentColor,
           position: w.position,
           size: w.size,
-          minimized: false,
+          minimized: w.minimized ?? false,
           maximized: w.maximized,
           zIndex,
           workspaceId: w.workspaceId,
           pinned: w.pinned,
+          data: w.data,
         };
       });
 

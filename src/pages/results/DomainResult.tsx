@@ -11,11 +11,12 @@ import VerdictStrip from '../../components/scanner/VerdictStrip';
 
 interface DomainResultProps {
   domain: string;
+  onScan?: (type: string, value: string) => void;
 }
 
 type MenuItem = 'overview' | 'verdict' | 'whois' | 'dns' | 'security' | 'pivot' | 'sources' | 'raw';
 
-export default function DomainResult({ domain }: DomainResultProps) {
+export default function DomainResult({ domain, onScan }: DomainResultProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<DomainLookupResult | null>(null);
@@ -174,7 +175,7 @@ export default function DomainResult({ domain }: DomainResultProps) {
                 <GitBranch className="w-6 h-6 text-cyan-400" />
                 IOC PIVOT GRAPH
               </h2>
-              <RelatedIOCs iocType="domain" iocValue={domain} />
+              <RelatedIOCs iocType="domain" iocValue={domain} onScan={onScan} />
             </div>
           )}
           {activeMenu === 'sources' && <SourcesSection sources={sources} proMode={proMode} />}

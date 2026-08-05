@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-05-04 by Kimi Code CLI (Desktop UI/UX Audit + Documentation Sprint)
+> **Last Updated:** 2026-08-05 by Codex (Operator Workstation Theme + State Reconciliation)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -26,14 +26,27 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 |-------|----------|--------|-------------|
 | **Tactical** | `src/components/Layout.tsx` | ✅ Stable | Modern card-based GUI. Default theme. |
 | **Terminal** | `src/components/terminallayout.tsx` | ✅ Stable | Retro CLI with `scan` commands, flags, history. |
-| **Desktop** | `src/components/desktop/` | ✅ Active / Most Complete | Full windowed OS environment. **Currently the primary active theme at t6.thamOS.ca.** |
-| **Mission Control** | `src/contexts/themecontext.tsx` | ⚠️ Stub | Exists in theme type but minimal implementation. |
+| **Desktop** | `src/components/desktop/` | ✅ Product Direction / Most Complete | Full windowed OS environment. Fresh sessions still default to Tactical until the theme fallback is changed. |
+| **Mission Control** | `src/components/desktop/DesktopLayout.tsx` | ✅ Desktop Overlay | Working window overview toggled with `Ctrl+Shift+M`. The separate `mission-control` theme value remains legacy/incomplete routing. |
 
-**The architecture docs (`ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, `MODULAR_GUIDE.md`) are stale** — they only document Tactical and Terminal modes. The Desktop theme is entirely absent from documentation until this audit.
+**Documentation warning:** architecture and roadmap documents are useful orientation, but completion status must be verified against live code. This state document and `AGENTS.md` carry the current product/deployment decisions.
+
+### Current Product and Deployment Decisions (2026-08-05)
+
+- Desktop is the intended primary experience; Desktop Terminal and the graphical Scanner are both first-class scan surfaces.
+- IP reputation is the anchor scan workflow. The terminal supports explicit commands such as `scan -ip 8.8.8.8` and auto-detection via `scan <value>`.
+- Visual direction is a restrained Kali/Ubuntu-inspired operator workstation: graphite surfaces, neutral icons, minimal accent, and semantic color only for real status.
+- The long-term deployment target is a **full migration into the tenant**, replacing Supabase Edge Function responsibilities with Azure Functions where practical.
+- Secrets belong in Azure Key Vault. Entra ID, tenant authorization, network controls, and optional education-centre IP restrictions form the boundary.
+- Raw email, identities, PII, Log Analytics/Data Lake results, and investigation artifacts remain inside the tenant.
+- Maestro/T6 access to Log Analytics or the Data Lake is undecided future work; permissions must be explicit and least-privileged.
+- The TopDesk prototype is abandoned unless the maintainer explicitly revives it.
 
 ---
 
 ## UI/UX Audit Findings
+
+> **Historical audit:** the grades and issue descriptions below capture the 2026-05-04 baseline. Later sprint entries and the current-direction section above supersede completed or changed claims.
 
 > **Audited by:** Kimi Code CLI, 2026-05-04
 > **Benchmark:** Ubuntu Tour (malisipi/ubuntu-tour), WebVM 2.0, general desktop OS realism standards
@@ -95,8 +108,8 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 - [x] Snap-to-edge (top=maximize, left/right=half, corners=quarter) with live preview overlay
 - [x] 4 virtual workspaces with pinned window support
 - [x] Layout auto-save/restore to `localStorage` (500ms debounced)
-- [x] macOS-style traffic lights with hover icons (×, −, □)
-- [x] Active/inactive window differentiation (glow border + opacity)
+- [x] Neutral Linux-style window controls with persistent glyphs
+- [x] Active/inactive window differentiation using surface, border, and shadow
 - [x] Desktop icons (top-left grid, double-click open, right-click menu)
 - [x] App Launcher (search, categories, keyboard navigation, spring animation)
 - [x] Spotlight Search (Ctrl+K, app search, IOC auto-detect, recent history)
@@ -134,15 +147,22 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 - [x] **Delete dead code** `src/components/DesktopLayout.tsx` (old monolithic version) ✅ 2026-05-04
 
 ### 🟡 High Priority
-- [ ] **Build Mission Control / window overview overlay** (all windows + workspaces visible)
-- [ ] **Make desktop icons draggable** (`src/components/desktop/DesktopIcons.tsx`)
-- [ ] **Add window grouping to taskbar** (`src/components/desktop/Taskbar.tsx`)
+- [x] **Build Mission Control / window overview overlay** (all windows + workspaces visible)
+- [x] **Make desktop icons draggable** (`src/components/desktop/DesktopIcons.tsx`)
+- [x] **Group result windows in the taskbar** (`src/components/desktop/Taskbar.tsx`); broader per-app grouping remains optional
 - [ ] **Add calendar popover on clock click** (`src/components/desktop/DesktopClock.tsx` + `Taskbar.tsx`)
 - [ ] **Build desktop-styled result wrappers** (`DesktopIPResult`, `DesktopURLResult`, etc.)
-- [ ] **Add window transparency / acrylic effect** (let wallpaper bleed through)
-- [ ] **Update all architecture docs** to include Desktop and Mission Control themes
+- [x] **Reduce expensive/overactive acrylic styling**; active windows use restrained blur and inactive windows use none
+- [ ] **Reconcile remaining architecture docs** with the current Desktop and tenant-hosting direction
 
 ### 🟢 Medium Priority
+- [ ] **Longitudinal Threat Graph / Pivot Explorer** — Phase 1 (IP scans, cumulative context edges, graph/list/timeline UI) completed 2026-08-05; remaining work is multi-IOC coverage, tenant aggregation, cases, maps, clusters, and recurrence controls:
+  - Persist a scan observation for every IOC lookup with `observed_at`, verdict/score, case/source context, and enrichment snapshot. IP is complete; extend to the other scanner routes.
+  - Model IPs, domains, hashes, URLs, ASNs, organizations/ISPs, VPN providers, countries, regions, cases, emails, and documents as typed entities.
+  - Add explicit relationships such as `announced_by`, `located_in`, `uses_vpn_provider`, `resolves_to`, `cert_san`, `redirects_to`, `extracted_from_email`, `extracted_from_document`, `seen_in_case`, and `observed_with`.
+  - Track `first_seen`, `last_seen`, and incrementing observation counts instead of merely overwriting an edge during upsert.
+  - Provide graph, timeline, hotspot, recurrence, and cluster views with pivots back into Scanner and Case Manager.
+  - Keep context separate from verdict: a country, region, ASN, or commercial VPN is not malicious merely because an IOC used it. Weight/filter trends by actual malicious or suspicious evidence and control for repeated analyst rescans.
 - [ ] System tray expansion: volume, network, battery status icons
 - [ ] Browser: real web page rendering via sandboxed iframe
 - [ ] Notification badges on desktop app icons
@@ -156,7 +176,7 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ### 🔵 Low Priority / Nice to Have
 - [ ] Diffing tool (compare two lookups side-by-side)
-- [ ] Network graph for related IOCs
+- [x] Network graph for related IOCs (Phase 1 radial explorer; richer layout/filtering remains)
 - [ ] Geographic map for IP sources
 - [ ] STIX/TAXII integration
 - [ ] Browser extension for right-click IOC lookup
@@ -166,33 +186,23 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## Integration Roadmap
 
-> See **`INTEGRATION_ROADMAP.md`** for the complete feasibility analysis and phased implementation plan.
-> 
-> **Summary:** Integration with TopDesk (ticketing), Entra ID (remediation), Sentinel (SIEM/playbooks), and Defender (email investigation) is **technically feasible**. TopDesk and Entra are the highest-ROI, lowest-effort integrations. Email deep-link analysis is the most complex.
+Older TopDesk-first and external-companion plans are retained in historical documents for context but are no longer the active direction.
 
-### 🔴 Phase 1 — TopDesk + Entra Guard (High Priority)
-- [ ] **TopDesk Desktop app** — Search incidents by UPN, deduplication, enrichment, close/update
-- [ ] **Entra Guard Desktop app** — Revoke sessions, force password reset, view sign-in logs, disable account
-- [ ] **Analyst API credential storage** — Encrypted `analyst_api_credentials` table in Supabase
-- [ ] **Supabase Edge Functions** — `topdesk/*`, `entra/*`
-- [ ] **Settings panel expansion** — API key/config forms for TopDesk and Entra
+### Phase 1 — Tenant Foundation
+- [ ] Establish the Azure/Entra application boundary and deployment model.
+- [ ] Move secrets and third-party API keys to Azure Key Vault.
+- [ ] Define Azure Function equivalents for current Supabase Edge Functions.
+- [ ] Define data residency, retention, audit, RBAC, and network/IP access controls.
 
-### 🟡 Phase 2 — Sentinel Console (Medium Priority)
-- [ ] **Sentinel Desktop app** — Incident list, KQL query runner, playbook trigger
-- [ ] **Pre-built KQL library** — Adopt `security-investigator` query pattern with metadata headers
-- [ ] **Logic App webhook integration** — Trigger remediation playbooks from ThamOS UI
+### Phase 2 — Investigation Workbench
+- [ ] Make Case Manager the investigation spine with “Send to Case” from scans, email verdicts, document analysis, and T6 synthesis.
+- [ ] Preserve email/PII and investigation artifacts entirely inside the tenant.
+- [ ] Add robust PDF/OOXML URL extraction, OCR/QR detection, and isolated URL detonation.
 
-### 🟢 Phase 3 — Email Investigator (Lower Priority)
-- [ ] **Email Investigator Desktop app** — Defender email search, detonation results
-- [ ] **Attachment extraction pipeline** — Fetch attachments from mailbox or eDiscovery
-- [ ] **URL extraction from PDF/DOCX** — Custom parser Edge Function
-- [ ] **Redirect chain follower** — Recursive HTTP hop tracker
-- [ ] **Third-party sandbox integration** — URLScan.io, VirusTotal for URL detonation
-
-### 🔵 Phase 4 — AI Summaries (Future)
-- [ ] **Ticket correlation narrative** — "This UPN has 3 tickets, 2 Sentinel incidents, flagged by AbuseIPDB"
-- [ ] **Auto-generated closure notes** — One-click generate TopDesk action note with reasoning
-- [ ] **KQL query explanation** — Plain English description of pre-built queries
+### Phase 3 — Tenant Intelligence
+- [ ] Decide whether Maestro/T6 should query Log Analytics, a Data Lake, or both.
+- [ ] Define read-only query scopes, approval boundaries, redaction, and auditable tool execution before enabling access.
+- [ ] Consider Sentinel/Defender/Logic App integrations only after the tenant boundary is established.
 
 ---
 
@@ -200,16 +210,63 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 | # | Bug | Location | Severity | Fix Strategy |
 |---|-----|----------|----------|--------------|
-| 1 | `extension-result` missing from `AppId` union type | `src/contexts/DesktopContext.tsx:4-19` | Medium | Add `'extension-result'` to `AppId` type |
-| 2 | Old `DesktopLayout.tsx` is dead code | `src/components/DesktopLayout.tsx` | Low | Delete file after confirming no imports |
-| 3 | Architecture docs don't mention Desktop/Mission Control | `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, `MODULAR_GUIDE.md` | Medium | Update docs (in progress via this sprint) |
-| 4 | Desktop reuses Tactical result pages | `src/components/desktop/DesktopLayout.tsx:433-476` | Medium | Build `DesktopIPResult`, `DesktopURLResult`, etc. |
-| 5 | Hash lookup may be broken/placeholder | `src/pages/results/HashResult.tsx` | High | Per `ARCHITECTURE_V2.md`, needs verification |
-| 6 | Domain lookup may be incomplete | `src/pages/results/DomainResult.tsx` | Medium | Per `ARCHITECTURE_V2.md`, needs verification |
+| 1 | Fresh sessions still default to Tactical although Desktop is the product direction | `src/contexts/themecontext.tsx` | Medium | Change only with a deliberate entry/login migration |
+| 2 | Desktop reuses Tactical result pages | `src/components/desktop/DesktopLayout.tsx` | Medium | Build Desktop-native result composition or shared neutral result primitives |
+| 3 | Email parsing discards attachment bytes after hashing, preventing direct PDF handoff | `supabase/functions/_shared/email-parser.ts` | High | Retain encrypted/transient attachment artifacts inside the tenant and pass supported documents to analysis |
+| 4 | Document analysis is raw-byte pattern matching; it lacks proper PDF/OOXML parsing, OCR/QR, redirects, and detonation | `supabase/functions/analyze-doc/index.ts` | High | Replace with tenant-side structural extraction plus isolated browser analysis |
+| 5 | Repository-wide TypeScript baseline has existing errors | Project-wide | Medium | Re-baseline and fix by active Desktop workflow, not indiscriminate churn |
 
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-05 — Longitudinal IP Graph Foundation
+**Agent:** Codex
+**Scope:** Turn the primary IP scanner's static relationship list into a cumulative, time-aware investigation surface.
+
+**Completed:**
+- [x] Added append-only `scan_observations` history for persisted IP scans, with analyst-scoped reads, verdict/score, enrichment snapshot, source list, and timestamp.
+- [x] Added an atomic `record_ioc_relationship` database function so repeated relationships increment their observation count and extend first/last-seen windows.
+- [x] Recorded neutral IP context edges for ASN, country, region, ISP/organization, and named VPN provider, alongside existing pDNS and certificate edges.
+- [x] Replaced the flat Related IOCs list with graph, relationship, and scan-history views using the restrained operator theme.
+- [x] Wired scannable graph nodes back into the Tactical and Desktop scanner flows.
+
+**Decisions Made:**
+- Scan events and graph edges are separate layers: events preserve each investigation; edges summarize recurring infrastructure relationships.
+- Geography/provider/ASN links are contextual facts, never malicious verdicts by association.
+- Personal scan history is readable only by its analyst under current Supabase RLS. Shared tenant aggregation must be designed explicitly during the tenant migration.
+
+**Deferred / Next:**
+- Apply observation recording to domain, hash, URL, email, document, CVE, wallet, and extension scans.
+- Add case/document/email edges, recurrence de-biasing, time filters, clusters, and the world-map/intel-feed layer.
+- Deploy the migration and Edge Function before expecting production scans to populate the new layers.
+
+### Sprint 2026-08-05 — Operator Workstation Theme + State Reconciliation
+**Agent:** Codex
+**Scope:** Reduce visual noise in the Desktop shell and primary scanner, fix small Desktop regressions, and reconcile current product/deployment direction.
+
+**Completed:**
+- [x] Reworked global Desktop tokens to restrained graphite surfaces and muted semantic colors.
+- [x] Replaced neon active-window halos and macOS traffic lights with neutral Linux-style chrome.
+- [x] Converted the launcher into a compact Applications menu and reduced color competition in the taskbar, desktop icons, and Mission Control.
+- [x] Made Graphite the default wallpaper for new local profiles while preserving existing saved wallpaper choices.
+- [x] Simplified the primary scanner around IP-first IOC investigation; removed fake session/latency/security telemetry, random source dots, scanlines, and oversized branding.
+- [x] Added honest detection badges for CVE, wallet, and email and wired recent investigations to reopen their result flow.
+- [x] Fixed the Desktop Terminal prompt printing literal `\u279C`; it now renders `➜`.
+- [x] Persisted window `data` and minimized state so restored result windows retain their IOC payload.
+- [x] Updated `AGENTS.md` and this state document with current theme rules and the full in-tenant Azure Functions/Key Vault direction.
+
+**Decisions Made:**
+- IP reputation remains the anchor scanner workflow; Desktop Terminal and graphical Scanner are both first-class entry points.
+- Visual authority comes from hierarchy and evidence, not decorative neon or simulated telemetry.
+- Full tenant migration supersedes the older external companion split. PII and tenant data remain inside the tenant.
+- TopDesk is not an active priority.
+
+**Deferred / Next:**
+- Deliberate Desktop-default/login migration.
+- Desktop-native result composition and Case Manager handoffs.
+- Longitudinal Threat Graph: observation history, infrastructure/provider/geography entities, temporal clustering, and a real pivot canvas.
+- Tenant architecture for Azure Functions, Key Vault, Entra, Log Analytics/Data Lake, and document/URL detonation.
 
 ### Sprint 2026-07-03 — Scanner: close the detection→result gap (CVE / wallet / email) + graphify RAG
 **Agent:** Claude Fable 5 (Claude Code)

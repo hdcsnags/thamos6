@@ -88,11 +88,11 @@ function App() {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
-          return <IPResult ip={scanResult.value} />;
+          return <IPResult ip={scanResult.value} onScan={handleScan} />;
         case 'url':
           return <URLResult url={scanResult.value} />;
         case 'domain':
-          return <DomainResult domain={scanResult.value} />;
+          return <DomainResult domain={scanResult.value} onScan={handleScan} />;
         case 'hash':
           return <HashResult hash={scanResult.value} />;
         case 'cve':

@@ -10,12 +10,12 @@ interface AppLauncherProps {
 
 type Category = 'all' | 'core' | 'intel' | 'tools' | 'system';
 
-const CATEGORIES: { id: Category; label: string; color: string }[] = [
-  { id: 'all', label: 'All', color: palette.cyan },
-  { id: 'core', label: 'Core', color: palette.green },
-  { id: 'intel', label: 'Intel', color: palette.cyan },
-  { id: 'tools', label: 'Tools', color: palette.amber },
-  { id: 'system', label: 'System', color: palette.textSecondary },
+const CATEGORIES: { id: Category; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'core', label: 'Core' },
+  { id: 'intel', label: 'Intel' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'system', label: 'System' },
 ];
 
 export function AppLauncher({ onClose }: AppLauncherProps) {
@@ -55,14 +55,14 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
       }
       if (e.key === 'ArrowRight') {
         setSelectedIndex(i => {
-          const cols = 5;
+          const cols = 3;
           const next = i + cols;
           return next < filtered.length ? next : i;
         });
       }
       if (e.key === 'ArrowLeft') {
         setSelectedIndex(i => {
-          const cols = 5;
+          const cols = 3;
           const prev = i - cols;
           return prev >= 0 ? prev : i;
         });
@@ -88,17 +88,17 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center backdrop-blur-sm"
-      style={{ backgroundColor: `${palette.void}80` }}
+      className="fixed inset-0 z-[90] flex items-end justify-start p-3 pb-14"
+      style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl p-5 animate-launcher-open"
+        className="w-full max-w-3xl p-4 animate-launcher-open"
         style={{
           backgroundColor: palette.elevated,
           border: `1px solid ${palette.borderDefault}`,
-          borderRadius: '16px',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+          borderRadius: '8px',
+          boxShadow: '0 18px 48px rgba(0,0,0,0.58)',
           fontFamily: typography.ui,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -106,7 +106,7 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
         {/* Search bar */}
         <div className="mb-3">
           <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md"
             style={{
               backgroundColor: palette.base,
               border: `1px solid ${palette.borderSubtle}`,
@@ -148,11 +148,11 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
                 <button
                   key={cat.id}
                   onClick={() => setCategory(cat.id)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
                   style={{
-                    backgroundColor: isActive ? `${cat.color}12` : 'transparent',
-                    color: isActive ? cat.color : palette.textTertiary,
-                    border: `1px solid ${isActive ? `${cat.color}25` : 'transparent'}`,
+                    backgroundColor: isActive ? palette.surface : 'transparent',
+                    color: isActive ? palette.textPrimary : palette.textTertiary,
+                    borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
                   }}
                 >
                   {cat.label}
@@ -168,41 +168,30 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
             <span style={{ fontSize: '13px', color: palette.textTertiary }}>No matching apps</span>
           </div>
         ) : (
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 max-h-[52vh] overflow-y-auto pr-1">
             {filtered.map((app, i) => (
               <button
                 key={app.id}
                 onClick={() => handleAppClick(app)}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl transition-all group"
+                className="flex items-center gap-3 p-3 rounded-md text-left transition-colors group"
                 style={{
-                  backgroundColor: i === selectedIndex ? `${app.accentColor}10` : palette.base,
-                  border: `1px solid ${i === selectedIndex ? `${app.accentColor}30` : palette.borderSubtle}`,
+                  backgroundColor: i === selectedIndex ? palette.surface : palette.base,
+                  border: `1px solid ${i === selectedIndex ? palette.borderActive : palette.borderSubtle}`,
                 }}
               >
                 <div
-                  className="mb-0.5 transition-transform group-hover:scale-110"
-                  style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))', color: app.accentColor }}
+                  className="shrink-0"
+                  style={{ color: i === selectedIndex ? palette.accent : palette.textSecondary }}
                 >
-                  <app.icon size={28} />
+                  <app.icon size={22} />
                 </div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: i === selectedIndex ? app.accentColor : palette.textPrimary,
-                    letterSpacing: '-0.01em',
-                  }}
-                >
-                  {app.name}
-                </div>
-                <div
-                  className="text-center leading-tight"
-                  style={{
-                    fontSize: '10px',
-                    color: palette.textTertiary,
-                  }}
-                >
-                  {app.description}
+                <div className="min-w-0">
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: palette.textPrimary }}>
+                    {app.name}
+                  </div>
+                  <div className="truncate" style={{ fontSize: '10px', color: palette.textTertiary }}>
+                    {app.description}
+                  </div>
                 </div>
               </button>
             ))}
