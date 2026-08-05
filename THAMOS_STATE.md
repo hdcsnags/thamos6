@@ -24,9 +24,9 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 | Theme | Location | Status | Description |
 |-------|----------|--------|-------------|
-| **Tactical** | `src/components/Layout.tsx` | ✅ Stable | Modern card-based GUI. Default theme. |
+| **Tactical** | `src/components/Layout.tsx` | ✅ Stable / Compatibility | Modern card-based GUI retained for existing users and direct theme selection. |
 | **Terminal** | `src/components/terminallayout.tsx` | ✅ Stable | Retro CLI with `scan` commands, flags, history. |
-| **Desktop** | `src/components/desktop/` | ✅ Product Direction / Most Complete | Full windowed OS environment. Fresh sessions still default to Tactical until the theme fallback is changed. |
+| **Desktop** | `src/components/desktop/` | ✅ Product Direction / Most Complete | Full windowed OS environment and the default for new profiles. Existing stored/profile theme choices remain respected. |
 | **Mission Control** | `src/components/desktop/DesktopLayout.tsx` | ✅ Desktop Overlay | Working window overview toggled with `Ctrl+Shift+M`. The separate `mission-control` theme value remains legacy/incomplete routing. |
 
 **Documentation warning:** architecture and roadmap documents are useful orientation, but completion status must be verified against live code. This state document and `AGENTS.md` carry the current product/deployment decisions.
@@ -210,15 +210,35 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 | # | Bug | Location | Severity | Fix Strategy |
 |---|-----|----------|----------|--------------|
-| 1 | Fresh sessions still default to Tactical although Desktop is the product direction | `src/contexts/themecontext.tsx` | Medium | Change only with a deliberate entry/login migration |
-| 2 | Desktop reuses Tactical result pages | `src/components/desktop/DesktopLayout.tsx` | Medium | Build Desktop-native result composition or shared neutral result primitives |
-| 3 | Email parsing discards attachment bytes after hashing, preventing direct PDF handoff | `supabase/functions/_shared/email-parser.ts` | High | Retain encrypted/transient attachment artifacts inside the tenant and pass supported documents to analysis |
-| 4 | Document analysis is raw-byte pattern matching; it lacks proper PDF/OOXML parsing, OCR/QR, redirects, and detonation | `supabase/functions/analyze-doc/index.ts` | High | Replace with tenant-side structural extraction plus isolated browser analysis |
-| 5 | Repository-wide TypeScript baseline has existing errors | Project-wide | Medium | Re-baseline and fix by active Desktop workflow, not indiscriminate churn |
+| 1 | Desktop reuses Tactical result pages | `src/components/desktop/DesktopLayout.tsx` | Medium | Build Desktop-native result composition or shared neutral result primitives |
+| 2 | Email parsing discards attachment bytes after hashing, preventing direct PDF handoff | `supabase/functions/_shared/email-parser.ts` | High | Retain encrypted/transient attachment artifacts inside the tenant and pass supported documents to analysis |
+| 3 | Document analysis is raw-byte pattern matching; it lacks proper PDF/OOXML parsing, OCR/QR, redirects, and detonation | `supabase/functions/analyze-doc/index.ts` | High | Replace with tenant-side structural extraction plus isolated browser analysis |
 
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-05 — Identity, Login, Desktop Shell + Browser
+**Agent:** Codex
+**Scope:** Give ThamOS a clearer visual identity, add a real signed-out entry experience, and bring the Desktop shell and internal browser to the same quality bar.
+
+**Completed:**
+- [x] Added a full-screen ThamOS sign-in experience using the existing Supabase Microsoft/Entra, email, Google, signup, and password-reset flows.
+- [x] Made Desktop the fallback for new profiles while preserving every stored or profile-level theme choice.
+- [x] Introduced reusable colored app-icon tiles and applied them consistently to the desktop, command center, taskbar, window chrome, and Mission Control.
+- [x] Replaced the wordy Applications taskbar control with a compact T6 command mark and rebuilt the launcher as a centered command center.
+- [x] Reworked the internal browser chrome and home screen around calm near-black surfaces, clear navigation, and app-level color rather than neon fill.
+- [x] Added the optional original `Nexus` wallpaper and a dedicated ThamOS favicon; existing wallpapers and user choices remain available.
+- [x] Replaced joke/placeholder page metadata with production-facing ThamOS T6 identity copy.
+
+**Decisions Made:**
+- ThamOS is not a Windows replica: its identity is deep black operational surfaces, a blue-violet atmospheric canvas, and restrained color on compact interactive objects.
+- Microsoft/Entra is the primary organization sign-in route. Email and Google remain explicit alternatives because those flows already exist.
+- Authentication UI states only what the application can verify; tenant, device, network, and Conditional Access claims remain deployment concerns.
+
+**Deferred / Next:**
+- Configure and verify production OAuth redirect URLs and the final Entra tenant/Conditional Access policy.
+- Continue Desktop-native scanner/result composition and responsive small-screen work.
 
 ### Sprint 2026-08-05 — Longitudinal IP Graph Foundation
 **Agent:** Codex
@@ -264,7 +284,6 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 - TopDesk is not an active priority.
 
 **Deferred / Next:**
-- Deliberate Desktop-default/login migration.
 - Desktop-native result composition and Case Manager handoffs.
 - Longitudinal Threat Graph: observation history, infrastructure/provider/geography entities, temporal clustering, and a real pivot canvas.
 - Tenant architecture for Azure Functions, Key Vault, Entra, Log Analytics/Data Lake, and document/URL detonation.

@@ -37,6 +37,7 @@ import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMe
 import { palette, typography } from '../../design-system/tokens';
 import { getSavedWallpaper, getWallpaperById } from '../../design-system/wallpapers';
 import { Terminal, Monitor, LayoutGrid, Settings, Undo2 } from 'lucide-react';
+import { AppIconTile } from '../../design-system/icons';
 
 function DesktopContent() {
   const desktop = useDesktop();
@@ -559,7 +560,7 @@ function MissionControl({ onClose }: { onClose: () => void }) {
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = desktop.activeWindowId === win.id ? palette.surface : palette.elevated; }}
                   >
                     <div className="flex items-center gap-2 w-full">
-                      <span style={{ color: win.accentColor, opacity: desktop.activeWindowId === win.id ? 1 : 0.75 }}><win.icon size={14} /></span>
+                      <AppIconTile icon={win.icon} color={win.accentColor} size={26} iconSize={13} active={desktop.activeWindowId === win.id} />
                       <span className="text-xs font-medium truncate flex-1" style={{ color: palette.textPrimary, fontFamily: typography.ui }}>
                         {win.title.length > 18 ? win.title.slice(0, 18) + '…' : win.title}
                       </span>

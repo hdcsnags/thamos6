@@ -3,6 +3,7 @@ import { useDesktop } from '../../contexts/DesktopContext';
 import { palette, typography } from '../../design-system/tokens';
 import { getLaunchableApps, searchApps, getAppsByCategory, type AppDefinition } from '../../design-system/appRegistry';
 import { Search } from 'lucide-react';
+import { AppIconTile } from '../../design-system/icons';
 
 interface AppLauncherProps {
   onClose: () => void;
@@ -88,17 +89,17 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-end justify-start p-3 pb-14"
-      style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}
+      className="fixed inset-0 z-[90] flex items-end justify-center p-3 pb-16"
+      style={{ backgroundColor: 'rgba(0,0,0,0.36)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl p-4 animate-launcher-open"
+        className="w-full max-w-3xl p-5 animate-launcher-open"
         style={{
           backgroundColor: palette.elevated,
           border: `1px solid ${palette.borderDefault}`,
-          borderRadius: '8px',
-          boxShadow: '0 18px 48px rgba(0,0,0,0.58)',
+          borderRadius: '18px',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.68)',
           fontFamily: typography.ui,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -168,23 +169,18 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
             <span style={{ fontSize: '13px', color: palette.textTertiary }}>No matching apps</span>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-1.5 max-h-[52vh] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-2 max-h-[52vh] overflow-y-auto pr-1 sm:grid-cols-3">
             {filtered.map((app, i) => (
               <button
                 key={app.id}
                 onClick={() => handleAppClick(app)}
-                className="flex items-center gap-3 p-3 rounded-md text-left transition-colors group"
+                className="flex items-center gap-3 p-3 rounded-xl text-left transition-colors group"
                 style={{
                   backgroundColor: i === selectedIndex ? palette.surface : palette.base,
                   border: `1px solid ${i === selectedIndex ? palette.borderActive : palette.borderSubtle}`,
                 }}
               >
-                <div
-                  className="shrink-0"
-                  style={{ color: app.accentColor, opacity: i === selectedIndex ? 1 : 0.82 }}
-                >
-                  <app.icon size={22} />
-                </div>
+                <AppIconTile icon={app.icon} color={app.accentColor} size={38} iconSize={19} active={i === selectedIndex} />
                 <div className="min-w-0">
                   <div style={{ fontSize: '12px', fontWeight: 600, color: palette.textPrimary }}>
                     {app.name}

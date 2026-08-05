@@ -38,10 +38,13 @@ import Admin from './pages/Admin';
 import ExtensionScanner from './pages/ExtensionScanner';
 import AIWorkshop from './pages/AIWorkshop';
 import { useTheme } from './contexts/themecontext';
+import { useAuth } from './contexts/AuthContext';
+import { SignInScreen } from './components/auth/SignInScreen';
 import type { ScanFlags } from './lib/cliFlags';
 
 function App() {
   const { theme } = useTheme();
+  const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('scanner');
   const [scanResult, setScanResult] = useState<{ type: string; value: string; flags?: ScanFlags } | null>(null);
 
@@ -57,6 +60,9 @@ function App() {
   const handleBackToScanner = () => {
     setScanResult(null);
   };
+
+  if (loading) return <SignInScreen loading />;
+  if (!user) return <SignInScreen />;
 
   // ─── Terminal Theme Renderer ──────────────────────────────
   const renderTerminalPage = () => {

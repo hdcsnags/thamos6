@@ -17,16 +17,16 @@ export const palette = {
   textTertiary: '#79848e',
   textDisabled: '#59636c',
 
-  accent: '#5f8fa8',
-  cyan: '#5f8fa8',
-  green: '#6f9a7c',
-  amber: '#bd965d',
-  rose: '#bd6969',
-  blue: '#668eaa',
-  teal: '#67978f',
+  accent: '#3399d8',
+  cyan: '#38a7df',
+  green: '#43b77b',
+  amber: '#d5a044',
+  rose: '#d86473',
+  blue: '#4a83d1',
+  teal: '#35a89a',
   // Compatibility aliases used by older Desktop components.
-  pink: '#67978f',
-  orange: '#bd965d',
+  pink: '#a76bd4',
+  orange: '#d57b47',
 
   mailPreviewBg: '#f8fafc',
   mailPreviewChrome: '#f1f5f9',
@@ -39,9 +39,9 @@ export const palette = {
   mailPreviewAvatarBg: '#dbeafe',
   mailPreviewAvatarText: '#1e40af',
 
-  agentX: '#6f9a7c',
-  agentY: '#bd965d',
-  agentZ: '#5f8fa8',
+  agentX: '#43b77b',
+  agentY: '#d5a044',
+  agentZ: '#38a7df',
 } as const;
 
 export const typography = {

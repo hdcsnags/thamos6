@@ -16,7 +16,7 @@ const STORAGE_KEY = 'thamos6-theme';
 
 function readLocal(): Theme {
   const saved = localStorage.getItem(STORAGE_KEY);
-  return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'tactical';
+  return VALID_THEMES.includes(saved as Theme) ? (saved as Theme) : 'desktop';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

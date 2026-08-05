@@ -725,6 +725,10 @@ const VALID_SERVICES = [
 ```
 CORE FILES (see above) +
 
+# Signed-out Entry + Routing
+src/components/auth/SignInScreen.tsx
+src/App.tsx
+
 # Desktop Infrastructure
 src/components/desktop/DesktopLayout.tsx
 src/components/desktop/DesktopWindow.tsx
@@ -781,11 +785,13 @@ src/contexts/DesktopContext.tsx
 src/contexts/themecontext.tsx
 ```
 
+The signed-out screen uses the existing `AuthContext` methods rather than a parallel auth implementation. Microsoft/Entra is presented as the primary organization route; email and Google remain available alternatives. New profiles fall back to Desktop, while stored and profile-level theme preferences still win.
+
 ### Desktop App Registry
 Apps are defined in `src/design-system/appRegistry.ts`. Each app specifies:
 - `id` — matches `AppId` type in `DesktopContext.tsx`
 - `name`, `icon`, `description`
-- `accentColor` — used for window border glow and taskbar highlight
+- `accentColor` — used by compact icon tiles and selected/active states
 - `category` — 'core' | 'intel' | 'tools' | 'system'
 - `keywords` — for Spotlight/App Launcher search
 - `defaultSize` — initial window dimensions

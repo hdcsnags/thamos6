@@ -5,6 +5,36 @@ export interface IconProps {
   className?: string;
 }
 
+interface AppIconTileProps {
+  icon: React.FC<IconProps>;
+  color: string;
+  size?: number;
+  iconSize?: number;
+  className?: string;
+  active?: boolean;
+}
+
+export function AppIconTile({ icon: Icon, color, size = 38, iconSize, className, active = false }: AppIconTileProps) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center ${className || ''}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(9, Math.round(size * 0.27)),
+        color: '#f5f8fa',
+        background: `linear-gradient(145deg, ${color}d9 0%, ${color}8f 100%)`,
+        border: `1px solid ${color}${active ? 'cc' : '78'}`,
+        boxShadow: active
+          ? `0 7px 18px ${color}32, inset 0 1px 0 rgba(255,255,255,0.22)`
+          : 'inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 10px rgba(0,0,0,0.24)',
+      }}
+    >
+      <Icon size={iconSize || Math.round(size * 0.52)} />
+    </span>
+  );
+}
+
 const baseProps = {
   width: 24,
   height: 24,

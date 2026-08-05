@@ -3,6 +3,7 @@ import { useDesktop } from '../../contexts/DesktopContext';
 import { useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
 import { Maximize2, Minimize2, Square, Pin, PinOff, X } from 'lucide-react';
+import { AppIconTile } from '../../design-system/icons';
 
 interface DesktopWindowProps {
   id: string;
@@ -305,9 +306,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           onContextMenu={handleTitleBarRightClick}
         >
           <div className="flex items-center gap-2 pl-1">
-            <span style={{ color: isActive ? win.accentColor : palette.textTertiary, opacity: isActive ? 0.95 : 0.7 }}>
-              <win.icon size={14} />
-            </span>
+            <AppIconTile icon={win.icon} color={win.accentColor} size={22} iconSize={12} active={isActive} />
             <span
               style={{
                 fontSize: '12px',

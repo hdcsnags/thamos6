@@ -8,6 +8,7 @@ import { ServiceStatus } from './ServiceStatus';
 import { supabase } from '../../lib/supabase';
 import { Bell, Square, Minimize2, Pin, PinOff, X } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
+import { AppIconTile } from '../../design-system/icons';
 
 interface TaskbarProps {
   onOpenLauncher: () => void;
@@ -105,16 +106,19 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         >
           <button
             onClick={onOpenLauncher}
-            className="flex items-center justify-center gap-2 h-8 px-3 rounded transition-colors"
-            style={{ color: palette.textPrimary, backgroundColor: palette.elevated, border: `1px solid ${palette.borderSubtle}` }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = palette.surface; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = palette.elevated; }}
-            aria-label="Open App Launcher"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors"
+            style={{ color: '#f7fbff', background: `linear-gradient(145deg, ${palette.accent}, ${palette.blue})`, border: `1px solid ${palette.cyan}80`, boxShadow: `0 5px 15px ${palette.accent}28` }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = palette.surface; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = `linear-gradient(145deg, ${palette.accent}, ${palette.blue})`; }}
+            aria-label="Open ThamOS command center"
+            title="Command center"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z" />
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M12 3.2 15.3 8 12 12.8 8.7 8 12 3.2Z" fill="currentColor" fillOpacity=".2" />
+              <path d="m12 12.8 3.3 3.2L12 20.8 8.7 16l3.3-3.2Z" />
+              <path d="M3.7 12 8.7 8 12 12.8 8.7 16 3.7 12Z" />
+              <path d="m20.3 12-5-4-3.3 4.8 3.3 3.2 5-4Z" />
             </svg>
-            <span className="text-xs font-medium">Applications</span>
           </button>
 
           <div className="w-px h-5" style={{ backgroundColor: palette.borderSubtle }} />
@@ -242,9 +246,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 }}
                 aria-label={`Focus ${win.title}`}
               >
-                <span style={{ color: win.accentColor, opacity: desktop.activeWindowId === win.id ? 1 : 0.72 }}>
-                  <win.icon size={14} />
-                </span>
+                <AppIconTile icon={win.icon} color={win.accentColor} size={24} iconSize={12} active={desktop.activeWindowId === win.id} />
                 <span className="max-w-[100px] truncate">{win.title}</span>
                 {win.appId === 'intel' && intelUnread > 0 && (
                   <span

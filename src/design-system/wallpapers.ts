@@ -74,6 +74,18 @@ export const WALLPAPERS: Wallpaper[] = [
     preview: 'radial-gradient(circle at 50% 50%, rgba(0,180,216,0.3), transparent 60%), #050508',
   },
   {
+    id: 'thamos-nexus',
+    name: 'Nexus',
+    style: {
+      backgroundColor: '#02050a',
+      backgroundImage: 'url(/wallpapers/thamos-nexus.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    },
+    preview: 'radial-gradient(circle at 72% 58%, #194c98 0%, #101a4a 30%, #02050a 74%)',
+  },
+  {
     id: 'dragon-warrior',
     name: 'Sentinel',
     style: {

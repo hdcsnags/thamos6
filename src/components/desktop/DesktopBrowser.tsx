@@ -3,22 +3,23 @@ import { supabase } from '../../lib/supabase';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopSettings } from './DesktopSettings';
-import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCcw, Home, Globe, Lock, AlertTriangle, ExternalLink, ChevronLeft, ChevronRight, Search, Newspaper, FolderKanban, Clock3, Settings2, ShieldCheck } from 'lucide-react';
 import { useDesktop } from '../../contexts/DesktopContext';
+import { palette, typography } from '../../design-system/tokens';
 
 const P = {
-  void: '#060610',
-  surface: '#0a0e1a',
-  surfaceLight: '#0f1424',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  pink: '#ff0080',
-  blue: '#00b4d8',
+  void: palette.void,
+  surface: palette.base,
+  surfaceLight: palette.elevated,
+  border: palette.borderDefault,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
+  cyan: palette.cyan,
+  green: palette.green,
+  amber: palette.amber,
+  pink: palette.rose,
+  blue: palette.blue,
 };
 
 interface BrowserTab {
@@ -261,7 +262,7 @@ export function DesktopBrowser() {
   }, [navigate]);
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: typography.ui }}>
       {/* Toolbar */}
       <div style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
         {/* Tabs */}
@@ -286,11 +287,11 @@ export function DesktopBrowser() {
                 key={tab.id}
                 data-tab-id={tab.id}
                 draggable
-                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all flex-shrink-0 max-w-[180px] group select-none"
+                className="mx-0.5 mt-1 flex max-w-[190px] flex-shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-lg px-3 py-2 transition-all group"
                 style={{
                   backgroundColor: tab.id === activeTabId ? P.surfaceLight : 'transparent',
-                  borderRight: `1px solid ${P.border}`,
-                  borderBottom: tab.id === activeTabId ? `2px solid ${P.cyan}` : '2px solid transparent',
+                  border: tab.id === activeTabId ? `1px solid ${P.border}` : '1px solid transparent',
+                  borderBottom: 'none',
                   opacity: draggedTabId === tab.id ? 0.4 : 1,
                 }}
                 onClick={() => switchTab(tab.id)}
@@ -303,6 +304,7 @@ export function DesktopBrowser() {
                 }}
                 onDragOver={(e) => e.preventDefault()}
               >
+                <Globe size={12} style={{ color: tab.id === activeTabId ? P.cyan : P.dim, flexShrink: 0 }} />
                 <span className="text-xs truncate" style={{ color: tab.id === activeTabId ? P.textLight : P.dim }}>
                   {tab.title}
                 </span>
@@ -345,7 +347,7 @@ export function DesktopBrowser() {
         </div>
 
         {/* Navigation bar */}
-        <div className="flex items-center gap-2 px-3 py-1.5">
+        <div className="flex items-center gap-2 px-3 py-2">
           <button
             onClick={goBack}
             disabled={!activeTab.canGoBack}
@@ -382,7 +384,7 @@ export function DesktopBrowser() {
           </button>
 
           <form onSubmit={handleUrlSubmit} className="flex-1 flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 px-3 py-1 rounded" style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}` }}>
+            <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl" style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.025)' }}>
               {isInternalUrl(urlInput) ? (
                 <Home size={11} style={{ color: P.cyan, flexShrink: 0 }} />
               ) : urlInput.startsWith('https') ? (
@@ -395,14 +397,14 @@ export function DesktopBrowser() {
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
                 className="flex-1 text-xs bg-transparent border-none outline-none"
-                style={{ color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+                style={{ color: P.textLight, fontFamily: typography.ui }}
               />
             </div>
             {!isInternalUrl(activeTab.url) && (
               <button
                 type="button"
                 onClick={() => openWindow({ appId: 'scanner', title: `Scan: ${activeTab.url}`, data: { query: activeTab.url, type: 'url' } })}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded transition-all flex-shrink-0"
+                className="flex items-center gap-1 px-3 py-2 text-xs rounded-xl transition-all flex-shrink-0"
                 style={{ backgroundColor: `${P.cyan}10`, border: `1px solid ${P.cyan}30`, color: P.cyan }}
                 title="Scan this URL with threat intel"
               >
@@ -414,12 +416,12 @@ export function DesktopBrowser() {
         </div>
 
         {/* Bookmarks bar */}
-        <div className="flex items-center gap-1 px-3 py-1" style={{ borderTop: `1px solid ${P.border}` }}>
+        <div className="flex items-center gap-1 px-3 py-1.5" style={{ borderTop: `1px solid ${P.border}` }}>
           {DEFAULT_BOOKMARKS.map(bm => (
             <button
               key={bm.url}
               onClick={() => navigate(bm.url)}
-              className="text-xs px-2 py-0.5 rounded transition-all"
+              className="text-[11px] px-2.5 py-1 rounded-lg transition-all"
               style={{
                 color: activeTab?.url === bm.url ? P.cyan : P.dim,
                 backgroundColor: activeTab?.url === bm.url ? `${P.cyan}08` : 'transparent',
@@ -494,54 +496,63 @@ function HomePage() {
     window.dispatchEvent(new CustomEvent('thamos:browser-navigate', { detail: { url } }));
   };
 
+  const quickLinks = [
+    { url: 'thamos://news', label: 'Intel Stream', color: P.cyan, desc: 'Live threat context', icon: Newspaper },
+    { url: 'thamos://cases', label: 'Case Manager', color: P.green, desc: 'Active investigations', icon: FolderKanban },
+    { url: 'thamos://history', label: 'Scan History', color: P.amber, desc: 'Recent evidence', icon: Clock3 },
+    { url: 'thamos://settings', label: 'Settings', color: palette.pink, desc: 'Workspace controls', icon: Settings2 },
+  ];
+
   return (
-    <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void }}>
-      <div className="text-center max-w-lg w-full px-6">
-        <div className="mb-8">
-          <span className="text-3xl font-bold" style={{ color: P.textLight }}>THAM</span>
-          <span className="text-3xl font-bold" style={{ color: P.cyan }}>OS</span>
-          <p className="text-xs mt-2 tracking-wider" style={{ color: P.dim }}>SECURE BROWSER ENVIRONMENT</p>
-        </div>
+    <div className="relative h-full overflow-hidden" style={{ backgroundColor: P.void }}>
+      <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'url(/wallpapers/thamos-nexus.png)', backgroundPosition: 'center', backgroundSize: 'cover' }} />
+      <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(3,4,5,0.52), rgba(3,4,5,0.9))' }} />
+      <div className="relative flex h-full items-center justify-center overflow-y-auto px-6 py-10">
+        <div className="w-full max-w-2xl">
+          <div className="mb-7 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ color: '#fff', background: `linear-gradient(145deg, ${P.cyan}, ${P.blue})`, boxShadow: `0 12px 30px ${P.cyan}28` }}>
+              <Globe size={24} />
+            </div>
+            <h2 className="text-2xl font-semibold tracking-[-0.025em]" style={{ color: P.textLight }}>ThamOS Browser</h2>
+            <p className="mt-1 text-xs" style={{ color: P.dim }}>Research, pivot, and scan from one workspace.</p>
+          </div>
 
-        <div className="flex items-center gap-2 mb-8">
-          <input
-            type="text"
-            value={quickUrl}
-            onChange={e => setQuickUrl(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && quickUrl.trim()) {
-                window.dispatchEvent(new CustomEvent('thamos:browser-navigate', { detail: { url: normalizeUrl(quickUrl) } }));
-                setQuickUrl('');
-              }
-            }}
-            placeholder="Search or type a URL..."
-            className="flex-1 px-4 py-2.5 text-xs rounded focus:outline-none"
-            style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
-          />
-        </div>
+          <div className="mb-6 flex items-center gap-3 rounded-2xl px-4" style={{ minHeight: 52, background: 'rgba(13,16,19,0.86)', border: `1px solid ${P.border}`, boxShadow: '0 15px 45px rgba(0,0,0,0.35)', backdropFilter: 'blur(16px)' }}>
+            <Search size={18} style={{ color: P.cyan, flexShrink: 0 }} />
+            <input
+              type="text"
+              value={quickUrl}
+              onChange={e => setQuickUrl(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && quickUrl.trim()) {
+                  window.dispatchEvent(new CustomEvent('thamos:browser-navigate', { detail: { url: normalizeUrl(quickUrl) } }));
+                  setQuickUrl('');
+                }
+              }}
+              placeholder="Search the web or enter an address"
+              className="h-12 flex-1 bg-transparent text-sm"
+              style={{ color: P.textLight, fontFamily: typography.ui }}
+            />
+            <kbd className="hidden rounded-md px-2 py-1 text-[10px] sm:block" style={{ color: P.dim, background: palette.float, border: `1px solid ${P.border}` }}>ENTER</kbd>
+          </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-6">
-          {[
-            { url: 'thamos://news', label: 'Intel Stream', color: P.cyan, desc: 'Threat feeds' },
-            { url: 'thamos://cases', label: 'Case Manager', color: P.green, desc: 'Investigations' },
-            { url: 'thamos://history', label: 'Scan History', color: P.amber, desc: 'Past lookups' },
-            { url: 'thamos://settings', label: 'Settings', color: P.text, desc: 'Configuration' },
-          ].map(link => (
-            <button
-              key={link.url}
-              onClick={() => navigateTo(link.url)}
-              className="p-3 rounded text-left transition-all hover:opacity-80"
-              style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}
-            >
-              <span className="text-xs font-medium block" style={{ color: link.color }}>{link.label}</span>
-              <span className="text-[10px]" style={{ color: P.dim }}>{link.desc}</span>
-            </button>
-          ))}
-        </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {quickLinks.map(link => {
+              const Icon = link.icon;
+              return (
+                <button key={link.url} onClick={() => navigateTo(link.url)} className="group rounded-2xl p-3 text-left transition-transform hover:-translate-y-0.5" style={{ background: 'rgba(13,16,19,0.78)', border: `1px solid ${P.border}`, backdropFilter: 'blur(14px)' }}>
+                  <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl" style={{ color: '#fff', background: `linear-gradient(145deg, ${link.color}d9, ${link.color}8f)`, boxShadow: `0 6px 16px ${link.color}24` }}><Icon size={18} /></div>
+                  <span className="block text-xs font-semibold" style={{ color: P.textLight }}>{link.label}</span>
+                  <span className="mt-1 block text-[10px]" style={{ color: P.dim }}>{link.desc}</span>
+                </button>
+              );
+            })}
+          </div>
 
-        <p className="text-xs" style={{ color: P.dim }}>
-          Type a URL above or use the bookmarks bar to navigate
-        </p>
+          <div className="mt-6 flex items-center justify-center gap-2 text-[10px]" style={{ color: P.dim }}>
+            <ShieldCheck size={13} style={{ color: P.green }} /> External pages remain subject to browser embedding controls.
+          </div>
+        </div>
       </div>
     </div>
   );

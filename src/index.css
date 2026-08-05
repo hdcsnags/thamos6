@@ -16,11 +16,14 @@
   }
 
   body {
-    @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white antialiased;
+    @apply text-white antialiased;
+    min-height: 100vh;
+    background: #030405;
   }
 }
 html {
   scrollbar-gutter: stable;
+  background: #030405;
 }
 
 @layer utilities {

@@ -3,6 +3,7 @@ import { useDesktop } from '../../contexts/DesktopContext';
 import { useContextMenu } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
 import { getDesktopIcons } from '../../design-system/appRegistry';
+import { AppIconTile } from '../../design-system/icons';
 
 const GRID_COL = 84;
 const GRID_ROW = 92;
@@ -191,19 +192,14 @@ export function DesktopIcons() {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.05)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
           >
-            <div
-              className="transition-colors"
-              style={{ color: app.accentColor, filter: 'saturate(0.82)' }}
-            >
-              <app.icon size={28} />
-            </div>
+            <AppIconTile icon={app.icon} color={app.accentColor} size={44} iconSize={23} />
             <div
               className="text-center leading-tight"
               style={{
                 fontSize: '10px',
                 fontFamily: typography.ui,
-                fontWeight: 500,
-                color: palette.textSecondary,
+                fontWeight: 600,
+                color: palette.textPrimary,
                 textShadow: '0 1px 3px rgba(0,0,0,0.9)',
                 letterSpacing: '-0.01em',
               }}

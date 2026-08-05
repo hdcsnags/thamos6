@@ -75,10 +75,10 @@ palette.elevated  // '#0d1013' — Window/content background
 palette.float     // '#14191e' — Active title bars and floating controls
 palette.surface   // '#1b2228' — Selected/hovered surface
 
-palette.accent    // '#5f8fa8' — Restrained workstation accent
-palette.green     // '#6f9a7c' — Success / terminal prompt
-palette.amber     // '#bd965d' — Warning
-palette.rose      // '#bd6969' — Danger
+palette.accent    // '#3399d8' — Primary interactive accent
+palette.green     // '#43b77b' — Success / terminal prompt
+palette.amber     // '#d5a044' — Warning
+palette.rose      // '#d86473' — Danger
 ```
 
 **Rule:** Do not hardcode colors. Import from `tokens.ts`. If a color doesn't exist there, add it.
@@ -97,7 +97,9 @@ typography.mono // "'JetBrains Mono', 'Fira Code', monospace"
 Desktop follows a restrained Kali/Ubuntu-inspired **operator workstation** direction:
 
 - Near-black surfaces carry the hierarchy; cool charcoal is reserved for elevation rather than filling the entire interface.
-- App identity colors may appear on icons at restrained saturation. Keep large surfaces neutral and reserve strong semantic color for state.
+- App identity colors belong in compact icon tiles and selected states. Keep large surfaces neutral and reserve strong semantic color for state.
+- Signed-out users are gated by `src/components/auth/SignInScreen.tsx`; Microsoft/Entra is the primary organization route, with existing email and Google flows available as alternatives.
+- New profiles default to Desktop. Existing stored/profile theme selections remain respected.
 - Do not add neon glows, decorative telemetry, fake latency/session/security claims, scanlines, or cyber-HUD ornament outside explicitly themed terminal content.
 - Application icons are neutral by default. Use accent/semantic color for selection, activity, warnings, and verdicts.
 - Window structure should come from border, surface, and shadow—not a per-app colored halo.
