@@ -193,7 +193,7 @@ export function DesktopIcons() {
           >
             <div
               className="transition-colors"
-              style={{ color: palette.textSecondary }}
+              style={{ color: app.accentColor, filter: 'saturate(0.82)' }}
             >
               <app.icon size={28} />
             </div>

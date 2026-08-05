@@ -87,7 +87,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
       data-taskbar="true"
       className="fixed bottom-0 left-0 right-0 h-12 flex items-center justify-between px-2 gap-2 z-50"
       style={{
-        backgroundColor: palette.base,
+        backgroundColor: palette.void,
         borderTop: `1px solid ${palette.borderDefault}`,
         fontFamily: typography.ui,
       }}
@@ -242,7 +242,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 }}
                 aria-label={`Focus ${win.title}`}
               >
-                <span style={{ color: desktop.activeWindowId === win.id ? palette.accent : palette.textTertiary }}>
+                <span style={{ color: win.accentColor, opacity: desktop.activeWindowId === win.id ? 1 : 0.72 }}>
                   <win.icon size={14} />
                 </span>
                 <span className="max-w-[100px] truncate">{win.title}</span>

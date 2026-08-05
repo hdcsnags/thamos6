@@ -8,11 +8,11 @@ export interface Wallpaper {
 export const WALLPAPERS: Wallpaper[] = [
   {
     id: 'default',
-    name: 'Graphite',
+    name: 'Obsidian',
     style: {
-      background: 'linear-gradient(145deg, #1a2025 0%, #111519 52%, #0d1013 100%)',
+      background: 'radial-gradient(ellipse at 28% 18%, #0d1216 0%, #06080a 44%, #020304 100%)',
     },
-    preview: 'linear-gradient(145deg, #1a2025, #0d1013)',
+    preview: 'radial-gradient(circle at 28% 18%, #0d1216, #020304 75%)',
   },
   {
     id: 'void',

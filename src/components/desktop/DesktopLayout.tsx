@@ -559,7 +559,7 @@ function MissionControl({ onClose }: { onClose: () => void }) {
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = desktop.activeWindowId === win.id ? palette.surface : palette.elevated; }}
                   >
                     <div className="flex items-center gap-2 w-full">
-                      <span style={{ color: desktop.activeWindowId === win.id ? palette.accent : palette.textSecondary }}><win.icon size={14} /></span>
+                      <span style={{ color: win.accentColor, opacity: desktop.activeWindowId === win.id ? 1 : 0.75 }}><win.icon size={14} /></span>
                       <span className="text-xs font-medium truncate flex-1" style={{ color: palette.textPrimary, fontFamily: typography.ui }}>
                         {win.title.length > 18 ? win.title.slice(0, 18) + '…' : win.title}
                       </span>

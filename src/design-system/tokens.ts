@@ -1,16 +1,16 @@
 export const palette = {
-  // Operator workstation: neutral graphite surfaces with one restrained accent.
-  // Semantic colors are intentionally muted so they communicate state instead
-  // of turning every control into a competing light source.
-  void: '#0f1215',
-  base: '#14181c',
-  elevated: '#1a1f24',
-  float: '#20262c',
-  surface: '#272e35',
+  // Operator workstation: black carries the large surfaces; cool charcoal is
+  // reserved for elevation and interaction so the shell does not wash into a
+  // single field of grey.
+  void: '#030405',
+  base: '#080a0c',
+  elevated: '#0d1013',
+  float: '#14191e',
+  surface: '#1b2228',
 
-  borderSubtle: 'rgba(184, 196, 207, 0.10)',
-  borderDefault: 'rgba(184, 196, 207, 0.16)',
-  borderActive: 'rgba(184, 196, 207, 0.28)',
+  borderSubtle: 'rgba(130, 151, 168, 0.11)',
+  borderDefault: 'rgba(130, 151, 168, 0.18)',
+  borderActive: 'rgba(130, 151, 168, 0.32)',
 
   textPrimary: '#e6eaed',
   textSecondary: '#a4adb5',

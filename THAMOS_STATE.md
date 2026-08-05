@@ -247,9 +247,10 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 **Completed:**
 - [x] Reworked global Desktop tokens to restrained graphite surfaces and muted semantic colors.
+- [x] Follow-up contrast pass: shifted large surfaces and chrome to near-black and restored subdued app identity colors to icons after the first graphite pass read as overly monochrome.
 - [x] Replaced neon active-window halos and macOS traffic lights with neutral Linux-style chrome.
 - [x] Converted the launcher into a compact Applications menu and reduced color competition in the taskbar, desktop icons, and Mission Control.
-- [x] Made Graphite the default wallpaper for new local profiles while preserving existing saved wallpaper choices.
+- [x] Made the near-black Obsidian wallpaper the default for new local profiles while preserving existing saved wallpaper choices (`default` storage ID retained for compatibility).
 - [x] Simplified the primary scanner around IP-first IOC investigation; removed fake session/latency/security telemetry, random source dots, scanlines, and oversized branding.
 - [x] Added honest detection badges for CVE, wallet, and email and wired recent investigations to reopen their result flow.
 - [x] Fixed the Desktop Terminal prompt printing literal `\u279C`; it now renders `➜`.

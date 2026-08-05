@@ -69,11 +69,11 @@ The old `src/components/DesktopLayout.tsx` monolith has been deleted. The only a
 ### Colors (`src/design-system/tokens.ts`)
 
 ```typescript
-palette.void      // '#0f1215' — Deepest graphite background
-palette.base      // '#14181c' — Desktop/panel background
-palette.elevated  // '#1a1f24' — Window background
-palette.float     // '#20262c' — Floating controls
-palette.surface   // '#272e35' — Active chrome/cards
+palette.void      // '#030405' — Near-black desktop/taskbar foundation
+palette.base      // '#080a0c' — Main black panel background
+palette.elevated  // '#0d1013' — Window/content background
+palette.float     // '#14191e' — Active title bars and floating controls
+palette.surface   // '#1b2228' — Selected/hovered surface
 
 palette.accent    // '#5f8fa8' — Restrained workstation accent
 palette.green     // '#6f9a7c' — Success / terminal prompt
@@ -96,7 +96,8 @@ typography.mono // "'JetBrains Mono', 'Fira Code', monospace"
 
 Desktop follows a restrained Kali/Ubuntu-inspired **operator workstation** direction:
 
-- Neutral graphite surfaces carry the hierarchy; accent color is sparse.
+- Near-black surfaces carry the hierarchy; cool charcoal is reserved for elevation rather than filling the entire interface.
+- App identity colors may appear on icons at restrained saturation. Keep large surfaces neutral and reserve strong semantic color for state.
 - Do not add neon glows, decorative telemetry, fake latency/session/security claims, scanlines, or cyber-HUD ornament outside explicitly themed terminal content.
 - Application icons are neutral by default. Use accent/semantic color for selection, activity, warnings, and verdicts.
 - Window structure should come from border, surface, and shadow—not a per-app colored halo.

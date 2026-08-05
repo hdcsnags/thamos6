@@ -264,7 +264,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         style={{
           ...style,
           borderRadius: win.maximized ? 0 : '8px',
-          backgroundColor: 'rgba(26, 31, 36, 0.97)',
+          backgroundColor: palette.elevated,
           border: `1px solid ${activeBorder}`,
           backdropFilter: isActive ? 'blur(8px)' : 'none',
           boxShadow,
@@ -295,7 +295,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
             height: `${TITLE_BAR_HEIGHT}px`,
             flexShrink: 0,
             // Inactive windows get a noticeably darker, muted chrome — not just dimmer opacity
-            backgroundColor: isActive ? palette.surface : palette.elevated,
+            backgroundColor: isActive ? palette.float : palette.base,
             boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.025)' : 'none',
             borderBottom: `1px solid ${palette.borderSubtle}`,
             fontFamily: typography.ui,
@@ -305,7 +305,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
           onContextMenu={handleTitleBarRightClick}
         >
           <div className="flex items-center gap-2 pl-1">
-            <span style={{ color: isActive ? palette.textSecondary : palette.textDisabled }}>
+            <span style={{ color: isActive ? win.accentColor : palette.textTertiary, opacity: isActive ? 0.95 : 0.7 }}>
               <win.icon size={14} />
             </span>
             <span

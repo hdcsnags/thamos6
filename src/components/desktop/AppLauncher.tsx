@@ -181,7 +181,7 @@ export function AppLauncher({ onClose }: AppLauncherProps) {
               >
                 <div
                   className="shrink-0"
-                  style={{ color: i === selectedIndex ? palette.accent : palette.textSecondary }}
+                  style={{ color: app.accentColor, opacity: i === selectedIndex ? 1 : 0.82 }}
                 >
                   <app.icon size={22} />
                 </div>
