@@ -190,6 +190,14 @@ export function DesktopVPSTerminal() {
             .eq('id', vpsConfig.id);
           setVpsConfig({ ...vpsConfig, vps_url: url });
         } else {
+          // Clear is_default on any existing rows first so this insert can't
+          // leave two rows marked default (the Settings VPS list writes to
+          // this same table independently).
+          await supabase
+            .from('user_vps_connections')
+            .update({ is_default: false })
+            .eq('user_id', user.id);
+
           const { data } = await supabase
             .from('user_vps_connections')
             .insert({ user_id: user.id, name: 'Primary VPS', vps_url: url, hostname: '', is_default: true })
