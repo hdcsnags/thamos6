@@ -54,12 +54,33 @@ export class VPSConnection {
     this.setState('connecting');
 
     try {
-      this.authToken = '';
+      this.authToken = await this.fetchToken(this.options.url);
       this.openWebSocket();
     } catch (err) {
       this.setState('error', err instanceof Error ? err.message : 'Failed to connect');
       this.scheduleReconnect();
     }
+  }
+
+  /**
+   * ttyd's own --credential check requires the WS handshake's first message
+   * to repeat that credential (base64-encoded) as AuthToken. Its bundled
+   * page gets this via GET /token; we have to fetch it the same way.
+   */
+  private async fetchToken(url: string): Promise<string> {
+    const httpUrl = this.buildHttpUrl(url);
+    const res = await fetch(`${httpUrl}/token`, { credentials: 'include' });
+    if (!res.ok) return '';
+    const data = await res.json().catch(() => null);
+    return typeof data?.token === 'string' ? data.token : '';
+  }
+
+  private buildHttpUrl(url: string): string {
+    let httpUrl = url.trim();
+    if (httpUrl.startsWith('ws://')) httpUrl = 'http://' + httpUrl.slice(5);
+    else if (httpUrl.startsWith('wss://')) httpUrl = 'https://' + httpUrl.slice(6);
+    else if (!httpUrl.startsWith('http://') && !httpUrl.startsWith('https://')) httpUrl = 'https://' + httpUrl;
+    return httpUrl.replace(/\/ws\/?$/, '').replace(/\/$/, '');
   }
 
   private openWebSocket() {
