@@ -98,7 +98,7 @@ Desktop follows a restrained Kali/Ubuntu-inspired **operator workstation** direc
 
 - Near-black surfaces carry the hierarchy; cool charcoal is reserved for elevation rather than filling the entire interface.
 - App identity colors belong in compact icon tiles and selected states. Keep large surfaces neutral and reserve strong semantic color for state.
-- Signed-out users are gated by `src/components/auth/SignInScreen.tsx`; Microsoft/Entra is the primary organization route, with existing email and Google flows available as alternatives.
+- Signed-out users are gated by `src/components/auth/SignInScreen.tsx`; email/password is the default Linux-style login, with Microsoft and Google collapsed under optional sign-in methods.
 - New profiles default to Desktop. Existing stored/profile theme selections remain respected.
 - Do not add neon glows, decorative telemetry, fake latency/session/security claims, scanlines, or cyber-HUD ornament outside explicitly themed terminal content.
 - Application icons are neutral by default. Use accent/semantic color for selection, activity, warnings, and verdicts.

@@ -785,7 +785,7 @@ src/contexts/DesktopContext.tsx
 src/contexts/themecontext.tsx
 ```
 
-The signed-out screen uses the existing `AuthContext` methods rather than a parallel auth implementation. Microsoft/Entra is presented as the primary organization route; email and Google remain available alternatives. New profiles fall back to Desktop, while stored and profile-level theme preferences still win.
+The signed-out screen uses the existing `AuthContext` methods rather than a parallel auth implementation. Email/password is shown immediately in a compact Linux-style login; Microsoft and Google remain collapsed alternatives. New profiles fall back to Desktop, while stored and profile-level theme preferences still win.
 
 ### Desktop App Registry
 Apps are defined in `src/design-system/appRegistry.ts`. Each app specifies:

@@ -218,12 +218,23 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-07 — Workstation Login Simplification
+**Agent:** Codex
+**Scope:** Remove the SaaS-style sign-in presentation and make credential login feel native to the Desktop shell.
+
+**Completed:**
+- [x] Replaced the marketing-led split layout with a compact Linux-style login box over the Nexus background.
+- [x] Made email/password the immediate default and moved Microsoft/Google into a collapsed optional section.
+- [x] Preserved password recovery and the existing provider wiring without adding new authentication behavior.
+
+**Decision:** Sign-in is OS chrome, not a product landing page.
+
 ### Sprint 2026-08-05 — Identity, Login, Desktop Shell + Browser
 **Agent:** Codex
 **Scope:** Give ThamOS a clearer visual identity, add a real signed-out entry experience, and bring the Desktop shell and internal browser to the same quality bar.
 
 **Completed:**
-- [x] Added a full-screen ThamOS sign-in experience using the existing Supabase Microsoft/Entra, email, Google, signup, and password-reset flows.
+- [x] Added a full-screen ThamOS sign-in experience using the existing Supabase email/password, password-reset, Microsoft/Entra, and Google flows.
 - [x] Made Desktop the fallback for new profiles while preserving every stored or profile-level theme choice.
 - [x] Introduced reusable colored app-icon tiles and applied them consistently to the desktop, command center, taskbar, window chrome, and Mission Control.
 - [x] Replaced the wordy Applications taskbar control with a compact T6 command mark and rebuilt the launcher as a centered command center.
@@ -233,7 +244,7 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 **Decisions Made:**
 - ThamOS is not a Windows replica: its identity is deep black operational surfaces, a blue-violet atmospheric canvas, and restrained color on compact interactive objects.
-- Microsoft/Entra is the primary organization sign-in route. Email and Google remain explicit alternatives because those flows already exist.
+- Email/password is the default workstation login. Microsoft/Entra and Google remain optional routes because those flows already exist.
 - Authentication UI states only what the application can verify; tenant, device, network, and Conditional Access claims remain deployment concerns.
 
 **Deferred / Next:**

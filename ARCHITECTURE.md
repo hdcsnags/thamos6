@@ -1090,8 +1090,9 @@ IOC pivot graph — relationships between IOCs built automatically during scans
 
 ### Auth Methods
 - **Signed-out entry**: `App.tsx` gates the workspace behind `src/components/auth/SignInScreen.tsx`
-- **Primary organization route**: Microsoft/Entra OAuth through Supabase
-- **Alternative routes**: Google OAuth and email/password, including signup and password reset
+- **Primary route**: Email/password through Supabase, shown directly in a compact workstation login
+- **Alternative routes**: Microsoft/Entra and Google OAuth, collapsed until selected
+- **Recovery**: Email password-reset flow remains available from the login form
 - **Auth state**: `AuthContext` restores the Supabase session before the workspace is rendered
 - **Anonymous API tier**: Some Edge Functions retain anonymous/free-tier handling, but the current application shell requires a user session
 
