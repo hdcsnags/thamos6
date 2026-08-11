@@ -113,12 +113,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
             aria-label="Open ThamOS command center"
             title="Command center"
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 3.2 15.3 8 12 12.8 8.7 8 12 3.2Z" fill="currentColor" fillOpacity=".2" />
-              <path d="m12 12.8 3.3 3.2L12 20.8 8.7 16l3.3-3.2Z" />
-              <path d="M3.7 12 8.7 8 12 12.8 8.7 16 3.7 12Z" />
-              <path d="m20.3 12-5-4-3.3 4.8 3.3 3.2 5-4Z" />
-            </svg>
+            <span className="text-[11px] font-bold leading-none tracking-[-0.08em]" style={{ fontFamily: typography.mono }}>T6</span>
           </button>
 
           <div className="w-px h-5" style={{ backgroundColor: palette.borderSubtle }} />
