@@ -109,7 +109,7 @@ export function ResultShell<T extends string>({
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {variant === 'tabs' && nav}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6 max-w-7xl">
+          <div className="p-6">
             {/* Header */}
             <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
               <div className="min-w-0">

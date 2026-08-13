@@ -815,7 +815,8 @@ function VPNSection({ enrichment, sources, proxyCheckEntry }: {
 /* -------------------------------- Sources -------------------------------- */
 
 function SourcesSection({ sources }: { sources: Record<string, any> }) {
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  // Open everything by default — analysts close what they don't need.
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set(Object.keys(sources)));
   const sourceKeys = Object.keys(sources);
 
   const toggle = (key: string) => {

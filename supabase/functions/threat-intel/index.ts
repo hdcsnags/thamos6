@@ -796,18 +796,29 @@ function computeCalibratedScoring(
     }
   }
 
-  // --- AbuseIPDB: community confidence is already calibrated 0-100 ---
+  // --- AbuseIPDB: confidence drives high scores, but recent verbose reports
+  // carry real weight on their own — two brute-force/port-scan reports at 9%
+  // community confidence is still an active-abuse signal, not a +9 footnote ---
   {
     const r = find("abuseipdb");
     const d = (r?.data as any)?.data;
     if (r && d) {
       const conf = Number(d.abuseConfidenceScore ?? 0);
-      if (conf > 0) up.push({ source: "abuseipdb", points: conf, weight: "high", note: `abuse confidence ${conf}% (${d.totalReports ?? 0} reports)` });
-      else { info.push({ source: "abuseipdb", points: 0, weight: "high", note: "no abuse reports" }); cleanHighSources.push("abuseipdb"); }
+      const reports = Number(d.totalReports ?? 0);
+      if (conf >= 50) {
+        up.push({ source: "abuseipdb", points: conf, weight: "high", note: `abuse confidence ${conf}% (${reports} reports)` });
+      } else if (reports > 0) {
+        const pts = Math.min(30 + (reports - 1) * 8 + Math.round(conf / 2), 65);
+        up.push({ source: "abuseipdb", points: pts, weight: "medium", note: `${reports} abuse report(s) in the last 90d at ${conf}% confidence — recent community reports score on their own merit, confidence only rises with reporter volume` });
+      } else {
+        info.push({ source: "abuseipdb", points: 0, weight: "high", note: "no abuse reports" });
+        cleanHighSources.push("abuseipdb");
+      }
     }
   }
 
-  // --- Spamhaus: zone-aware (the PBL fix) ---
+  // --- Spamhaus: zone-aware and HARD-CAPPED at 25 — a mail-reputation feed
+  // must never be the driver of a network-abuse verdict ---
   {
     const r = find("spamhaus");
     const listed: string[] = ((r?.data as any)?.listedIn ?? []);
@@ -815,11 +826,8 @@ function computeCalibratedScoring(
       const sbl = listed.some(n => n.includes("SBL"));
       const xbl = listed.some(n => n.includes("XBL"));
       const pblOnly = !sbl && !xbl;
-      if (xbl) up.push({ source: "spamhaus", points: 85, weight: "high", note: "XBL: hijacked/exploited host (bot, open proxy) — relevant to auth/network abuse" });
-      // SBL is mail-sending reputation, not auth/network abuse. Weighted medium so
-      // a spam-only listing reads "suspicious", not "malicious", unless an actual
-      // abuse source (AbuseIPDB/DShield/blocklist.de/GreyNoise) corroborates.
-      else if (sbl) up.push({ source: "spamhaus", points: 50, weight: "medium", note: "SBL: verified spam source (mail reputation only — does not by itself indicate login/scan abuse)" });
+      if (xbl) up.push({ source: "spamhaus", points: 25, weight: "medium", note: "XBL: hijacked/exploited host (bot, open proxy) — corroborating signal, capped at 25 so Spamhaus alone never drives the verdict" });
+      else if (sbl) up.push({ source: "spamhaus", points: 12, weight: "low", note: "SBL: verified spam source (mail reputation only — does not by itself indicate login/scan abuse)" });
       if (pblOnly) info.push({ source: "spamhaus", points: 0, weight: "low", note: "PBL only — residential/dynamic IP policy listing, NOT a malicious signal (legacy scored this +60 and boosted +25)" });
     }
   }
