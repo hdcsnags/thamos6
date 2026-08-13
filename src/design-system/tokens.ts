@@ -24,6 +24,8 @@ export const palette = {
   rose: '#d86473',
   blue: '#4a83d1',
   teal: '#35a89a',
+  // Neutral cool grey for system utilities (monitor, settings).
+  slate: '#66788a',
   // Compatibility aliases used by older Desktop components.
   pink: '#a76bd4',
   orange: '#d57b47',

@@ -218,6 +218,27 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-13 — Icon Identity + IP-First Result Restructure
+**Agent:** GitHub Copilot CLI (Claude Fable 5)
+**Scope:** Tighten Desktop icon/app identity and rebuild IPResult as the first Desktop-native result page.
+
+**Completed:**
+- [x] Added `ThamosLogoIcon` (hex plate + T circuit trace) in `icons.tsx`; replaced the "T6" text glyph in the Taskbar launcher button.
+- [x] Redrew the app icon set with app-specific silhouettes (same 24px/1.5px stroke grammar): radar Scanner, differentiated Terminal vs VPS Terminal, sliders Settings, broadcast Intel, briefcase Cases, folder+branch Files, I-beam Editor, pulse Monitor, `[.]` Defang, envelope+lens Email Analyzer, doc+arrow IOC Extractor, list+lens Bulk Lookup, puzzle-in-scanframe Extension Scanner, orbital Thamos orb.
+- [x] Rationalized `appRegistry.ts` accent colors by category (core=distinct hues, workspace tools=teal, transform utils=cyan, analyzers=amber, system=slate, all result windows=accent); added `palette.slate` to `tokens.ts`; documented the logic in a registry comment.
+- [x] Built shared result kit in `src/components/results/`: `ResultShell` (header + tabs/sidebar variants + loading/error/empty states), `MetricCard`/`StatCell`, `Pill`/`SectionHeader`/`Callout`/`ResultCard`, `SummaryActions` — all tokens.ts-driven, typography.ui chrome, mono reserved for IOC values.
+- [x] Rewrote `IPResult.tsx` on the kit: removed scanline overlay, neon text glow, hardcoded slate/cyan Tailwind, and uppercase-tracking styling; kept all sections (overview/verdict/network/threats/vpn/location/pivot/sources/raw), proMode, `VerdictStrip`/`VerdictPanel`/`RelatedIOCs`; added a real empty state; typed the untyped `result.sources` access.
+- [x] `npm run build` passes; no new typecheck/lint errors introduced (remaining `any` flags match the pre-existing result-page baseline).
+
+**Decisions Made:**
+- Identity color lives only in icon tiles; result windows share a single accent to read as one scanner surface.
+- The result kit renders a Tactical sidebar variant and a Desktop tab variant from one shell, so the shared page stays honest in both themes.
+
+**Deferred / Next Sprint:**
+- Migrate URL/Domain/Hash/CVE/Email/Wallet/Extension result pages onto the result kit (IPResult is the template).
+- Restyle `VerdictStrip`/`VerdictPanel` internals to tokens.ts (still Tailwind slate; visually acceptable inside the new shell).
+- App naming/description identity pass beyond icons.
+
 ### Sprint 2026-08-07 — Workstation Login Simplification
 **Agent:** Codex
 **Scope:** Remove the SaaS-style sign-in presentation and make credential login feel native to the Desktop shell.

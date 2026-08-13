@@ -8,7 +8,7 @@ import { ServiceStatus } from './ServiceStatus';
 import { supabase } from '../../lib/supabase';
 import { Bell, Square, Minimize2, Pin, PinOff, X } from 'lucide-react';
 import { palette, typography } from '../../design-system/tokens';
-import { AppIconTile } from '../../design-system/icons';
+import { AppIconTile, ThamosLogoIcon } from '../../design-system/icons';
 
 interface TaskbarProps {
   onOpenLauncher: () => void;
@@ -113,7 +113,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
             aria-label="Open ThamOS command center"
             title="Command center"
           >
-            <span className="text-[11px] font-bold leading-none tracking-[-0.08em]" style={{ fontFamily: typography.mono }}>T6</span>
+            <ThamosLogoIcon size={20} />
           </button>
 
           <div className="w-px h-5" style={{ backgroundColor: palette.borderSubtle }} />

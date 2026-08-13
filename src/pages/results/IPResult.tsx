@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  Globe, AlertTriangle, Shield, Database, MapPin, Server, Wifi,
-  ExternalLink, Copy, Check, Activity, Target, Layers, FileJson, Zap, Search, GitBranch, Scale
+  AlertTriangle, Shield, Database, MapPin, Server, Wifi,
+  ExternalLink, Target, FileJson, GitBranch, Scale, Copy, Check,
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
 import { lookupIP } from '../../lib/threatIntel';
@@ -9,6 +9,12 @@ import type { IPLookupResult } from '../../types';
 import { RelatedIOCs } from '../../components/RelatedIOCs';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
 import VerdictStrip from '../../components/scanner/VerdictStrip';
+import { palette, typography } from '../../design-system/tokens';
+import {
+  ResultShell, ResultLoading, ResultError, ResultEmpty,
+  MetricCard, StatCell, Pill, SectionHeader, Callout, ResultCard, SummaryActions,
+  type ShellMenuItem,
+} from '../../components/results';
 
 interface IPResultProps {
   ip: string;
@@ -24,12 +30,9 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
   const [result, setResult] = useState<IPLookupResult | null>(null);
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
   const [proMode, setProMode] = useState(false);
-  const [copiedSummary, setCopiedSummary] = useState(false);
-  const [copiedJson, setCopiedJson] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Scroll to top when component mounts
     if (containerRef.current) {
       const mainContainer = containerRef.current.closest('[style*="overflow"]');
       if (mainContainer) {
@@ -57,511 +60,280 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
     performLookup();
   }, [ip]);
 
-  const copySummary = () => {
-    if (!result) return;
-    const enrichment = result.enrichment || {};
-    const summary = `IP: ${ip}\nCountry: ${enrichment.country || 'Unknown'}\nOrg: ${enrichment.org || 'Unknown'}\nThreat Score: ${result.overallThreatScore}\nMalicious: ${result.isMalicious ? 'Yes' : 'No'}`;
-    navigator.clipboard.writeText(summary);
-    setCopiedSummary(true);
-    setTimeout(() => setCopiedSummary(false), 2000);
-  };
-
-  const copyJson = () => {
-    if (!result) return;
-    navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-    setCopiedJson(true);
-    setTimeout(() => setCopiedJson(false), 2000);
-  };
-
   if (loading && !result) {
-    return (
-      <div ref={containerRef} className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-400 uppercase tracking-wider text-sm">Analyzing IP address...</p>
-        </div>
-      </div>
-    );
+    return <div ref={containerRef} className="h-full"><ResultLoading message={`Analyzing ${ip}…`} /></div>;
   }
 
   if (error) {
-    return (
-      <div ref={containerRef} className="flex items-center justify-center py-12">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 max-w-md">
-          <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-red-400 text-center">{error}</p>
-        </div>
-      </div>
-    );
+    return <div ref={containerRef} className="h-full"><ResultError message={error} /></div>;
   }
 
-  if (!result) return null;
+  if (!result) {
+    return <div ref={containerRef} className="h-full"><ResultEmpty message={`No result data available for ${ip}.`} /></div>;
+  }
 
   const enrichment = result.enrichment || {};
-  const sources = result.sources || {};
-  
-  // Extract data
+  // Edge function payload carries per-provider raw data in `sources`; the
+  // IPLookupResult type only declares the aggregated `results` map.
+  const sources: Record<string, any> = (result as unknown as { sources?: Record<string, any> }).sources || {};
+
   const spamhausData = sources.spamhaus as any;
   const alienVaultData = sources.alienvault as any;
   const proxyCheckData = sources.proxycheck as any;
   const virusTotalData = sources.virustotal as any;
   const abuseIPDBData = sources.abuseipdb as any;
   const teamCymruData = sources.teamcymru as any;
-  const rdapData = sources.rdap as any;
 
-  const menuItems = [
-    { id: 'overview' as MenuItem, label: 'Overview', icon: Target },
-    { id: 'verdict' as MenuItem, label: 'Verdict', icon: Scale },
-    { id: 'network' as MenuItem, label: 'Network', icon: Server },
-    { id: 'threats' as MenuItem, label: 'Threats', icon: AlertTriangle },
-    { id: 'vpn' as MenuItem, label: 'VPN/Proxy', icon: Wifi },
-    { id: 'location' as MenuItem, label: 'Location', icon: MapPin },
-    { id: 'pivot' as MenuItem, label: 'Pivot Graph', icon: GitBranch },
-    { id: 'sources' as MenuItem, label: 'Sources', icon: Database },
-    { id: 'raw' as MenuItem, label: 'Raw JSON', icon: FileJson },
+  const menuItems: ShellMenuItem<MenuItem>[] = [
+    { id: 'overview', label: 'Overview', icon: Target },
+    { id: 'verdict', label: 'Verdict', icon: Scale },
+    { id: 'network', label: 'Network', icon: Server },
+    { id: 'threats', label: 'Threats', icon: AlertTriangle },
+    { id: 'vpn', label: 'VPN/Proxy', icon: Wifi },
+    { id: 'location', label: 'Location', icon: MapPin },
+    { id: 'pivot', label: 'Pivot Graph', icon: GitBranch },
+    { id: 'sources', label: 'Sources', icon: Database },
+    { id: 'raw', label: 'Raw JSON', icon: FileJson },
   ];
 
+  const getSummary = () => {
+    const e = result.enrichment || {};
+    return `IP: ${ip}\nCountry: ${e.country || 'Unknown'}\nOrg: ${e.org || 'Unknown'}\nThreat Score: ${result.overallThreatScore}\nMalicious: ${result.isMalicious ? 'Yes' : 'No'}`;
+  };
+
   return (
-    <div ref={containerRef} className={`flex h-full ${theme === 'desktop' ? 'flex-col' : ''}`}>
-      {/* Scanline Effect */}
-      <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent animate-pulse" 
-             style={{ backgroundSize: '100% 4px', animation: 'scanline 8s linear infinite' }} />
-      </div>
-
-      {/* Side Menu (Tactical Only) */}
-      {theme !== 'desktop' && (
-        <div className="w-64 flex-shrink-0 relative z-10" 
-             style={{ background: 'rgba(0, 0, 0, 0.5)', borderRight: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="p-6">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">ANALYSIS SECTIONS</h2>
-            <div className="space-y-1">
-              {menuItems.map(item => {
-                const Icon = item.icon;
-                const isActive = activeMenu === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveMenu(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all ${
-                      isActive 
-                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
-                        : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto relative z-10">
-        {/* Desktop Horizontal Menu */}
-        {theme === 'desktop' && (
-          <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
-            <div className="flex items-center gap-1">
-              {menuItems.map(item => {
-                const Icon = item.icon;
-                const isActive = activeMenu === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveMenu(item.id)}
-                    className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                      isActive 
-                        ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
-                        : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
+    <div ref={containerRef} className="h-full">
+      <ResultShell<MenuItem>
+        value={ip}
+        typeLabel="IP reputation"
+        verdict={{
+          label: result.isMalicious ? 'Malicious' : 'Clean',
+          tone: result.isMalicious ? 'danger' : 'good',
+        }}
+        score={result.overallThreatScore}
+        menuItems={menuItems}
+        activeMenu={activeMenu}
+        onMenuChange={setActiveMenu}
+        variant={theme === 'desktop' ? 'tabs' : 'sidebar'}
+        proMode={proMode}
+        onToggleProMode={() => setProMode(!proMode)}
+        headerActions={<SummaryActions getSummary={getSummary} getJson={() => result} />}
+      >
+        {activeMenu === 'overview' && (
+          <div className="space-y-4">
+            <VerdictStrip scoring={result.scoring} />
+            <OverviewSection
+              enrichment={enrichment}
+              spamhausData={spamhausData}
+              abuseIPDBData={abuseIPDBData}
+              virusTotalData={virusTotalData}
+            />
           </div>
         )}
-        <div className="p-8">
-          {/* Header with Pro Toggle */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-5xl font-bold text-white font-mono mb-2" 
-                  style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6)' }}>
-                {ip}
-              </h1>
-              <div className="flex items-center gap-2">
-                <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
-                  result.isMalicious 
-                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
-                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                }`}>
-                  {result.isMalicious ? 'MALICIOUS' : 'CLEAN'}
-                </span>
-                <span className="text-slate-500 text-sm">•</span>
-                <span className="text-slate-400 text-sm">Score: {result.overallThreatScore}</span>
-              </div>
-            </div>
-            
-            <button
-              onClick={() => setProMode(!proMode)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border ${
-                proMode
-                  ? 'bg-violet-500/20 text-violet-400 border-violet-500/30'
-                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-700/50'
-              }`}
-            >
-              <Zap className="w-4 h-4 inline mr-2" />
-              {proMode ? 'PRO MODE' : 'SIMPLE MODE'}
-            </button>
+
+        {activeMenu === 'verdict' && (
+          <VerdictPanel lookupType="ip" value={ip} scoring={result.scoring} />
+        )}
+
+        {activeMenu === 'network' && (
+          <NetworkSection enrichment={enrichment} teamCymruData={teamCymruData} proMode={proMode} />
+        )}
+
+        {activeMenu === 'threats' && (
+          <ThreatsSection spamhausData={spamhausData} alienVaultData={alienVaultData} virusTotalData={virusTotalData} proMode={proMode} />
+        )}
+
+        {activeMenu === 'vpn' && (
+          <VPNSection enrichment={enrichment} proxyCheckData={proxyCheckData} proMode={proMode} />
+        )}
+
+        {activeMenu === 'location' && (
+          <LocationSection enrichment={enrichment} proMode={proMode} />
+        )}
+
+        {activeMenu === 'pivot' && (
+          <div className="space-y-4">
+            <SectionHeader icon={<GitBranch className="w-4 h-4" />} title="IOC pivot graph" />
+            <RelatedIOCs iocType="ip" iocValue={ip} onScan={onScan} />
           </div>
+        )}
 
-          {/* Content Sections */}
-          {activeMenu === 'overview' && (
-            <div className="space-y-6">
-              <VerdictStrip scoring={result.scoring} />
-              <OverviewSection
-                result={result}
-                enrichment={enrichment}
-                spamhausData={spamhausData}
-                abuseIPDBData={abuseIPDBData}
-                virusTotalData={virusTotalData}
-                copySummary={copySummary}
-                copyJson={copyJson}
-                copiedSummary={copiedSummary}
-                copiedJson={copiedJson}
-              />
-            </div>
-          )}
+        {activeMenu === 'sources' && (
+          <SourcesSection sources={sources} proMode={proMode} />
+        )}
 
-          {activeMenu === 'verdict' && (
-            <VerdictPanel lookupType="ip" value={ip} scoring={result.scoring} />
-          )}
-
-          {activeMenu === 'network' && (
-            <NetworkSection enrichment={enrichment} teamCymruData={teamCymruData} rdapData={rdapData} proMode={proMode} />
-          )}
-
-          {activeMenu === 'threats' && (
-            <ThreatsSection spamhausData={spamhausData} alienVaultData={alienVaultData} virusTotalData={virusTotalData} proMode={proMode} />
-          )}
-
-          {activeMenu === 'vpn' && (
-            <VPNSection enrichment={enrichment} proxyCheckData={proxyCheckData} proMode={proMode} />
-          )}
-
-          {activeMenu === 'location' && (
-            <LocationSection enrichment={enrichment} proMode={proMode} />
-          )}
-
-          {activeMenu === 'pivot' && (
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <GitBranch className="w-6 h-6 text-cyan-400" />
-                IOC PIVOT GRAPH
-              </h2>
-              <RelatedIOCs iocType="ip" iocValue={ip} onScan={onScan} />
-            </div>
-          )}
-
-          {activeMenu === 'sources' && (
-            <SourcesSection sources={sources} proMode={proMode} />
-          )}
-
-          {activeMenu === 'raw' && (
-            <RawJsonSection data={result} />
-          )}
-        </div>
-      </div>
+        {activeMenu === 'raw' && (
+          <RawJsonSection data={result} />
+        )}
+      </ResultShell>
     </div>
   );
 }
 
-// Overview Section Component
-function OverviewSection({ result, enrichment, spamhausData, abuseIPDBData, virusTotalData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
+function OverviewSection({ enrichment, spamhausData, abuseIPDBData, virusTotalData }: any) {
+  const vpnActive = enrichment.isVPN || enrichment.isProxy;
+  const abuseScore = abuseIPDBData?.data?.abuseConfidenceScore || 0;
+  const vtStats = virusTotalData?.data?.attributes?.last_analysis_stats;
+
   return (
-    <div className="space-y-6">
-      {/* Quick Actions */}
-      <div className="flex items-center justify-center gap-3">
-        <button
-          onClick={copySummary}
-          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-        >
-          {copiedSummary ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-          COPY SUMMARY
-        </button>
-        <button
-          onClick={copyJson}
-          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-        >
-          {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />}
-          COPY JSON
-        </button>
-      </div>
-
-      {/* Key Indicators */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Location */}
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <MapPin className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">LOCATION</h3>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Country</div>
-              <div className="text-lg font-medium text-white">{enrichment.country || 'Unknown'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">City</div>
-              <div className="text-base font-medium text-white">{enrichment.city || 'Unknown'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Region</div>
-              <div className="text-base font-medium text-white">{enrichment.region || 'Unknown'}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* VPN/Proxy */}
-        <div className="p-6 rounded-xl" style={{ 
-          background: enrichment.isVPN || enrichment.isProxy ? 'rgba(251, 191, 36, 0.05)' : 'rgba(0, 0, 0, 0.3)', 
-          border: enrichment.isVPN || enrichment.isProxy ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid rgba(148, 163, 184, 0.1)' 
-        }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Wifi className={`w-5 h-5 ${enrichment.isVPN || enrichment.isProxy ? 'text-amber-400' : 'text-cyan-400'}`} />
-            <h3 className={`text-lg font-bold uppercase tracking-wider ${enrichment.isVPN || enrichment.isProxy ? 'text-amber-400' : 'text-white'}`}>
-              VPN/PROXY
-            </h3>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Status</div>
-              <div className={`text-lg font-medium ${enrichment.isVPN || enrichment.isProxy ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {enrichment.isVPN ? 'VPN Detected' : enrichment.isProxy ? 'Proxy Detected' : 'Clean'}
-              </div>
-            </div>
-            {enrichment.vpnService && (
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider">Provider</div>
-                <div className="text-base font-medium text-white">{enrichment.vpnService}</div>
-              </div>
-            )}
-            {enrichment.confidence && (
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider">Confidence</div>
-                <div className="text-base font-medium text-white">{enrichment.confidence}%</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Tor */}
-        <div className="p-6 rounded-xl" style={{ 
-          background: enrichment.isTor ? 'rgba(251, 113, 133, 0.1)' : 'rgba(0, 0, 0, 0.3)', 
-          border: enrichment.isTor ? '1px solid rgba(251, 113, 133, 0.3)' : '1px solid rgba(148, 163, 184, 0.1)' 
-        }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className={`w-5 h-5 ${enrichment.isTor ? 'text-rose-400' : 'text-cyan-400'}`} />
-            <h3 className={`text-lg font-bold uppercase tracking-wider ${enrichment.isTor ? 'text-rose-400' : 'text-white'}`}>
-              TOR STATUS
-            </h3>
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 uppercase tracking-wider">Detection</div>
-            <div className={`text-lg font-medium ${enrichment.isTor ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {enrichment.isTor ? 'Tor Exit Node' : 'Not Tor'}
-            </div>
-          </div>
-        </div>
-
-        {/* AbuseIPDB */}
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">ABUSEIPDB</h3>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Abuse Confidence</div>
-              <div className={`text-2xl font-bold ${
-                (abuseIPDBData?.data?.abuseConfidenceScore || 0) > 50 ? 'text-rose-400' : 'text-emerald-400'
-              }`}>
-                {abuseIPDBData?.data?.abuseConfidenceScore || 0}%
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Total Reports</div>
-              <div className="text-base font-medium text-white">{abuseIPDBData?.data?.totalReports || 0}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* VirusTotal Quick Stats */}
-      {virusTotalData?.data?.attributes?.last_analysis_stats && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">VIRUSTOTAL</h3>
-          </div>
-          <div className="grid grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-rose-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.malicious || 0}
-              </div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Malicious</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-amber-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.suspicious || 0}
-              </div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Suspicious</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.harmless || 0}
-              </div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Clean</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-slate-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.undetected || 0}
-              </div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Undetected</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Spamhaus Warning */}
+    <div className="space-y-4">
+      {/* Notable findings first — tinted only when the state is real */}
       {enrichment.spamhausListed && spamhausData?.listedIn && (
-        <div className="p-4 rounded-xl flex items-center gap-3 animate-pulse"
-             style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
-          <AlertTriangle className="w-6 h-6 text-rose-400 flex-shrink-0" />
-          <div>
-            <div className="font-bold text-rose-400">SPAMHAUS BLOCKLIST DETECTED</div>
-            <div className="text-sm text-slate-400">Listed in {spamhausData.listedIn.length} blocklist(s)</div>
+        <Callout
+          icon={<AlertTriangle className="w-4 h-4" />}
+          title="Spamhaus blocklist detected"
+          detail={`Listed in ${spamhausData.listedIn.length} blocklist(s) — details in Threats`}
+          tone="danger"
+        />
+      )}
+      {enrichment.isTor && (
+        <Callout
+          icon={<Shield className="w-4 h-4" />}
+          title="Tor exit node"
+          detail="Traffic from this address is anonymised through the Tor network"
+          tone="danger"
+        />
+      )}
+
+      {/* Key indicators */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCard
+          label="Location"
+          icon={<MapPin className="w-3.5 h-3.5" />}
+          value={enrichment.country || 'Unknown'}
+          detail={[enrichment.city, enrichment.region].filter(Boolean).join(', ') || undefined}
+        />
+        <MetricCard
+          label="VPN / Proxy"
+          icon={<Wifi className="w-3.5 h-3.5" />}
+          value={enrichment.isVPN ? 'VPN detected' : enrichment.isProxy ? 'Proxy detected' : 'None detected'}
+          detail={enrichment.vpnService || (enrichment.confidence ? `${enrichment.confidence}% confidence` : undefined)}
+          tone={vpnActive ? 'warn' : 'neutral'}
+          highlight={vpnActive}
+        />
+        <MetricCard
+          label="Tor"
+          icon={<Shield className="w-3.5 h-3.5" />}
+          value={enrichment.isTor ? 'Tor exit node' : 'Not Tor'}
+          tone={enrichment.isTor ? 'danger' : 'neutral'}
+          highlight={!!enrichment.isTor}
+        />
+        <MetricCard
+          label="AbuseIPDB confidence"
+          icon={<AlertTriangle className="w-3.5 h-3.5" />}
+          value={`${abuseScore}%`}
+          detail={`${abuseIPDBData?.data?.totalReports || 0} reports`}
+          tone={abuseScore > 50 ? 'danger' : abuseScore > 0 ? 'warn' : 'neutral'}
+          highlight={abuseScore > 50}
+        />
+      </div>
+
+      {/* VirusTotal quick stats */}
+      {vtStats && (
+        <ResultCard>
+          <SectionHeader icon={<Shield className="w-4 h-4" />} title="VirusTotal" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+            <StatCell label="Malicious" value={vtStats.malicious || 0} tone={vtStats.malicious ? 'danger' : 'neutral'} />
+            <StatCell label="Suspicious" value={vtStats.suspicious || 0} tone={vtStats.suspicious ? 'warn' : 'neutral'} />
+            <StatCell label="Clean" value={vtStats.harmless || 0} tone={vtStats.harmless ? 'good' : 'neutral'} />
+            <StatCell label="Undetected" value={vtStats.undetected || 0} />
           </div>
-        </div>
+        </ResultCard>
       )}
     </div>
   );
 }
 
-// Network Section Component
-function NetworkSection({ enrichment, teamCymruData, rdapData, proMode }: any) {
+function NetworkSection({ enrichment, teamCymruData, proMode }: any) {
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-        <Server className="w-6 h-6 text-cyan-400" />
-        NETWORK INFORMATION
-      </h2>
+    <div className="space-y-4">
+      <SectionHeader icon={<Server className="w-4 h-4" />} title="Network information" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Organization</div>
-          <div className="text-lg font-medium text-white">{enrichment.org || 'Unknown'}</div>
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ISP</div>
-          <div className="text-lg font-medium text-white">{enrichment.isp || 'Unknown'}</div>
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ASN</div>
-          <div className="text-lg font-medium text-white font-mono">{enrichment.asn || 'Unknown'}</div>
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Hosting/DC</div>
-          <div className={`text-lg font-medium ${enrichment.isHosting ? 'text-amber-400' : 'text-emerald-400'}`}>
-            {enrichment.isHosting ? 'Yes' : 'No'}
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <MetricCard label="Organization" value={enrichment.org || 'Unknown'} />
+        <MetricCard label="ISP" value={enrichment.isp || 'Unknown'} />
+        <MetricCard label="ASN" value={enrichment.asn || 'Unknown'} mono />
+        <MetricCard
+          label="Hosting / datacenter"
+          value={enrichment.isHosting ? 'Yes' : 'No'}
+          tone={enrichment.isHosting ? 'warn' : 'neutral'}
+        />
       </div>
 
       {proMode && teamCymruData && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">BGP & ALLOCATION DATA</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ResultCard>
+          <SectionHeader title="BGP & allocation" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
             {teamCymruData.bgp_prefix && (
               <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">BGP PREFIX</div>
-                <div className="text-base font-medium text-white font-mono">{teamCymruData.bgp_prefix}</div>
+                <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>BGP prefix</div>
+                <div className="text-sm font-medium" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>
+                  {teamCymruData.bgp_prefix}
+                </div>
               </div>
             )}
             {teamCymruData.allocated && (
               <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">ALLOCATED DATE</div>
-                <div className="text-base font-medium text-white">{teamCymruData.allocated}</div>
+                <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Allocated</div>
+                <div className="text-sm font-medium" style={{ color: palette.textPrimary }}>{teamCymruData.allocated}</div>
               </div>
             )}
             {teamCymruData.registry && (
               <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">REGISTRY</div>
-                <div className="text-base font-medium text-white uppercase">{teamCymruData.registry}</div>
+                <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Registry</div>
+                <div className="text-sm font-medium uppercase" style={{ color: palette.textPrimary }}>{teamCymruData.registry}</div>
               </div>
             )}
           </div>
-        </div>
+        </ResultCard>
       )}
     </div>
   );
 }
 
-// Threats Section Component
 function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode }: any) {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-        <AlertTriangle className="w-6 h-6 text-rose-400" />
-        THREAT INTELLIGENCE
-      </h2>
+  const vtStats = virusTotalData?.data?.attributes?.last_analysis_stats;
 
-      {/* Spamhaus */}
+  return (
+    <div className="space-y-4">
+      <SectionHeader icon={<AlertTriangle className="w-4 h-4" />} title="Threat intelligence" />
+
       {spamhausData?.listedIn && spamhausData.listedIn.length > 0 && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
-          <h3 className="text-lg font-bold text-rose-400 mb-4 uppercase tracking-wider">
-            SPAMHAUS BLOCKLISTS ({spamhausData.listedIn.length})
-          </h3>
-          <div className="space-y-3">
+        <Callout
+          icon={<AlertTriangle className="w-4 h-4" />}
+          title={`Spamhaus blocklists (${spamhausData.listedIn.length})`}
+          tone="danger"
+        >
+          <div className="space-y-1.5 mt-2">
             {spamhausData.listedIn.slice(0, proMode ? undefined : 3).map((list: string, idx: number) => (
-              <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-rose-500/20">
-                <div className="flex items-start justify-between">
-                  <div className="font-bold text-rose-400">{list}</div>
-                  <span className="px-2 py-1 rounded text-xs font-bold bg-rose-500/20 text-rose-400">LISTED</span>
-                </div>
+              <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 rounded-md"
+                   style={{ background: palette.base, border: `1px solid ${palette.borderSubtle}` }}>
+                <span className="text-sm font-medium" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{list}</span>
+                <Pill label="Listed" tone="danger" />
               </div>
             ))}
           </div>
-        </div>
+        </Callout>
       )}
 
-      {/* AlienVault Pulses */}
       {proMode && alienVaultData?.pulse_info?.pulses && alienVaultData.pulse_info.pulses.length > 0 && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-          <h3 className="text-lg font-bold text-violet-400 mb-4 uppercase tracking-wider">
-            THREAT PULSES ({alienVaultData.pulse_info.count})
-          </h3>
-          <div className="space-y-3">
+        <ResultCard>
+          <SectionHeader title={`AlienVault threat pulses (${alienVaultData.pulse_info.count})`} />
+          <div className="space-y-2 mt-4">
             {alienVaultData.pulse_info.pulses.slice(0, 5).map((pulse: any, idx: number) => (
-              <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-violet-500/20">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="font-bold text-white">{pulse.name}</div>
-                  <span className="px-2 py-1 rounded text-xs font-bold bg-violet-500/20 text-violet-400">
-                    {pulse.modified_text}
-                  </span>
+              <div key={idx} className="p-3 rounded-md" style={{ background: palette.elevated, border: `1px solid ${palette.borderSubtle}` }}>
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <div className="text-sm font-semibold" style={{ color: palette.textPrimary }}>{pulse.name}</div>
+                  <span className="text-[11px] shrink-0" style={{ color: palette.textTertiary }}>{pulse.modified_text}</span>
                 </div>
                 {pulse.description && (
-                  <div className="text-sm text-slate-400 mb-2">{pulse.description}</div>
+                  <div className="text-xs mb-1.5" style={{ color: palette.textSecondary }}>{pulse.description}</div>
                 )}
                 {pulse.tags && pulse.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
+                  <div className="flex flex-wrap gap-1">
                     {pulse.tags.slice(0, 5).map((tag: string, tagIdx: number) => (
-                      <span key={tagIdx} className="px-2 py-0.5 rounded text-xs bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                      <span key={tagIdx} className="px-1.5 py-0.5 rounded text-[11px]"
+                            style={{ background: palette.surface, color: palette.textSecondary }}>
                         {tag}
                       </span>
                     ))}
@@ -570,169 +342,113 @@ function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode 
               </div>
             ))}
           </div>
-        </div>
+        </ResultCard>
       )}
 
-      {/* VirusTotal */}
-      {virusTotalData?.data?.attributes?.last_analysis_stats && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">VIRUSTOTAL ANALYSIS</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-center">
-              <div className="text-2xl font-bold text-rose-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.malicious || 0}
-              </div>
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Malicious</div>
-            </div>
-            <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
-              <div className="text-2xl font-bold text-amber-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.suspicious || 0}
-              </div>
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Suspicious</div>
-            </div>
-            <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-              <div className="text-2xl font-bold text-emerald-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.harmless || 0}
-              </div>
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Clean</div>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-700/10 border border-slate-700/20 text-center">
-              <div className="text-2xl font-bold text-slate-400 mb-1">
-                {virusTotalData.data.attributes.last_analysis_stats.undetected || 0}
-              </div>
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Undetected</div>
-            </div>
+      {vtStats && (
+        <ResultCard>
+          <SectionHeader title="VirusTotal analysis" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+            <StatCell label="Malicious" value={vtStats.malicious || 0} tone={vtStats.malicious ? 'danger' : 'neutral'} />
+            <StatCell label="Suspicious" value={vtStats.suspicious || 0} tone={vtStats.suspicious ? 'warn' : 'neutral'} />
+            <StatCell label="Clean" value={vtStats.harmless || 0} tone={vtStats.harmless ? 'good' : 'neutral'} />
+            <StatCell label="Undetected" value={vtStats.undetected || 0} />
           </div>
-        </div>
+        </ResultCard>
       )}
     </div>
   );
 }
 
-// VPN Section Component
 function VPNSection({ enrichment, proxyCheckData, proMode }: any) {
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-        <Wifi className="w-6 h-6 text-amber-400" />
-        VPN/PROXY ANALYSIS
-      </h2>
+    <div className="space-y-4">
+      <SectionHeader icon={<Wifi className="w-4 h-4" />} title="VPN / proxy analysis" />
 
-      <div className="p-6 rounded-xl" style={{ 
-        background: enrichment.isVPN || enrichment.isProxy ? 'rgba(251, 191, 36, 0.05)' : 'rgba(0, 0, 0, 0.3)', 
-        border: enrichment.isVPN || enrichment.isProxy ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid rgba(148, 163, 184, 0.1)' 
-      }}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
-            <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">VPN Status</div>
-            <div className={`text-xl font-bold ${enrichment.isVPN ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {enrichment.isVPN ? 'VPN Detected' : 'No VPN'}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Proxy Status</div>
-            <div className={`text-xl font-bold ${enrichment.isProxy ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {enrichment.isProxy ? 'Proxy Detected' : 'No Proxy'}
-            </div>
-          </div>
-          {enrichment.vpnService && (
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Provider</div>
-              <div className="text-lg font-medium text-white">{enrichment.vpnService}</div>
-            </div>
-          )}
-          {enrichment.confidence && (
-            <div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Confidence</div>
-              <div className="text-lg font-medium text-white">{enrichment.confidence}%</div>
-            </div>
-          )}
-        </div>
-
-        {proMode && proxyCheckData?.operator && (
-          <div className="space-y-4 pt-6 border-t border-slate-700">
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">PROVIDER DETAILS</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Anonymity Level</div>
-                <div className="text-base font-medium text-white capitalize">{proxyCheckData.operator.anonymity}</div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Popularity</div>
-                <div className="text-base font-medium text-white capitalize">{proxyCheckData.operator.popularity}</div>
-              </div>
-            </div>
-            
-            {proxyCheckData.operator.url && (
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Website</div>
-                <a href={proxyCheckData.operator.url} target="_blank" rel="noopener noreferrer"
-                   className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-                  {proxyCheckData.operator.url}
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
-            
-            {proxyCheckData.operator.protocols && (
-              <div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Protocols</div>
-                <div className="flex flex-wrap gap-2">
-                  {proxyCheckData.operator.protocols.map((protocol: string, idx: number) => (
-                    <span key={idx} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800/50 text-slate-300 border border-slate-700/50">
-                      {protocol}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <MetricCard
+          label="VPN status"
+          value={enrichment.isVPN ? 'VPN detected' : 'No VPN'}
+          tone={enrichment.isVPN ? 'warn' : 'neutral'}
+          highlight={!!enrichment.isVPN}
+        />
+        <MetricCard
+          label="Proxy status"
+          value={enrichment.isProxy ? 'Proxy detected' : 'No proxy'}
+          tone={enrichment.isProxy ? 'warn' : 'neutral'}
+          highlight={!!enrichment.isProxy}
+        />
+        {enrichment.vpnService && <MetricCard label="Provider" value={enrichment.vpnService} />}
+        {enrichment.confidence && <MetricCard label="Confidence" value={`${enrichment.confidence}%`} />}
       </div>
+
+      {proMode && proxyCheckData?.operator && (
+        <ResultCard>
+          <SectionHeader title="Provider details" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            <div>
+              <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Anonymity level</div>
+              <div className="text-sm font-medium capitalize" style={{ color: palette.textPrimary }}>
+                {proxyCheckData.operator.anonymity}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Popularity</div>
+              <div className="text-sm font-medium capitalize" style={{ color: palette.textPrimary }}>
+                {proxyCheckData.operator.popularity}
+              </div>
+            </div>
+          </div>
+
+          {proxyCheckData.operator.url && (
+            <div className="mt-4">
+              <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Website</div>
+              <a
+                href={proxyCheckData.operator.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm hover:underline"
+                style={{ color: palette.accent }}
+              >
+                {proxyCheckData.operator.url}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
+          {proxyCheckData.operator.protocols && (
+            <div className="mt-4">
+              <div className="text-[11px] mb-2" style={{ color: palette.textTertiary }}>Protocols</div>
+              <div className="flex flex-wrap gap-1.5">
+                {proxyCheckData.operator.protocols.map((protocol: string, idx: number) => (
+                  <span key={idx} className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{ background: palette.surface, color: palette.textSecondary, fontFamily: typography.mono }}>
+                    {protocol}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </ResultCard>
+      )}
     </div>
   );
 }
 
-// Location Section Component
 function LocationSection({ enrichment, proMode }: any) {
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-        <MapPin className="w-6 h-6 text-cyan-400" />
-        GEOLOCATION
-      </h2>
+    <div className="space-y-4">
+      <SectionHeader icon={<MapPin className="w-4 h-4" />} title="Geolocation" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Country</div>
-          <div className="text-xl font-bold text-white">{enrichment.country || 'Unknown'}</div>
-          {enrichment.countryCode && (
-            <div className="text-sm text-slate-400 mt-1">{enrichment.countryCode}</div>
-          )}
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">City</div>
-          <div className="text-xl font-bold text-white">{enrichment.city || 'Unknown'}</div>
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Region</div>
-          <div className="text-lg font-medium text-white">{enrichment.region || 'Unknown'}</div>
-        </div>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Timezone</div>
-          <div className="text-lg font-medium text-white">{enrichment.timezone || 'Unknown'}</div>
-        </div>
-        
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <MetricCard label="Country" value={enrichment.country || 'Unknown'} detail={enrichment.countryCode} />
+        <MetricCard label="City" value={enrichment.city || 'Unknown'} />
+        <MetricCard label="Region" value={enrichment.region || 'Unknown'} />
+        <MetricCard label="Timezone" value={enrichment.timezone || 'Unknown'} />
         {proMode && (
           <>
-            <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Latitude</div>
-              <div className="text-base font-medium text-white font-mono">{enrichment.lat || 'Unknown'}</div>
-            </div>
-            <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Longitude</div>
-              <div className="text-base font-medium text-white font-mono">{enrichment.lon || 'Unknown'}</div>
-            </div>
+            <MetricCard label="Latitude" value={enrichment.lat ?? 'Unknown'} mono />
+            <MetricCard label="Longitude" value={enrichment.lon ?? 'Unknown'} mono />
           </>
         )}
       </div>
@@ -740,43 +456,36 @@ function LocationSection({ enrichment, proMode }: any) {
   );
 }
 
-// Sources Section Component
 function SourcesSection({ sources, proMode }: any) {
   const sourceKeys = Object.keys(sources);
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-        <Database className="w-6 h-6 text-cyan-400" />
-        INDIVIDUAL SOURCES
-      </h2>
+    <div className="space-y-4">
+      <SectionHeader icon={<Database className="w-4 h-4" />} title="Individual sources" />
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="space-y-3">
         {sourceKeys.slice(0, proMode ? undefined : 5).map((sourceKey) => {
           const sourceData = sources[sourceKey];
           return (
-            <div key={sourceKey} className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold text-white uppercase">{sourceKey}</h3>
-                {sourceData?.error ? (
-                  <span className="px-3 py-1 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-                    ERROR
-                  </span>
-                ) : (
-                  <span className="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    SUCCESS
-                  </span>
-                )}
+            <ResultCard key={sourceKey}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold" style={{ color: palette.textPrimary, fontFamily: typography.ui }}>
+                  {sourceKey}
+                </h3>
+                <Pill label={sourceData?.error ? 'Error' : 'OK'} tone={sourceData?.error ? 'danger' : 'good'} />
               </div>
               {sourceData?.error && (
-                <div className="text-sm text-red-400">{sourceData.error}</div>
+                <div className="text-xs mt-2" style={{ color: palette.rose }}>{sourceData.error}</div>
               )}
               {!sourceData?.error && proMode && (
-                <pre className="text-xs text-slate-300 overflow-auto max-h-64 font-mono bg-slate-950 rounded p-3">
+                <pre
+                  className="text-xs overflow-auto max-h-64 rounded-md p-3 mt-3"
+                  style={{ background: palette.void, color: palette.textSecondary, fontFamily: typography.mono }}
+                >
                   {JSON.stringify(sourceData, null, 2)}
                 </pre>
               )}
-            </div>
+            </ResultCard>
           );
         })}
       </div>
@@ -784,7 +493,6 @@ function SourcesSection({ sources, proMode }: any) {
   );
 }
 
-// Raw JSON Section Component
 function RawJsonSection({ data }: any) {
   const [copied, setCopied] = useState(false);
 
@@ -795,26 +503,38 @@ function RawJsonSection({ data }: any) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <FileJson className="w-6 h-6 text-cyan-400" />
-          RAW JSON DATA
-        </h2>
-        <button
-          onClick={copyJson}
-          className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider transition-all border border-slate-700/50 text-slate-300 flex items-center gap-2"
-        >
-          {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-          COPY JSON
-        </button>
-      </div>
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<FileJson className="w-4 h-4" />}
+        title="Raw JSON data"
+        actions={
+          <button
+            onClick={copyJson}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors hover:brightness-125"
+            style={{
+              background: palette.float,
+              border: `1px solid ${palette.borderDefault}`,
+              color: palette.textSecondary,
+              fontFamily: typography.ui,
+            }}
+          >
+            {copied ? <Check className="w-3.5 h-3.5" style={{ color: palette.green }} /> : <Copy className="w-3.5 h-3.5" />}
+            Copy JSON
+          </button>
+        }
+      />
 
-      <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-        <pre className="text-xs text-slate-300 overflow-auto max-h-[600px] font-mono">
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      </div>
+      <pre
+        className="text-xs overflow-auto max-h-[600px] rounded-lg p-4"
+        style={{
+          background: palette.void,
+          border: `1px solid ${palette.borderDefault}`,
+          color: palette.textSecondary,
+          fontFamily: typography.mono,
+        }}
+      >
+        {JSON.stringify(data, null, 2)}
+      </pre>
     </div>
   );
 }
