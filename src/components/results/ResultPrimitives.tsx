@@ -78,6 +78,51 @@ export function Callout({ icon, title, detail, tone = 'warn', children }: Callou
   );
 }
 
+interface SignalLightProps {
+  label: string;
+  /** Lit = the condition is present. Unlit lights render dim for constant scan positions. */
+  on: boolean;
+  tone?: Tone;
+  /** Optional detail appended when lit, e.g. the VPN provider name. */
+  detail?: string;
+}
+
+/**
+ * OS-style status light: fixed-position chip with a small dot that "comes on"
+ * when the condition is detected (Tor / VPN / Proxy / Hosting). Unlit chips
+ * stay dim so analysts can scan the same row on every result.
+ */
+export function SignalLight({ label, on, tone = 'warn', detail }: SignalLightProps) {
+  const litColor = toneColor[tone];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold"
+      style={{
+        background: on ? toneBg(tone, 0.1) : palette.base,
+        border: `1px solid ${on ? toneBorder(tone, 0.32) : palette.borderSubtle}`,
+        color: on ? litColor : palette.textTertiary,
+        fontFamily: typography.ui,
+        letterSpacing: '0.04em',
+        opacity: on ? 1 : 0.65,
+      }}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={{
+          background: on ? litColor : palette.borderActive,
+          boxShadow: on ? `0 0 5px ${litColor}88` : 'none',
+        }}
+      />
+      {label}
+      {on && detail && (
+        <span className="font-medium normal-case" style={{ color: palette.textSecondary, letterSpacing: 0 }}>
+          · {detail}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface ResultCardProps {
   children: ReactNode;
   className?: string;

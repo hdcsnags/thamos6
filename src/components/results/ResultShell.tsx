@@ -28,6 +28,8 @@ interface ResultShellProps<T extends string> {
   onToggleProMode?: () => void;
   /** Extra header actions (e.g. SummaryActions). */
   headerActions?: ReactNode;
+  /** Signal-light row rendered under the verdict line (Tor/VPN/Proxy/geo chips). */
+  signals?: ReactNode;
   children: ReactNode;
 }
 
@@ -38,7 +40,7 @@ interface ResultShellProps<T extends string> {
  */
 export function ResultShell<T extends string>({
   value, typeLabel, verdict, score, menuItems, activeMenu, onMenuChange,
-  variant, proMode, onToggleProMode, headerActions, children,
+  variant, proMode, onToggleProMode, headerActions, signals, children,
 }: ResultShellProps<T>) {
   const nav = variant === 'sidebar' ? (
     <div
@@ -107,7 +109,7 @@ export function ResultShell<T extends string>({
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {variant === 'tabs' && nav}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6 max-w-5xl">
+          <div className="p-6 max-w-7xl">
             {/* Header */}
             <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
               <div className="min-w-0">
@@ -128,6 +130,11 @@ export function ResultShell<T extends string>({
                     </span>
                   )}
                 </div>
+                {signals && (
+                  <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+                    {signals}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {headerActions}

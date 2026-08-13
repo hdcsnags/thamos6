@@ -218,6 +218,29 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-13b — IPResult v2: Calibrated Verdict + Investigation-First Overview
+**Agent:** GitHub Copilot CLI (Claude Fable 5)
+**Scope:** Make the calibrated scoring the headline, restructure IPResult around the analyst workflow (Tor/VPN/abuse/location at a glance), and cut redundant chrome.
+
+**Completed:**
+- [x] **Calibrated verdict is now the headline** in `IPResult.tsx`: header pill + score come from `result.scoring` (verdict/calibrated) instead of legacy `isMalicious`/`overallThreatScore` (legacy floors at 50 on any single-source hit and adds +25 for any Spamhaus listing incl. PBL — the calibrated engine already handles PBL=0/SBL=50/XBL=85, Tor=+12 note, VPN=0). Legacy retained as fallback when `scoring` is absent; copy-summary notes legacy divergence.
+- [x] **Signal-lights row** (`SignalLight` in `ResultPrimitives.tsx`, rendered via new `ResultShell` `signals` prop): fixed-position TOR / VPN(+provider) / PROXY / HOSTING chips that "come on" when detected, plus a country chip — one-second read for analysts.
+- [x] **Overview merged with Network + Location** (tabs removed, 9 → 6): two-column fullscreen-friendly layout — left: Context card (location/org/ISP/ASN/hosting/anonymity, proMode adds coords + Team Cymru BGP) and Score Drivers card (top calibrated contributions with weight pills + jump to Verdict tab); right: AbuseIPDB and VirusTotal cards.
+- [x] **Clickable report detail**: AbuseIPDB card expands to the actual verbose `reports[]` (category chips via official taxonomy map, date, reporter country, comment); VirusTotal card expands to the flagging engines from `last_analysis_results`. Frontend-only — data was already in the payload.
+- [x] **VPN tab aggregates provider names across ALL sources** (`collectProviderReports`): ProxyCheck (operator/network), IP2Proxy, IPQualityScore, VPNAPI.io, IPHub, ThamOS VPN DB — per-source detection + named provider table, plus ProxyCheck operator deep-dive. Fixed ProxyCheck v3 nesting (result lives under the IP key; previous code read `.operator` off the envelope and always missed).
+- [x] **Raw JSON tab removed** (fully redundant with Sources + header Copy JSON); Sources cards are now click-to-expand accordions showing per-provider raw JSON without the proMode gate or 5-source cap.
+- [x] `ResultShell` content width widened `max-w-5xl` → `max-w-7xl` for fullscreen use.
+- [x] `npm run build` passes; lint flags match the pre-existing result-page `no-explicit-any` baseline (kit files clean).
+
+**Decisions Made:**
+- Verdict stays a separate tab (full contribution/variance breakdown); Overview answers "why" via top-3 score drivers with a jump link.
+- Geo-context weighting (expected-country = CA for the school board) deliberately deferred — it's a scoring-policy change in the edge function, not a layout concern.
+
+**Deferred / Next Sprint:**
+- Geo-context scoring layer (non-CA + no VPN flag) in `threat-intel` edge function; consider retiring the legacy score outright once Bulk Lookup/History consumers are migrated.
+- Migrate URL/Domain/Hash/CVE/Email/Wallet/Extension result pages onto the result kit (IPResult v2 is the template — including SignalLight + expandable evidence patterns).
+- Restyle `VerdictStrip`/`VerdictPanel` internals to tokens.ts.
+
 ### Sprint 2026-08-13 — Icon Identity + IP-First Result Restructure
 **Agent:** GitHub Copilot CLI (Claude Fable 5)
 **Scope:** Tighten Desktop icon/app identity and rebuild IPResult as the first Desktop-native result page.
