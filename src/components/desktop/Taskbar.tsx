@@ -106,10 +106,10 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
         >
           <button
             onClick={onOpenLauncher}
-            className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors"
-            style={{ color: '#f7fbff', background: `linear-gradient(145deg, ${palette.accent}, ${palette.blue})`, border: `1px solid ${palette.cyan}80`, boxShadow: `0 5px 15px ${palette.accent}28` }}
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
+            style={{ color: palette.textPrimary, background: 'transparent' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = palette.surface; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = `linear-gradient(145deg, ${palette.accent}, ${palette.blue})`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             aria-label="Open ThamOS command center"
             title="Command center"
           >
@@ -131,11 +131,16 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   style={{
                     backgroundColor: isActive ? palette.surface : 'transparent',
                     color: isActive ? palette.textPrimary : hasWindows ? palette.textSecondary : palette.textTertiary,
-                    borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
                   }}
                   aria-label={`Switch to workspace ${num} (${winCount} windows)`}
                 >
                   {num}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                      style={{ backgroundColor: palette.accent }}
+                    />
+                  )}
                   {hasWindows && !isActive && (
                     <span
                       className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
@@ -160,11 +165,10 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                 <div key="result-group" className="relative">
                   <button
                     onClick={() => setExpandedResultGroup(prev => !prev)}
-                    className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
+                    className="relative flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
                     style={{
                       backgroundColor: activeInGroup || expandedResultGroup ? palette.surface : 'transparent',
                       color: activeInGroup ? palette.textPrimary : palette.textTertiary,
-                      borderBottom: `2px solid ${activeInGroup ? palette.accent : 'transparent'}`,
                     }}
                   >
                     <span style={{ fontSize: '12px' }}>⬡</span>
@@ -175,6 +179,12 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                     >
                       {win.count}
                     </span>
+                    {activeInGroup && (
+                      <span
+                        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                        style={{ backgroundColor: palette.accent }}
+                      />
+                    )}
                   </button>
                   {expandedResultGroup && (
                     <div
@@ -232,17 +242,22 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   ];
                   showContextMenu(e.clientX, e.clientY, items);
                 }}
-                className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
+                className="relative flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
                 style={{
                   backgroundColor: desktop.activeWindowId === win.id ? palette.surface : 'transparent',
                   color: desktop.activeWindowId === win.id ? palette.textPrimary : palette.textTertiary,
-                  borderBottom: `2px solid ${desktop.activeWindowId === win.id ? palette.accent : 'transparent'}`,
                   opacity: win.minimized ? 0.5 : 1,
                 }}
                 aria-label={`Focus ${win.title}`}
               >
                 <AppIconTile icon={win.icon} color={win.accentColor} size={24} iconSize={12} active={desktop.activeWindowId === win.id} />
                 <span className="max-w-[100px] truncate">{win.title}</span>
+                <span
+                  className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                  style={{
+                    backgroundColor: desktop.activeWindowId === win.id ? palette.accent : palette.textDisabled,
+                  }}
+                />
                 {win.appId === 'intel' && intelUnread > 0 && (
                   <span
                     className="ml-0.5 px-1 rounded-full text-[9px] font-bold"
