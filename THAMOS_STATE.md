@@ -218,6 +218,21 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-13c — urlscan.io Detonation Wiring (URL Scanner)
+**Agent:** GitHub Copilot CLI (Claude Fable 5)
+**Scope:** Close the half-wired urlscan integration — scans were submitted but results never fetched or rendered.
+
+**Completed:**
+- [x] **Backend `/urlscan-result` endpoint** (threat-intel): `{uuid, url?}` → polls `urlscan.io/api/v1/result/{uuid}/`; 404 → `{ready:false}` (scan still processing); success → trimmed payload via `trimUrlscanResult` (task/report/screenshot URLs, overall verdict incl. brands/categories, final-page context ip/asn/country/server/title/TLS, Document-request redirect chain, linkDomains ≤40, traffic counts, malicious request count). Completed detonations cached under `("urlscan_result", url)`.
+- [x] `checkURLScan` is now cache-aware: a previously completed detonation for the same URL is returned inline with the lookup (no resubmission, no polling needed); otherwise submits and returns `{submitted, pending, uuid, resultUrl}`.
+- [x] **Frontend**: `fetchUrlscanResult(uuid, url)` + `UrlscanDetonation` type in `threatIntel.ts`. `URLResult.tsx` gains a **Detonation tab** — polls every 5s (first poll at 7s, ~80s budget), renders verdict strip (score/malicious/brands/categories), page screenshot (`urlscan.io/screenshots/{uuid}.png`, click-through to report), final-page context grid, redirect chain (visible gate-page hops), outgoing link domains, traffic summary; pending spinner / timeout-with-report-link states.
+- [x] Fixed pre-existing bug: Overview's urlscan banner read `urlscanData.submitted` but normalization nests data under `.details` — the banner never rendered. Now shows live status (running/complete + verdict summary) with a jump-to-Detonation button.
+- [x] `npm run build` clean; `supabase functions deploy threat-intel` deployed.
+
+**Notes:** URLResult intentionally not kit-migrated yet (focused wiring only; migration stays on the backlog). Redirect chain = urlscan Document-type requests — the mechanism that exposes two-stage phishing gate pages.
+
+---
+
 ### Sprint 2026-08-13b — IPResult v2: Calibrated Verdict + Investigation-First Overview
 **Agent:** GitHub Copilot CLI (Claude Fable 5)
 **Scope:** Make the calibrated scoring the headline, restructure IPResult around the analyst workflow (Tor/VPN/abuse/location at a glance), and cut redundant chrome.

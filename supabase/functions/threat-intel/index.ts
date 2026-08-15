@@ -1524,14 +1524,80 @@ async function checkVPNAPI(ctx: TierContext, ip: string, apiKey: string): Promis
 
 async function checkURLScan(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "urlscan", data: {}, error: "API key not configured" };
+  // A completed detonation for this URL may already be cached by /urlscan-result —
+  // reuse it instead of burning a scan submission.
+  const cached = await getCachedResponse(ctx, "urlscan_result", url);
+  if (cached) return { source: "urlscan", data: cached };
   try {
     const submitResponse = await fetchWithTimeout("https://urlscan.io/api/v1/scan/", { method: "POST", headers: { "API-Key": apiKey, "Content-Type": "application/json" }, body: JSON.stringify({ url, visibility: "public" }) });
     if (!submitResponse.ok) throw new Error(`HTTP ${submitResponse.status}`);
     const submitData = await submitResponse.json();
-    return { source: "urlscan", data: { submitted: true, uuid: submitData.uuid, resultUrl: submitData.result } };
+    return { source: "urlscan", data: { submitted: true, pending: true, uuid: submitData.uuid, resultUrl: submitData.result } };
   } catch (e) {
     return { source: "urlscan", data: {}, error: String(e) };
   }
+}
+
+// Trim a full urlscan.io result (often >1MB) down to what the result page
+// renders: verdict, final-page context, redirect chain, outgoing link domains.
+function trimUrlscanResult(full: any): Record<string, unknown> {
+  const task = full?.task ?? {};
+  const page = full?.page ?? {};
+  const overall = full?.verdicts?.overall ?? {};
+  const lists = full?.lists ?? {};
+  const stats = full?.stats ?? {};
+
+  // Document-type requests approximate the navigation/redirect chain —
+  // this is where multi-hop gate pages become visible.
+  const redirectChain: string[] = [];
+  for (const entry of full?.data?.requests ?? []) {
+    const r = entry?.request;
+    const docUrl = r?.request?.url;
+    if (r?.type === "Document" && typeof docUrl === "string" && !redirectChain.includes(docUrl)) {
+      redirectChain.push(docUrl);
+    }
+  }
+
+  return {
+    ready: true,
+    submitted: true,
+    uuid: task.uuid ?? null,
+    url: task.url ?? null,
+    time: task.time ?? null,
+    reportUrl: task.reportURL ?? (task.uuid ? `https://urlscan.io/result/${task.uuid}/` : null),
+    screenshotUrl: task.screenshotURL ?? (task.uuid ? `https://urlscan.io/screenshots/${task.uuid}.png` : null),
+    verdicts: {
+      score: overall.score ?? 0,
+      malicious: overall.malicious ?? false,
+      hasVerdicts: overall.hasVerdicts ?? false,
+      categories: overall.categories ?? [],
+      brands: (overall.brands ?? []).map((b: any) => (typeof b === "string" ? b : b?.name)).filter(Boolean),
+    },
+    page: {
+      url: page.url ?? null,
+      domain: page.domain ?? null,
+      ip: page.ip ?? null,
+      asn: page.asn ?? null,
+      asnname: page.asnname ?? null,
+      country: page.country ?? null,
+      city: page.city ?? null,
+      server: page.server ?? null,
+      title: page.title ?? null,
+      status: page.status ?? null,
+      mimeType: page.mimeType ?? null,
+      tlsIssuer: page.tlsIssuer ?? null,
+      tlsValidFrom: page.tlsValidFrom ?? null,
+    },
+    redirectChain: redirectChain.slice(0, 15),
+    linkDomains: (lists.linkDomains ?? []).slice(0, 40),
+    counts: {
+      requests: (full?.data?.requests ?? []).length,
+      urls: (lists.urls ?? []).length,
+      domains: (lists.domains ?? []).length,
+      ips: (lists.ips ?? []).length,
+    },
+    maliciousRequests: stats?.malicious ?? 0,
+  };
 }
 
 async function checkVirusTotalURL(ctx: TierContext, url: string, apiKey: string): Promise<ThreatResult> {
@@ -2961,6 +3027,32 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (path === "/urlscan-result" || path === "/urlscan-result/") {
+      const body = await req.json();
+      const uuid = body.uuid;
+      if (!uuid || typeof uuid !== "string" || !/^[a-f0-9][a-f0-9-]{20,40}$/i.test(uuid)) {
+        return new Response(JSON.stringify({ error: "Valid urlscan uuid required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      try {
+        const res = await fetchWithTimeout(`https://urlscan.io/api/v1/result/${uuid}/`);
+        if (res.status === 404) {
+          // Scan still processing — the frontend keeps polling.
+          return new Response(JSON.stringify({ ready: false }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const full = await res.json();
+        const trimmed = trimUrlscanResult(full);
+        // Cache the finished detonation by URL so repeat lookups skip resubmission.
+        const scannedUrl = (full?.task?.url as string | undefined) ?? (typeof body.url === "string" ? body.url : undefined);
+        if (scannedUrl) {
+          await setCachedResponse(ctx, "urlscan_result", scannedUrl, trimmed);
+        }
+        return new Response(JSON.stringify(trimmed), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ ready: false, error: String(e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     if (path === "/url" || path === "/url/") {
       const body = await req.json();
       const targetUrl = body.url;
@@ -3545,7 +3637,7 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/bulk", "/hash", "/domain", "/cve", "/wallet", "/email", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Not found", availableEndpoints: ["/ip", "/url", "/urlscan-result", "/bulk", "/hash", "/domain", "/cve", "/wallet", "/email", "/config"] }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }

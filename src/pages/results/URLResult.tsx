@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Globe, AlertTriangle, Shield, Database, Link as LinkIcon, Target, FileJson, Zap,
-  Copy, Check, ExternalLink, Code, Search, Scale
+  Copy, Check, ExternalLink, Code, Search, Scale, Camera, Loader2
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
-import { scanURL } from '../../lib/threatIntel';
+import { scanURL, fetchUrlscanResult, type UrlscanDetonation } from '../../lib/threatIntel';
 import type { URLLookupResult } from '../../types';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
 import VerdictStrip from '../../components/scanner/VerdictStrip';
@@ -13,7 +13,9 @@ interface URLResultProps {
   url: string;
 }
 
-type MenuItem = 'overview' | 'verdict' | 'analysis' | 'threats' | 'sources' | 'raw';
+type MenuItem = 'overview' | 'verdict' | 'detonation' | 'analysis' | 'threats' | 'sources' | 'raw';
+
+type DetonationState = 'idle' | 'pending' | 'ready' | 'timeout';
 
 export default function URLResult({ url }: URLResultProps) {
   const { theme } = useTheme();
@@ -24,6 +26,8 @@ export default function URLResult({ url }: URLResultProps) {
   const [proMode, setProMode] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+  const [detonation, setDetonation] = useState<UrlscanDetonation | null>(null);
+  const [detonationState, setDetonationState] = useState<DetonationState>('idle');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,6 +53,49 @@ export default function URLResult({ url }: URLResultProps) {
     };
     performLookup();
   }, [url]);
+
+  // urlscan submits are async — poll the result API until the detonation finishes.
+  useEffect(() => {
+    if (!result) return;
+    const details = (result.results?.urlscan as any)?.details;
+    if (!details) return;
+    if (details.ready) {
+      // Completed detonation was served from cache with the lookup itself.
+      setDetonation(details as UrlscanDetonation);
+      setDetonationState('ready');
+      return;
+    }
+    if (!details.uuid) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 15; // ~80s total
+
+    setDetonationState('pending');
+    const poll = async () => {
+      if (cancelled) return;
+      attempts++;
+      try {
+        const res = await fetchUrlscanResult(details.uuid, url);
+        if (cancelled) return;
+        if (res.ready) {
+          setDetonation(res);
+          setDetonationState('ready');
+          return;
+        }
+      } catch {
+        // transient — keep polling
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        setDetonationState('timeout');
+        return;
+      }
+      timer = setTimeout(poll, 5000);
+    };
+    timer = setTimeout(poll, 7000); // scans are rarely ready before ~10s
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [result, url]);
 
   const copySummary = () => {
     if (!result) return;
@@ -97,6 +144,7 @@ export default function URLResult({ url }: URLResultProps) {
   const menuItems = [
     { id: 'overview' as MenuItem, label: 'Overview', icon: Target },
     { id: 'verdict' as MenuItem, label: 'Verdict', icon: Scale },
+    { id: 'detonation' as MenuItem, label: 'Detonation', icon: Camera },
     { id: 'analysis' as MenuItem, label: 'Analysis', icon: Code },
     { id: 'threats' as MenuItem, label: 'Threats', icon: AlertTriangle },
     { id: 'sources' as MenuItem, label: 'Sources', icon: Database },
@@ -188,10 +236,11 @@ export default function URLResult({ url }: URLResultProps) {
           {activeMenu === 'overview' && (
             <div className="space-y-6">
               <VerdictStrip scoring={result.scoring} />
-              <OverviewSection result={result} vtData={vtData} urlscanData={urlscanData} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />
+              <OverviewSection result={result} vtData={vtData} urlscanData={urlscanData} detonation={detonation} detonationState={detonationState} onViewDetonation={() => setActiveMenu('detonation')} copySummary={copySummary} copyJson={copyJson} copiedSummary={copiedSummary} copiedJson={copiedJson} />
             </div>
           )}
           {activeMenu === 'verdict' && <VerdictPanel lookupType="url" value={url} scoring={result.scoring} />}
+          {activeMenu === 'detonation' && <DetonationSection detonation={detonation} state={detonationState} urlscanDetails={(results.urlscan as any)?.details} urlscanError={(results.urlscan as any)?.error} />}
           {activeMenu === 'analysis' && <AnalysisSection vtData={vtData} urlscanData={urlscanData} proMode={proMode} />}
           {activeMenu === 'threats' && <ThreatsSection vtData={vtData} proMode={proMode} />}
           {activeMenu === 'sources' && <SourcesSection results={results} proMode={proMode} />}
@@ -202,7 +251,8 @@ export default function URLResult({ url }: URLResultProps) {
   );
 }
 
-function OverviewSection({ result, vtData, urlscanData, copySummary, copyJson, copiedSummary, copiedJson }: any) {
+function OverviewSection({ result, vtData, urlscanData, detonation, detonationState, onViewDetonation, copySummary, copyJson, copiedSummary, copiedJson }: any) {
+  const urlscanDetails = urlscanData?.details;
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-center gap-3">
@@ -232,15 +282,169 @@ function OverviewSection({ result, vtData, urlscanData, copySummary, copyJson, c
           </div>
         )}
       </div>
-      {urlscanData?.submitted && (
+      {urlscanDetails?.uuid && (
         <div className="p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
-          <ExternalLink className="w-6 h-6 text-cyan-400 flex-shrink-0" />
-          <div className="flex-1"><div className="font-bold text-cyan-400">URLScan.io Analysis Available</div><div className="text-sm text-slate-400">Scan submitted successfully</div></div>
-          {urlscanData.resultUrl && (
-            <a href={urlscanData.resultUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all text-cyan-400 border border-cyan-500/30">VIEW SCAN</a>
-          )}
+          {detonationState === 'pending'
+            ? <Loader2 className="w-6 h-6 text-cyan-400 flex-shrink-0 animate-spin" />
+            : <Camera className="w-6 h-6 text-cyan-400 flex-shrink-0" />}
+          <div className="flex-1">
+            <div className="font-bold text-cyan-400">
+              {detonationState === 'ready' ? 'URLScan.io Detonation Complete' : detonationState === 'pending' ? 'URLScan.io Detonation Running…' : 'URLScan.io Scan Submitted'}
+            </div>
+            <div className="text-sm text-slate-400">
+              {detonationState === 'ready' && detonation?.verdicts
+                ? `Score ${detonation.verdicts.score ?? 0} · ${detonation.verdicts.malicious ? 'flagged MALICIOUS' : 'not flagged'}${detonation.verdicts.brands?.length ? ` · brand: ${detonation.verdicts.brands.join(', ')}` : ''}`
+                : detonationState === 'pending' ? 'Sandbox is rendering the page — results load automatically'
+                : 'Full detonation results on the report page'}
+            </div>
+          </div>
+          <button onClick={onViewDetonation} className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider transition-all text-cyan-400 border border-cyan-500/30">
+            VIEW DETONATION
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function DetonationSection({ detonation, state, urlscanDetails, urlscanError }: { detonation: UrlscanDetonation | null; state: DetonationState; urlscanDetails: any; urlscanError?: string }) {
+  const reportUrl = detonation?.reportUrl || urlscanDetails?.resultUrl;
+
+  if (!urlscanDetails?.uuid && !detonation) {
+    return (
+      <div className="p-8 rounded-xl text-center" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+        <Camera className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+        <p className="text-slate-400">No urlscan.io detonation available for this URL.</p>
+        {urlscanError && <p className="text-sm text-slate-500 mt-2 font-mono">{urlscanError}</p>}
+      </div>
+    );
+  }
+
+  if (state === 'pending' || (state === 'idle' && !detonation)) {
+    return (
+      <div className="p-10 rounded-xl text-center" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+        <Loader2 className="w-10 h-10 text-cyan-400 mx-auto mb-4 animate-spin" />
+        <p className="text-white font-bold uppercase tracking-wider mb-1">Detonating in sandbox…</p>
+        <p className="text-sm text-slate-400">urlscan.io is loading the page in a headless browser. Usually takes 15–45 seconds — results appear here automatically.</p>
+      </div>
+    );
+  }
+
+  if (state === 'timeout' && !detonation) {
+    return (
+      <div className="p-8 rounded-xl text-center" style={{ background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+        <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+        <p className="text-amber-400 font-bold mb-2">Detonation is taking longer than expected</p>
+        {reportUrl && (
+          <a href={reportUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-sm font-bold uppercase tracking-wider text-cyan-400 border border-cyan-500/30">
+            OPEN REPORT ON URLSCAN.IO
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (!detonation) return null;
+  const v = detonation.verdicts;
+  const p = detonation.page || ({} as NonNullable<UrlscanDetonation['page']>);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2"><Camera className="w-6 h-6 text-cyan-400" />SANDBOX DETONATION</h2>
+        {reportUrl && (
+          <a href={reportUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg text-sm font-bold uppercase tracking-wider text-slate-300 border border-slate-700/50 flex items-center gap-2">
+            <ExternalLink className="w-4 h-4" /> FULL REPORT
+          </a>
+        )}
+      </div>
+
+      {/* Verdict strip */}
+      <div className={`p-4 rounded-xl flex items-center gap-4 ${v?.malicious ? 'bg-rose-500/10 border border-rose-500/30' : 'bg-emerald-500/10 border border-emerald-500/30'}`}>
+        <div className={`text-3xl font-bold ${v?.malicious ? 'text-rose-400' : 'text-emerald-400'}`}>{v?.score ?? 0}</div>
+        <div className="flex-1">
+          <div className={`font-bold uppercase tracking-wider ${v?.malicious ? 'text-rose-400' : 'text-emerald-400'}`}>{v?.malicious ? 'FLAGGED MALICIOUS' : 'NOT FLAGGED'}</div>
+          <div className="text-sm text-slate-400">
+            urlscan.io verdict{v?.categories?.length ? ` · ${v.categories.join(', ')}` : ''}{v?.brands?.length ? ` · impersonating: ${v.brands.join(', ')}` : ''}
+          </div>
+        </div>
+        {(detonation.maliciousRequests ?? 0) > 0 && (
+          <span className="px-3 py-1 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">{detonation.maliciousRequests} MALICIOUS REQUESTS</span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Screenshot */}
+        {detonation.screenshotUrl && (
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Page Screenshot</div>
+            <a href={reportUrl || detonation.screenshotUrl} target="_blank" rel="noopener noreferrer">
+              <img src={detonation.screenshotUrl} alt="urlscan.io page screenshot" loading="lazy"
+                className="w-full rounded-lg border border-slate-700/50 hover:border-cyan-500/50 transition-all"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </a>
+          </div>
+        )}
+
+        {/* Final page context */}
+        <div className="p-4 rounded-xl space-y-3" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <div className="text-xs text-slate-500 uppercase tracking-wider">Final Page</div>
+          {[
+            ['URL', p.url], ['Domain', p.domain], ['Title', p.title],
+            ['IP', p.ip], ['ASN', p.asn && p.asnname ? `${p.asn} · ${p.asnname}` : p.asnname || p.asn],
+            ['Country', p.city ? `${p.city}, ${p.country}` : p.country],
+            ['Server', p.server], ['HTTP Status', p.status],
+            ['TLS Issuer', p.tlsIssuer],
+          ].filter(([, val]) => val != null && val !== '').map(([label, val]) => (
+            <div key={String(label)}>
+              <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
+              <div className="text-sm font-medium text-white break-all font-mono">{String(val)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Redirect chain */}
+      {(detonation.redirectChain?.length ?? 0) > 1 && (
+        <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Redirect Chain ({detonation.redirectChain!.length} hops)</div>
+          <div className="space-y-2">
+            {detonation.redirectChain!.map((hop, idx) => (
+              <div key={idx} className="flex items-center gap-3">
+                <span className="text-xs font-bold text-cyan-400 w-6 text-right flex-shrink-0">{idx + 1}</span>
+                <span className="text-sm text-slate-300 font-mono break-all">{hop}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Link domains + counts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {(detonation.linkDomains?.length ?? 0) > 0 && (
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Outgoing Link Domains ({detonation.linkDomains!.length})</div>
+            <div className="flex flex-wrap gap-2">
+              {detonation.linkDomains!.map((d, idx) => (
+                <span key={idx} className="px-2 py-1 rounded text-xs font-mono bg-slate-800/60 text-slate-300 border border-slate-700/50">{d}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {detonation.counts && (
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
+            <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Traffic Summary</div>
+            <div className="grid grid-cols-4 gap-3">
+              {([['Requests', detonation.counts.requests], ['URLs', detonation.counts.urls], ['Domains', detonation.counts.domains], ['IPs', detonation.counts.ips]] as const).map(([label, val]) => (
+                <div key={label} className="text-center">
+                  <div className="text-xl font-bold text-white">{val}</div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

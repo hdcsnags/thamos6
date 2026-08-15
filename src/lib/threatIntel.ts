@@ -100,6 +100,52 @@ export function isValidHash(hash: string): boolean {
   return /^[a-f0-9]{32}$/.test(h) || /^[a-f0-9]{40}$/.test(h) || /^[a-f0-9]{64}$/.test(h);
 }
 
+export interface UrlscanDetonation {
+  ready: boolean;
+  error?: string;
+  submitted?: boolean;
+  uuid?: string | null;
+  url?: string | null;
+  time?: string | null;
+  reportUrl?: string | null;
+  screenshotUrl?: string | null;
+  verdicts?: {
+    score: number;
+    malicious: boolean;
+    hasVerdicts: boolean;
+    categories: string[];
+    brands: string[];
+  };
+  page?: {
+    url: string | null; domain: string | null; ip: string | null;
+    asn: string | null; asnname: string | null; country: string | null;
+    city: string | null; server: string | null; title: string | null;
+    status: number | string | null; mimeType: string | null;
+    tlsIssuer: string | null; tlsValidFrom: string | null;
+  };
+  redirectChain?: string[];
+  linkDomains?: string[];
+  counts?: { requests: number; urls: number; domains: number; ips: number };
+  maliciousRequests?: number;
+}
+
+/** Poll the finished urlscan.io detonation for a scan submitted during a URL lookup. */
+export async function fetchUrlscanResult(uuid: string, url?: string): Promise<UrlscanDetonation> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/urlscan-result`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ uuid, url }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch urlscan result: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export function getSourceDisplayName(source: string): string {
   const map: Record<string, string> = {
     virustotal: "VirusTotal",
