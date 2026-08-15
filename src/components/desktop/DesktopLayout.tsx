@@ -25,6 +25,7 @@ import BulkLookup from '../../pages/BulkLookup';
 import { DesktopWorkshop } from './DesktopWorkshop';
 import { DesktopSystemMonitor } from './DesktopSystemMonitor';
 import { DesktopIntelDashboard } from './DesktopIntelDashboard';
+import { IntelWidget, readIntelWidgetState, writeIntelWidgetState } from './IntelWidget';
 import { DesktopCaseManager } from './DesktopCaseManager';
 import { DesktopBrowser } from './DesktopBrowser';
 import { DesktopSettings } from './DesktopSettings';
@@ -36,7 +37,7 @@ import { ToastProvider } from './ToastNotifications';
 import { ContextMenuProvider, useContextMenu, type MenuEntry } from './ContextMenu';
 import { palette, typography } from '../../design-system/tokens';
 import { getSavedWallpaper, getWallpaperById } from '../../design-system/wallpapers';
-import { Terminal, Monitor, LayoutGrid, Settings, Undo2 } from 'lucide-react';
+import { Terminal, Monitor, LayoutGrid, Settings, Undo2, RadioTower } from 'lucide-react';
 import { AppIconTile } from '../../design-system/icons';
 
 function DesktopContent() {
@@ -257,6 +258,15 @@ function DesktopContent() {
       { type: 'divider' },
       { label: 'App Launcher', icon: <LayoutGrid size={14} />, shortcut: 'Ctrl+K', action: () => setShowLauncher(true) },
       { label: 'Settings', icon: <Settings size={14} />, action: () => desktop.openWindow({ appId: 'settings', title: 'Settings' }) },
+      {
+        label: readIntelWidgetState() === 'hidden' ? 'Show Intel Widget' : 'Hide Intel Widget',
+        icon: <RadioTower size={14} />,
+        action: () => {
+          const isHidden = readIntelWidgetState() === 'hidden';
+          writeIntelWidgetState(isHidden ? 'collapsed' : 'hidden');
+          window.dispatchEvent(new Event('thamos:intel-widget-changed'));
+        },
+      },
       { type: 'divider' },
       { label: 'Workspace 1', action: () => desktop.switchWorkspace(1), shortcut: 'Ctrl+1' },
       { label: 'Workspace 2', action: () => desktop.switchWorkspace(2), shortcut: 'Ctrl+2' },
@@ -327,6 +337,8 @@ function DesktopContent() {
 
       <DesktopIcons />
       <DesktopClock />
+      {/* Sits above the wallpaper/icons layer (z-15) but below windows (z>=101), so open windows overlap it. */}
+      <IntelWidget />
 
       {visibleWindows.map(window => (
         <DesktopWindow key={window.id} id={window.id}>
