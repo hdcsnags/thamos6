@@ -17,6 +17,7 @@ interface Agent {
   temperature: number;
   max_tokens: number;
   is_default: boolean;
+  tools?: string | null;
 }
 
 interface ChatMessage {
@@ -153,10 +154,11 @@ const AGENT_COLOR: Record<string, string> = {
   openrouter: '#9370DB',
 };
 
-const DEFAULT_AGENTS = [
+const DEFAULT_AGENTS: Array<Omit<Agent, 'id'>> = [
   { name: 'Claude', provider: 'anthropic' as const, model: 'claude-sonnet-4-20250514', system_prompt: 'You are Claude, a cybersecurity analyst operating within ThamOS T6. Be precise, technical, and actionable.', temperature: 0.7, max_tokens: 8192, is_default: true },
   { name: 'GPT', provider: 'openai' as const, model: 'gpt-4.1', system_prompt: 'You are GPT, a cybersecurity analyst operating within ThamOS T6. Be precise, technical, and actionable.', temperature: 0.7, max_tokens: 8192, is_default: false },
   { name: 'Gemini', provider: 'google' as const, model: 'gemini-2.5-pro', system_prompt: 'You are Gemini, a cybersecurity analyst operating within ThamOS T6. Be precise, technical, and actionable.', temperature: 0.7, max_tokens: 8192, is_default: false },
+  { name: 'MS Learn', provider: 'openai' as const, model: 'gpt-4o-mini', system_prompt: 'You are the ThamOS Microsoft Learn assistant for a school board IT team. Always use your microsoft_docs_search, microsoft_docs_fetch, and microsoft_code_sample_search tools to ground every answer in official Microsoft documentation — never answer Microsoft product questions from memory alone. Cite the documentation URLs you used. If the docs are ambiguous or missing, say so.', temperature: 0.3, max_tokens: 4096, is_default: false, tools: 'mslearn' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -464,6 +466,14 @@ export function T6() {
     if (!user) return;
     const { data } = await supabase.from('ai_agents').select('*').order('is_default', { ascending: false });
     if (data && data.length > 0) {
+      // Self-heal: existing users seeded before the MS Learn agent existed get it added.
+      if (!data.some((a: Agent) => a.tools === 'mslearn')) {
+        const msLearn = DEFAULT_AGENTS.find(a => a.tools === 'mslearn');
+        if (msLearn) {
+          const { data: inserted } = await supabase.from('ai_agents').insert({ ...msLearn, user_id: user.id }).select().maybeSingle();
+          if (inserted) data.push(inserted);
+        }
+      }
       setAgents(data);
       if (!selectedAgent) setSelectedAgent(data.find((a: Agent) => a.is_default) || data[0]);
       if (activeAgentIds.size === 0) {
@@ -563,6 +573,7 @@ export function T6() {
           messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: text }],
           system_prompt: buildSystemPrompt(selectedAgent),
           temperature: selectedAgent.temperature, max_tokens: selectedAgent.max_tokens,
+          tools: selectedAgent.tools || undefined,
         }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
@@ -612,6 +623,7 @@ export function T6() {
             messages: [{ role: 'user', content: prompt }],
             system_prompt: buildSystemPrompt(agent),
             temperature: agent.temperature, max_tokens: agent.max_tokens,
+            tools: agent.tools || undefined,
           }),
         });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }

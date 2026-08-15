@@ -218,6 +218,20 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-15 — MS Learn MCP Agent in Thamos (T6 Workshop)
+**Agent:** GitHub Copilot CLI (Claude Fable 5)
+**Scope:** Give DSBN users grounded Microsoft answers for pennies — a tool-enabled agent inside the existing Thamos app, wired to the public Microsoft Learn MCP server.
+
+**Completed:**
+- [x] Migration `20260815120000`: `ai_agents.tools text` column (NULL = plain chat; `'mslearn'` = tool-grounded). Applied to remote.
+- [x] **`ai-chat` edge function**: minimal MCP client for `https://learn.microsoft.com/api/mcp` (Streamable HTTP/JSON-RPC, initialize handshake + session header, SSE response parsing, re-init retry) with hardcoded schemas for the 3 Learn tools (`microsoft_docs_search`/`docs_fetch`/`code_sample_search`). Tool-calling loops for OpenAI-compatible (OpenAI + OpenRouter) and Anthropic providers, max 5 rounds then a forced no-tools synthesis round; 50KB per-tool-result cap. Google + tools → 400 with guidance. Deployed.
+- [x] **T6 workshop**: `Agent.tools` field; new default agent **MS Learn** (gpt-4o-mini, temp 0.3, cite-your-sources system prompt); self-heal insert for users seeded before the agent existed; `tools` passed through single-chat and council dispatches.
+- [x] MCP flow smoke-tested live against learn.microsoft.com (initialize → notifications/initialized → tools/call, 25KB doc payload returned).
+
+**Notes:** Runs on users' own API keys (`user_api_keys`), not subscriptions. Full ai-chat path not E2E-tested in-session (needs a logged-in user + OpenAI key) — logic mirrors the verified MCP script. Decision logged: VPS terminal stays the personal power path; Maestro is not being wired into t6 — only UI patterns may be borrowed for the Thamos app later.
+
+---
+
 ### Sprint 2026-08-13c — urlscan.io Detonation Wiring (URL Scanner)
 **Agent:** GitHub Copilot CLI (Claude Fable 5)
 **Scope:** Close the half-wired urlscan integration — scans were submitted but results never fetched or rendered.
