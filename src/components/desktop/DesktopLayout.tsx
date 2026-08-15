@@ -456,7 +456,7 @@ function renderWindowContent(appId: string, data?: any) {
     case 'workshop':
       return <DesktopWorkshop />;
     case 'intel':
-      return <DesktopIntelDashboard />;
+      return <DesktopIntelDashboard data={data} />;
     case 'cases':
       return <DesktopCaseManager />;
     case 'files':

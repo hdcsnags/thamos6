@@ -72,9 +72,19 @@ function ransomwareUrl(path: string) {
   return `${SUPABASE_URL}/functions/v1/ransomware-intel${path}`;
 }
 
-export function DesktopIntelDashboard() {
+interface DesktopIntelDashboardProps {
+  data?: { feed?: string; sub?: string; limit?: number };
+}
+
+export function DesktopIntelDashboard({ data }: DesktopIntelDashboardProps = {}) {
   const { openWindow } = useDesktop();
-  const [topTab, setTopTab] = useState<TopTab>('feeds');
+  const [topTab, setTopTab] = useState<TopTab>(data?.feed === 'ransomware' ? 'ransomware' : 'feeds');
+
+  // React to new data being pushed into an already-open window (e.g. re-opening
+  // the same intel window with a different requested feed).
+  useEffect(() => {
+    if (data?.feed === 'ransomware') setTopTab('ransomware');
+  }, [data?.feed]);
 
   // ── Feeds state ──────────────────────────────────────────────────────────────
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -86,6 +96,7 @@ export function DesktopIntelDashboard() {
   const [search, setSearch] = useState('');
   const [extractedIOCs, setExtractedIOCs] = useState<Array<{ type: string; value: string }> | null>(null);
   const hasAutoRefreshed = useRef(false);
+  const newestPubRef = useRef(0);
 
   // ── Ransomware state ──────────────────────────────────────────────────────────
   const [rsSummary, setRsSummary] = useState<RansomwareSummary | null>(null);
@@ -140,6 +151,10 @@ export function DesktopIntelDashboard() {
       const data = await res.json();
       const feedItems: FeedItem[] = data.items || [];
       setItems(feedItems);
+      newestPubRef.current = feedItems.reduce((max, i) => {
+        const t = i.pub_date ? new Date(i.pub_date).getTime() : 0;
+        return t > max ? t : max;
+      }, 0);
       return feedItems.length;
     } catch (e) {
       setFeedError(String(e));
@@ -163,10 +178,13 @@ export function DesktopIntelDashboard() {
     }
   }, [loadItems]);
 
-  // Initial load + auto-refresh every 20 min
+  // Initial load; auto-pull fresh intel when the feed is empty OR stale (>60 min)
   useEffect(() => {
     loadItems().then(count => {
-      if (count === 0 && !hasAutoRefreshed.current) {
+      if (hasAutoRefreshed.current) return;
+      const newest = newestPubRef.current;
+      const stale = Date.now() - newest > 60 * 60 * 1000;
+      if (count === 0 || stale) {
         hasAutoRefreshed.current = true;
         refreshFeeds();
       }
@@ -253,11 +271,18 @@ export function DesktopIntelDashboard() {
     setRsLoading(true);
     setRsError(null);
     try {
-      const headers = { apikey: ANON_KEY };
+      // These endpoints require a signed-in user, not just the anon key.
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { apikey: ANON_KEY };
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
       const [summaryRes, victimsRes] = await Promise.all([
         fetch(ransomwareUrl('/summary'), { headers }),
         fetch(`${ransomwareUrl('/victims')}?limit=50`, { headers }),
       ]);
+      if (!summaryRes.ok && !victimsRes.ok) {
+        const e = await victimsRes.json().catch(() => ({}));
+        throw new Error(e.error || `HTTP ${victimsRes.status}`);
+      }
       if (summaryRes.ok) {
         const s = await summaryRes.json();
         setRsSummary(s);
@@ -265,9 +290,22 @@ export function DesktopIntelDashboard() {
       if (victimsRes.ok) {
         const v = await victimsRes.json();
         setRsVictims(v.victims || []);
+        // Empty table → trigger a sync and reload once (first-run population).
+        if ((v.victims || []).length === 0) {
+          const syncRes = await fetch(ransomwareUrl('/sync'), { headers });
+          const sync = await syncRes.json().catch(() => ({}));
+          if (!syncRes.ok || !sync.success) {
+            throw new Error(sync.error || 'Ransomware sync failed');
+          }
+          const retry = await fetch(`${ransomwareUrl('/victims')}?limit=50`, { headers });
+          if (retry.ok) {
+            const rv = await retry.json();
+            setRsVictims(rv.victims || []);
+          }
+        }
       }
     } catch (e) {
-      setRsError(String(e));
+      setRsError(e instanceof Error ? e.message : String(e));
     } finally {
       setRsLoading(false);
     }

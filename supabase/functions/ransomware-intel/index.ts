@@ -104,25 +104,31 @@ async function fetchRansomwareLiveData(): Promise<RansomwareLiveVictim[] | null>
   const cached = await getCachedData(cacheKey);
   if (cached) return cached;
 
-  try {
-    const response = await fetch("https://api.ransomware.live/v2/recentvictims", {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "ThreatIntelPlatform/1.0"
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    await setCachedData(cacheKey, data);
-    return data;
-  } catch (error) {
-    console.error("Failed to fetch ransomware.live data:", error);
-    return null;
+  // ransomware.live retired the free v2 API — api-pro requires a (free) key.
+  const apiKey = Deno.env.get("RANSOMWARE_LIVE_API_KEY") ?? "";
+  if (!apiKey) {
+    throw new Error("RANSOMWARE_LIVE_API_KEY not configured. Register free at ransomware.live and set the secret: supabase secrets set RANSOMWARE_LIVE_API_KEY=<key>");
   }
+
+  const response = await fetch("https://api-pro.ransomware.live/victims/recent", {
+    headers: {
+      "Accept": "application/json",
+      "X-API-KEY": apiKey,
+      "User-Agent": "ThamOS-T6/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`ransomware.live api-pro HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  // api-pro may return a bare array or wrap it
+  const victims: RansomwareLiveVictim[] = Array.isArray(data)
+    ? data
+    : (data?.victims ?? data?.data ?? []);
+  if (victims.length > 0) await setCachedData(cacheKey, victims);
+  return victims;
 }
 
 async function syncVictimData(victims: RansomwareLiveVictim[]): Promise<void> {
@@ -220,20 +226,25 @@ Deno.serve(async (req: Request) => {
     const path = url.pathname.replace("/ransomware-intel", "");
 
     if (path === "/sync" || path === "/sync/") {
-      const rawData = await fetchRansomwareLiveData();
-      
-      if (rawData && Array.isArray(rawData)) {
-        await syncVictimData(rawData);
+      try {
+        const rawData = await fetchRansomwareLiveData();
+        if (rawData && Array.isArray(rawData) && rawData.length > 0) {
+          await syncVictimData(rawData);
+          return new Response(
+            JSON.stringify({ success: true, synced: rawData.length }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         return new Response(
-          JSON.stringify({ success: true, synced: rawData.length }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ success: false, error: "No data retrieved from ransomware.live" }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ success: false, error: e instanceof Error ? e.message : String(e) }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      return new Response(
-        JSON.stringify({ success: false, error: "No data retrieved" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
     if (path === "/summary" || path === "/summary/") {
@@ -255,11 +266,33 @@ Deno.serve(async (req: Request) => {
       const country = url.searchParams.get("country");
       const groupId = url.searchParams.get("group_id");
 
+      // Self-heal: if the newest victim is stale (>12h) kick a background sync.
+      // Current data is served immediately; the next load sees fresh rows.
+      try {
+        const { data: newest } = await serviceClient
+          .from("ransomware_victims")
+          .select("created_at")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const newestAge = newest?.created_at ? Date.now() - new Date(newest.created_at).getTime() : Infinity;
+        if (newestAge > 12 * 60 * 60 * 1000) {
+          const syncPromise = fetchRansomwareLiveData()
+            .then((raw) => (raw && raw.length > 0 ? syncVictimData(raw) : undefined))
+            .catch((e) => console.error("Background ransomware sync failed:", e));
+          // deno-lint-ignore no-explicit-any
+          (globalThis as any).EdgeRuntime?.waitUntil?.(syncPromise);
+        }
+      } catch (e) {
+        console.error("Staleness check failed:", e);
+      }
+
+      // Left join (no !inner): victims without a group attribution still show.
       let query = serviceClient
         .from("ransomware_victims")
         .select(`
           *,
-          victim_group_associations!inner(
+          victim_group_associations(
             group:threat_actor_groups(*)
           )
         `)

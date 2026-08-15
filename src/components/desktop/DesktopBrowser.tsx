@@ -64,7 +64,15 @@ function normalizeUrl(input: string): string {
   if (isInternalUrl(trimmed)) return trimmed;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.includes('.') && !trimmed.includes(' ')) return `https://${trimmed}`;
-  return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+}
+
+// ThamOS cannot render any external site inline (no proxy, and most sites send
+// X-Frame-Options/CSP headers that block iframing). Search queries always
+// resolve to a Google search URL, which never permits framing, so we skip the
+// doomed iframe attempt for those and go straight to the "open externally" notice.
+function isGoogleSearchUrl(url: string): boolean {
+  return url.startsWith('https://www.google.com/search?q=');
 }
 
 export function DesktopBrowser() {
@@ -106,7 +114,7 @@ export function DesktopBrowser() {
         historyIndex: newIndex,
         canGoBack: newIndex > 0,
         canGoForward: newIndex < newHistory.length - 1,
-        iframeBlocked: false,
+        iframeBlocked: isGoogleSearchUrl(url),
       };
     }));
     setUrlInput(url);
@@ -124,7 +132,7 @@ export function DesktopBrowser() {
         historyIndex: newIndex,
         canGoBack: newIndex > 0,
         canGoForward: true,
-        iframeBlocked: false,
+        iframeBlocked: isGoogleSearchUrl(url),
       };
     }));
   }, [activeTabId]);
@@ -141,7 +149,7 @@ export function DesktopBrowser() {
         historyIndex: newIndex,
         canGoBack: true,
         canGoForward: newIndex < t.history.length - 1,
-        iframeBlocked: false,
+        iframeBlocked: isGoogleSearchUrl(url),
       };
     }));
   }, [activeTabId]);
@@ -396,6 +404,7 @@ export function DesktopBrowser() {
                 type="text"
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
+                placeholder="thamos:// address — external sites open in a new tab"
                 className="flex-1 text-xs bg-transparent border-none outline-none"
                 style={{ color: P.textLight, fontFamily: typography.ui }}
               />
@@ -466,18 +475,37 @@ export function DesktopBrowser() {
           <div className="h-full flex items-center justify-center" style={{ backgroundColor: P.void }}>
             <div className="text-center max-w-md">
               <AlertTriangle size={32} style={{ color: P.amber, opacity: 0.6 }} className="mx-auto mb-3" />
-              <p className="text-sm font-medium mb-1" style={{ color: P.textLight }}>This site cannot be embedded</p>
-              <p className="text-xs mb-4" style={{ color: P.dim }}>
-                {activeTab.url} has restricted iframe embedding for security reasons.
-              </p>
-              <button
-                onClick={openExternal}
-                className="flex items-center gap-2 mx-auto px-4 py-2 text-xs font-medium rounded transition-all"
-                style={{ backgroundColor: `${P.blue}15`, border: `1px solid ${P.blue}40`, color: P.blue }}
-              >
-                <ExternalLink size={12} />
-                OPEN IN NEW TAB
-              </button>
+              {isGoogleSearchUrl(activeTab.url) ? (
+                <>
+                  <p className="text-sm font-medium mb-1" style={{ color: P.textLight }}>ThamOS can't run web searches inline</p>
+                  <p className="text-xs mb-4" style={{ color: P.dim }}>
+                    The browser can only open thamos:// pages inside ThamOS. Open this search in a real browser tab instead.
+                  </p>
+                  <button
+                    onClick={openExternal}
+                    className="flex items-center gap-2 mx-auto px-4 py-2 text-xs font-medium rounded transition-all"
+                    style={{ backgroundColor: `${P.blue}15`, border: `1px solid ${P.blue}40`, color: P.blue }}
+                  >
+                    <ExternalLink size={12} />
+                    SEARCH ON GOOGLE
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium mb-1" style={{ color: P.textLight }}>This site cannot be embedded</p>
+                  <p className="text-xs mb-4" style={{ color: P.dim }}>
+                    {activeTab.url} has restricted iframe embedding for security reasons.
+                  </p>
+                  <button
+                    onClick={openExternal}
+                    className="flex items-center gap-2 mx-auto px-4 py-2 text-xs font-medium rounded transition-all"
+                    style={{ backgroundColor: `${P.blue}15`, border: `1px solid ${P.blue}40`, color: P.blue }}
+                  >
+                    <ExternalLink size={12} />
+                    OPEN IN NEW TAB
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ) : (
@@ -529,7 +557,7 @@ function HomePage() {
                   setQuickUrl('');
                 }
               }}
-              placeholder="Search the web or enter an address"
+              placeholder="Enter a thamos:// address, or search — external sites open in a new tab"
               className="h-12 flex-1 bg-transparent text-sm"
               style={{ color: P.textLight, fontFamily: typography.ui }}
             />
@@ -659,10 +687,8 @@ function HistoryPage() {
 }
 
 function RansomwarePage() {
-  // Render the intel dashboard pointing at the ransomware tab directly.
-  // Since DesktopIntelDashboard manages its own state, navigate to it via the browser event,
-  // and display inline import of DesktopIntelDashboard with ransomware pre-selected.
-  return <DesktopIntelDashboard />;
+  // Render the intel dashboard pre-selected to the ransomware tab.
+  return <DesktopIntelDashboard data={{ feed: 'ransomware' }} />;
 }
 
 function NotFoundPage() {
