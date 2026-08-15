@@ -11,6 +11,7 @@ interface Agent {
   temperature: number;
   max_tokens: number;
   is_default: boolean;
+  tools?: string | null;
 }
 
 const PROVIDER_MODELS: Record<string, { label: string; models: string[] }> = {
@@ -44,6 +45,7 @@ export default function AgentConfigModal({ agents, onClose, onSave, userId }: Pr
           system_prompt: editingAgent.system_prompt || '',
           temperature: editingAgent.temperature ?? 0.7,
           max_tokens: editingAgent.max_tokens ?? 4096,
+          tools: editingAgent.provider === 'google' ? null : (editingAgent.tools || null),
         }).eq('id', editingAgent.id);
       } else {
         await supabase.from('ai_agents').insert({
@@ -54,6 +56,7 @@ export default function AgentConfigModal({ agents, onClose, onSave, userId }: Pr
           system_prompt: editingAgent.system_prompt || '',
           temperature: editingAgent.temperature ?? 0.7,
           max_tokens: editingAgent.max_tokens ?? 4096,
+          tools: editingAgent.provider === 'google' ? null : (editingAgent.tools || null),
           is_default: false,
         });
       }
@@ -86,6 +89,9 @@ export default function AgentConfigModal({ agents, onClose, onSave, userId }: Pr
                 <div>
                   <span className="text-white font-medium">{agent.name}</span>
                   <span className="ml-2 text-xs text-gray-400">{agent.provider} / {agent.model}</span>
+                  {agent.tools === 'mslearn' && (
+                    <span className="ml-2 px-1.5 py-0.5 text-[10px] rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">MS LEARN</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -159,6 +165,17 @@ export default function AgentConfigModal({ agents, onClose, onSave, userId }: Pr
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white focus:ring-2 focus:ring-cyan-500 resize-none"
                 />
               </div>
+              <label className={`flex items-center gap-2 text-xs ${editingAgent.provider === 'google' ? 'text-gray-600 cursor-not-allowed' : 'text-gray-300 cursor-pointer'}`}>
+                <input
+                  type="checkbox"
+                  disabled={editingAgent.provider === 'google'}
+                  checked={editingAgent.tools === 'mslearn' && editingAgent.provider !== 'google'}
+                  onChange={(e) => setEditingAgent({ ...editingAgent, tools: e.target.checked ? 'mslearn' : null })}
+                  className="accent-cyan-500"
+                />
+                Ground answers with Microsoft Learn docs (MCP tools)
+                {editingAgent.provider === 'google' && <span className="text-gray-600">— not supported on Google</span>}
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Temperature ({editingAgent.temperature ?? 0.7})</label>

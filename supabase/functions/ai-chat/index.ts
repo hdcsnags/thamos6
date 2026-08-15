@@ -200,6 +200,7 @@ async function callOpenAICompatibleWithTools(
   }));
   const session: McpSession = { initialized: false };
   let totalTokens = 0;
+  let toolCallsMade = 0;
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const lastRound = round === MAX_TOOL_ROUNDS;
@@ -216,7 +217,8 @@ async function callOpenAICompatibleWithTools(
         temperature,
         max_tokens: maxTokens,
         // Final round: withhold tools to force a synthesized answer.
-        ...(lastRound ? {} : { tools }),
+        // First round: force a tool call — small models skip grounding otherwise.
+        ...(lastRound ? {} : { tools, tool_choice: round === 0 ? "required" : "auto" }),
       }),
     });
     if (!response.ok) {
@@ -227,10 +229,11 @@ async function callOpenAICompatibleWithTools(
     totalTokens += data.usage?.total_tokens || 0;
     const msg = data.choices?.[0]?.message;
     if (!msg?.tool_calls?.length) {
-      return { content: msg?.content || "", tokens_used: totalTokens };
+      return { content: msg?.content || "", tokens_used: totalTokens, tool_calls: toolCallsMade };
     }
     allMessages.push(msg);
     for (const tc of msg.tool_calls) {
+      toolCallsMade++;
       let resultText: string;
       try {
         const args = JSON.parse(tc.function?.arguments || "{}");
@@ -241,7 +244,7 @@ async function callOpenAICompatibleWithTools(
       allMessages.push({ role: "tool", tool_call_id: tc.id, content: resultText });
     }
   }
-  return { content: "", tokens_used: totalTokens };
+  return { content: "", tokens_used: totalTokens, tool_calls: toolCallsMade };
 }
 
 async function callAnthropicWithTools(
@@ -260,6 +263,7 @@ async function callAnthropicWithTools(
   }));
   const session: McpSession = { initialized: false };
   let totalTokens = 0;
+  let toolCallsMade = 0;
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const lastRound = round === MAX_TOOL_ROUNDS;
@@ -276,7 +280,7 @@ async function callAnthropicWithTools(
         system: systemPrompt || undefined,
         temperature,
         max_tokens: maxTokens,
-        ...(lastRound ? {} : { tools }),
+        ...(lastRound ? {} : { tools, tool_choice: { type: round === 0 ? "any" : "auto" } }),
       }),
     });
     if (!response.ok) {
@@ -291,12 +295,13 @@ async function callAnthropicWithTools(
         .filter((b: any) => b.type === "text")
         .map((b: any) => b.text)
         .join("\n");
-      return { content: text, tokens_used: totalTokens };
+      return { content: text, tokens_used: totalTokens, tool_calls: toolCallsMade };
     }
 
     allMessages.push({ role: "assistant", content: data.content });
     const toolResults: any[] = [];
     for (const block of (data.content ?? []).filter((b: any) => b.type === "tool_use")) {
+      toolCallsMade++;
       let resultText: string;
       try {
         resultText = await callMsLearnTool(block.name, block.input ?? {}, session);
@@ -307,7 +312,7 @@ async function callAnthropicWithTools(
     }
     allMessages.push({ role: "user", content: toolResults });
   }
-  return { content: "", tokens_used: totalTokens };
+  return { content: "", tokens_used: totalTokens, tool_calls: toolCallsMade };
 }
 
 async function deriveEncryptionKey(): Promise<CryptoKey> {
@@ -609,7 +614,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    let result: { content: string; tokens_used: number };
+    let result: { content: string; tokens_used: number; tool_calls?: number };
 
     if (tools === "mslearn") {
       // Tool-grounded path: model loops against the Microsoft Learn MCP server.
@@ -646,6 +651,7 @@ Deno.serve(async (req: Request) => {
           provider,
           model,
           tools: "mslearn",
+          tool_calls: result.tool_calls ?? 0,
         }),
         { status: 200, headers: { ...cors, "Content-Type": "application/json" } }
       );

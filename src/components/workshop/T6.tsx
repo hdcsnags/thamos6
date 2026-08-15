@@ -578,9 +578,11 @@ export function T6() {
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
       const d = await res.json();
-      const assistantMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: d.content, created_at: new Date().toISOString(), tokens_used: d.tokens_used || 0, model_used: d.model };
+      // Make grounding visible: show how many MS Learn lookups backed the answer.
+      const modelLabel = d.tools === 'mslearn' ? `${d.model} · ${d.tool_calls || 0} Learn lookup${(d.tool_calls || 0) === 1 ? '' : 's'}` : d.model;
+      const assistantMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: d.content, created_at: new Date().toISOString(), tokens_used: d.tokens_used || 0, model_used: modelLabel };
       setMessages(prev => [...prev, assistantMsg]);
-      await supabase.from('ai_messages').insert({ conversation_id: convId, role: 'assistant', content: d.content, tokens_used: d.tokens_used || 0, model_used: d.model });
+      await supabase.from('ai_messages').insert({ conversation_id: convId, role: 'assistant', content: d.content, tokens_used: d.tokens_used || 0, model_used: modelLabel });
       await supabase.from('ai_conversations').update({ message_count: messages.length + 2, last_message_at: new Date().toISOString(), title: messages.length === 0 ? text.substring(0, 60) : convTitle }).eq('id', convId);
       loadConversations();
       setPhase('idle');
