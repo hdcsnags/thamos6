@@ -218,6 +218,26 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-19g — Bulk Lookup Phase 1 Correctness Fixes (Sol follow-up)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Sol reviewed the persisted-artifact work (2026-08-19f) and flagged 8 correctness/integrity issues. Verified each against the code before acting rather than applying all blindly.
+
+**Fixed:**
+- [x] Deep-enrich integrity: `/ip/deep-enrich` now derives `ip` from the stored artifact's `ip_address` column server-side instead of trusting a client-supplied `ip` alongside the artifact `id` — closes a mismatched-pair integrity gap. Client `deepEnrichIPArtifact()` no longer sends/needs `ip`.
+- [x] Graph gap: `/bulk` now calls `saveIPScanGraph()` per IP (previously only `/ip` and `/ip/deep-enrich` wrote `scan_observations`/graph edges) — a freshly bulk-scanned batch is graph-visible immediately, not only after each IP is individually deep-enriched.
+- [x] Provenance: deep-enrich now preserves the pre-enrichment bulk snapshot as `result.initialSnapshot` (checkedAt/score/source-count) instead of silently overwriting it; already-enriched artifacts keep their *original* bulk snapshot rather than nesting repeatedly. `IPResult.tsx` shows an inline provenance note when viewing an enriched artifact.
+- [x] Failure isolation: deep-enrich failures now use a separate `enrichError` state with a dismissible inline `Callout`, instead of the shared `error` state that was blanking the whole page (replacing a valid loaded report with a full-page error) on a failed enrich call.
+- [x] UI wording: Bulk Lookup's per-row action now reads "Open report" (was "Full scan") to match what it actually does — an instant artifact read, not a rescan.
+
+**Reviewed and NOT changed (with reasoning):**
+- Artifact-read authorization scoping (`ctx.cacheContext`, not `user_id`) — verified against migration `20251229145223_fix_dsbn_shared_history.sql`, which explicitly implements DSBN org-wide lookup sharing for team collaboration. Context-scoping is the correct analog of that documented RLS policy for the service-role edge function; switching to `user_id`-only would break intended behavior. Relayed this correction back to Sol.
+- Evidence fidelity (per-source error/status dropped, only provider `.data` kept) and scoring divergence (`ip_lookups.threat_score`/graph verdicts use the legacy score; calibrated score is UI-only) — both are pre-existing patterns already shared with `/ip`, not introduced by bulk. Flagged as Phase 2 (Evidence Matrix) prerequisites rather than fixed piecemeal.
+- Concurrency limiting for large batches (20 IPs × ~14 sources ≈ 280 concurrent requests) — deferred pending evidence of an actual rate-limit/timeout problem in production use.
+
+`npm run build` + `tsc --noEmit` clean; `threat-intel` deployed live; committed/pushed (`312806c`).
+
+---
+
 ### Sprint 2026-08-19f — Bulk Lookup Phase 1: Persisted Scan Artifacts (Sol audit)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
 **Scope:** Sol (another agent) audited Bulk Lookup and found the "Full scan" drill-down (shipped in 2026-08-19e) was hollow: `/bulk` computes a full ip_lookups-shaped result per IP — raw source data, enrichment, calibrated scoring — then discards all of it except a thin summary. Nothing was persisted, so clicking "Full scan" just re-ran the entire `/ip` pipeline from scratch (cache-assisted, but still a second live orchestration). Sol also proposed a much larger "Batch Investigation Workbench" (Triage/Correlation/Evidence/Report tabs) — user picked Phase 1 (persist artifacts + Open report/Deep enrich) as the starting point; later phases are deferred pending design work.
