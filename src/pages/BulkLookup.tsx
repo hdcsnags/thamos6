@@ -1,22 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, Loader2, Download, AlertTriangle, Info, MapPin, Server, Radio, Ban, Pencil, ArrowUpRight, Layers } from 'lucide-react';
+import { Search, Loader2, Download, AlertTriangle, Info, Pencil, Layers, ListChecks, GitBranch, Grid3x3, FileText } from 'lucide-react';
 import { bulkLookupIPs, isValidIP } from '../lib/threatIntel';
 import type { BulkIPResult } from '../types';
 import { palette, typography } from '../design-system/tokens';
-import { Pill, Callout, ResultCard, StatCell, SectionHeader, type Tone, toneColor, toneBg } from '../components/results';
+import { Callout, ResultCard, SectionHeader } from '../components/results';
+import { BulkTriageView } from '../components/bulk/BulkTriageView';
+import { CorrelationMap } from '../components/bulk/CorrelationMap';
+import { BatchReport } from '../components/bulk/BatchReport';
 
-// Calibrated verdict → tone, matching the single-IP result page's mapping.
-const VERDICT_TONE: Record<string, { label: string; tone: Tone }> = {
-  malicious: { label: 'Malicious', tone: 'danger' },
-  suspicious: { label: 'Suspicious', tone: 'warn' },
-  low_signal: { label: 'Low signal', tone: 'accent' },
-  no_signal: { label: 'No signal', tone: 'good' },
-};
-
-function verdictFor(result: BulkIPResult): { label: string; tone: Tone } {
-  if (result.scoring) return VERDICT_TONE[result.scoring.verdict] ?? VERDICT_TONE.no_signal;
-  return result.isMalicious ? VERDICT_TONE.malicious : VERDICT_TONE.no_signal;
-}
+type WorkbenchTab = 'triage' | 'correlation' | 'evidence' | 'report';
 
 interface BulkLookupProps {
   /** Pre-fill (and auto-run) with IPs handed off from another surface, e.g. the Terminal's `scan -ip a,b,c`. */
@@ -37,6 +29,8 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
   // results instead of leaving the user staring at the form with no cue to
   // scroll down.
   const [inputCollapsed, setInputCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('triage');
+  const [triageFocusIPs, setTriageFocusIPs] = useState<string[] | null>(null);
   const autoRanFor = useRef<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -137,12 +131,13 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
     URL.revokeObjectURL(url);
   };
 
-  const maliciousCount = results.filter(r => r.isMalicious).length;
-  const cleanCount = results.length - maliciousCount;
-  const proxyCount = results.filter(r => r.isProxy || r.isHosting).length;
-  const scannerCount = results.filter(r => r.isMassScanner).length;
-  const blockedCount = results.filter(r => r.spamhausListed).length;
   const validCount = parseIPs(input).length;
+  const batchId = results[0]?.batchId;
+
+  const openClusterInTriage = (ips: string[]) => {
+    setTriageFocusIPs(ips);
+    setActiveTab('triage');
+  };
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: palette.void, fontFamily: typography.ui }}>
@@ -161,7 +156,7 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="max-w-5xl mx-auto space-y-8">
+        <div className="max-w-7xl mx-auto space-y-8">
           {inputCollapsed && results.length > 0 && !loading ? (
             <div
               className="max-w-3xl flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg"
@@ -257,17 +252,32 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
 
           {results.length > 0 && (
             <div className="space-y-4" ref={resultsRef}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 flex-1">
-                  <StatCell label="Malicious" value={maliciousCount} tone="danger" />
-                  <StatCell label="Clean" value={cleanCount} tone="good" />
-                  <StatCell label="Proxy / DC" value={proxyCount} tone="warn" />
-                  <StatCell label="Scanners" value={scannerCount} tone="warn" />
-                  <StatCell label="Blocklisted" value={blockedCount} tone="danger" />
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex gap-1">
+                  {([
+                    { key: 'triage' as const, label: 'Triage', icon: ListChecks },
+                    { key: 'correlation' as const, label: 'Correlation', icon: GitBranch },
+                    { key: 'evidence' as const, label: 'Evidence', icon: Grid3x3 },
+                    { key: 'report' as const, label: 'Report', icon: FileText },
+                  ]).map(t => (
+                    <button
+                      key={t.key}
+                      onClick={() => { setActiveTab(t.key); if (t.key !== 'triage') setTriageFocusIPs(null); }}
+                      className="px-3.5 py-2 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors"
+                      style={{
+                        color: activeTab === t.key ? palette.textPrimary : palette.textTertiary,
+                        background: activeTab === t.key ? palette.float : 'transparent',
+                        border: `1px solid ${activeTab === t.key ? palette.borderActive : 'transparent'}`,
+                      }}
+                    >
+                      <t.icon className="w-3.5 h-3.5" />
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
                 <button
                   onClick={handleExportCSV}
-                  className="h-9 px-3.5 rounded-md flex items-center gap-2 text-xs font-medium shrink-0 transition-colors hover:brightness-125"
+                  className="h-8 px-3 rounded-md flex items-center gap-2 text-xs font-medium shrink-0 transition-colors hover:brightness-125"
                   style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.textSecondary }}
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -275,154 +285,31 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
                 </button>
               </div>
 
-              <div className="rounded-lg overflow-hidden" style={{ background: palette.base, border: `1px solid ${palette.borderDefault}` }}>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${palette.borderDefault}` }}>
-                        {['Verdict', 'IP address', 'Location', 'Type', 'Score', 'Scanner', 'Blocklist', 'Intel', ''].map(h => (
-                          <th
-                            key={h || 'actions'}
-                            className="px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider whitespace-nowrap"
-                            style={{ color: palette.textTertiary }}
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.map((result, idx) => {
-                        const verdict = verdictFor(result);
-                        const score = result.scoring?.calibrated ?? result.threatScore;
-                        return (
-                          <tr
-                            key={idx}
-                            style={{
-                              borderTop: idx === 0 ? 'none' : `1px solid ${palette.borderSubtle}`,
-                              background: verdict.tone === 'danger' ? toneBg('danger', 0.05) : 'transparent',
-                            }}
-                          >
-                            <td className="px-3 py-2.5"><Pill label={verdict.label} tone={verdict.tone} /></td>
-                            <td className="px-3 py-2.5">
-                              <span className="text-sm" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>
-                                {result.ip}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              {result.country ? (
-                                <div className="flex items-center gap-1.5">
-                                  <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: palette.textTertiary }} />
-                                  <span className="text-sm whitespace-nowrap" style={{ color: palette.textSecondary }}>
-                                    {result.city && `${result.city}, `}{result.countryCode || result.country}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-sm" style={{ color: palette.textDisabled }}>Unknown</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {result.isTor && <Pill label="Tor" tone="danger" />}
-                                {result.isVPN && <Pill label={result.vpnService ? `VPN · ${result.vpnService}` : 'VPN'} tone="warn" />}
-                                {result.isProxy && <Pill label="Proxy" tone="warn" />}
-                                {result.isHosting && (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
-                                    style={{ color: palette.blue, background: toneBg('accent', 0.1), border: `1px solid ${palette.blue}40` }}
-                                  >
-                                    <Server className="w-3 h-3" /> DC
-                                  </span>
-                                )}
-                                {!result.isTor && !result.isVPN && !result.isProxy && !result.isHosting && (
-                                  <span className="text-xs" style={{ color: palette.textDisabled }}>—</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5" title={result.scoring?.legacyDivergence ?? undefined}>
-                              <span
-                                className="text-sm font-semibold tabular-nums"
-                                style={{ color: toneColor[verdict.tone] }}
-                              >
-                                {score}
-                              </span>
-                              {result.abuseConfidence != null && result.abuseConfidence > 0 && (
-                                <div className="text-[10px] whitespace-nowrap" style={{ color: palette.textTertiary }}>
-                                  {result.abuseConfidence}% abuse conf.
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              {result.isMassScanner ? (
-                                <div className="flex items-center gap-1.5">
-                                  <Radio
-                                    className="w-3.5 h-3.5"
-                                    style={{
-                                      color: result.greynoiseClassification === 'malicious'
-                                        ? palette.rose
-                                        : result.greynoiseClassification === 'benign'
-                                          ? palette.green
-                                          : palette.amber,
-                                    }}
-                                  />
-                                  <span
-                                    className="text-xs font-medium"
-                                    style={{
-                                      color: result.greynoiseClassification === 'malicious'
-                                        ? palette.rose
-                                        : result.greynoiseClassification === 'benign'
-                                          ? palette.green
-                                          : palette.amber,
-                                    }}
-                                  >
-                                    {result.greynoiseClassification || 'unknown'}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-xs" style={{ color: palette.textDisabled }}>—</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              {result.spamhausListed ? (
-                                <div className="flex items-center gap-1.5" title={result.spamhausLists?.join(', ')}>
-                                  <Ban className="w-3.5 h-3.5" style={{ color: palette.rose }} />
-                                  <span className="text-xs font-medium" style={{ color: palette.rose }}>
-                                    {result.spamhausLists?.length || 1}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-xs" style={{ color: palette.green }}>Clean</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <div className="flex items-center gap-1">
-                                {result.inThreatFox && <Pill label="TF" tone="danger" />}
-                                {result.inURLhaus && <Pill label="UH" tone="danger" />}
-                                {!result.inThreatFox && !result.inURLhaus && (
-                                  <span className="text-xs" style={{ color: palette.green }}>—</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              {onDrillDown && (
-                                <button
-                                  onClick={() => onDrillDown(result.ip, result.artifactId ?? undefined)}
-                                  title={`Open the saved scan report for ${result.ip} — hostname, full VPN/Tor detail, abuse reports, pivot graph`}
-                                  className="h-7 px-2.5 rounded-md flex items-center gap-1 text-xs font-medium whitespace-nowrap transition-colors hover:brightness-125"
-                                  style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.accent }}
-                                >
-                                  Open report
-                                  <ArrowUpRight className="w-3 h-3" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {activeTab === 'triage' && (
+                <BulkTriageView
+                  results={results}
+                  onDrillDown={onDrillDown}
+                  focusIPs={triageFocusIPs}
+                  onClearFocus={() => setTriageFocusIPs(null)}
+                />
+              )}
+
+              {activeTab === 'correlation' && (
+                <CorrelationMap results={results} onDrillDown={onDrillDown} onViewInTriage={openClusterInTriage} />
+              )}
+
+              {activeTab === 'evidence' && (
+                <ResultCard>
+                  <SectionHeader title="Evidence matrix — coming next" />
+                  <p className="text-sm mt-2" style={{ color: palette.textSecondary }}>
+                    A source-by-IP matrix (detected / clear / unavailable / error per provider) needs one small backend
+                    change first — persisting per-source status instead of just the aggregated flags bulk scans return
+                    today. That's queued as the next fast-follow on top of this workbench.
+                  </p>
+                </ResultCard>
+              )}
+
+              {activeTab === 'report' && <BatchReport results={results} batchId={batchId} />}
             </div>
           )}
 
