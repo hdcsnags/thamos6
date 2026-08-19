@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, ChevronRight, ChevronLeft, X, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useDesktop } from '../../contexts/DesktopContext';
 import { palette, typography } from '../../design-system/tokens';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -74,7 +73,6 @@ const catColor = (cat: string) => {
 };
 
 export function IntelWidget() {
-  const { openWindow } = useDesktop();
   const [state, setStateRaw] = useState<WidgetState>(readState);
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -254,7 +252,7 @@ export function IntelWidget() {
           <div
             key={item.id}
             role="button"
-            onClick={() => openWindow({ appId: 'intel', title: 'Intel Dashboard' })}
+            onClick={() => window.open(item.link, '_blank', 'noopener')}
             className="group flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-white/[0.04]"
             style={{ borderBottom: `1px solid ${palette.borderSubtle}` }}
           >

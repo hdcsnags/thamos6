@@ -10,6 +10,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const ABUSECH_AUTH_KEY = Deno.env.get("ABUSECH_AUTH_KEY") ?? "";
 
 const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -19,6 +20,67 @@ interface RSSItem {
   link: string;
   pubDate: string;
   guid: string;
+}
+
+// abuse.ch timestamps look like "2020-02-28 05:57:01" or "...UTC" — normalize to ISO.
+function parseAbuseChDate(s: string | null | undefined): string {
+  if (!s) return new Date().toISOString();
+  const iso = s.replace(" ", "T").replace(" UTC", "").replace(/UTC$/, "").trim();
+  const d = new Date(iso.endsWith("Z") ? iso : `${iso}Z`);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+// MalwareBazaar: form-encoded POST, query=get_recent&selector=time (past 60 min).
+async function fetchBazaarRecent(url: string): Promise<RSSItem[]> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Auth-Key": ABUSECH_AUTH_KEY, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "query=get_recent&selector=time",
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const json = await response.json();
+  if (json.query_status !== "ok" || !Array.isArray(json.data)) return [];
+  return json.data.map((s: any) => ({
+    title: `${s.signature || s.file_type_mime || "Unknown"} sample (${s.file_type || "?"})`,
+    description: `First seen ${s.first_seen || "?"} · MIME ${s.file_type_mime || "?"} · Size ${s.file_size ?? "?"} bytes${s.tags?.length ? ` · Tags: ${s.tags.join(", ")}` : ""}`,
+    link: `https://bazaar.abuse.ch/sample/${s.sha256_hash}/`,
+    pubDate: parseAbuseChDate(s.first_seen),
+    guid: s.sha256_hash,
+  }));
+}
+
+// URLhaus: GET with Auth-Key header, returns recent (past 3 days) additions.
+async function fetchUrlhausRecent(url: string): Promise<RSSItem[]> {
+  const response = await fetch(url, { headers: { "Auth-Key": ABUSECH_AUTH_KEY } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const json = await response.json();
+  if (json.query_status !== "ok" || !Array.isArray(json.urls)) return [];
+  return json.urls.map((u: any) => ({
+    title: `Malware URL: ${u.host || u.url}`,
+    description: `Status: ${u.url_status || "?"} · Threat: ${u.threat || "?"}${u.tags?.length ? ` · Tags: ${u.tags.join(", ")}` : ""}`,
+    link: u.urlhaus_reference || u.url,
+    pubDate: parseAbuseChDate(u.date_added),
+    guid: String(u.id ?? u.url),
+  }));
+}
+
+// ThreatFox: JSON POST, {"query":"get_iocs","days":N}. Max 7 days lookback.
+async function fetchThreatFoxRecent(url: string): Promise<RSSItem[]> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Auth-Key": ABUSECH_AUTH_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "get_iocs", days: 1 }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const json = await response.json();
+  if (json.query_status !== "ok" || !Array.isArray(json.data)) return [];
+  return json.data.map((ioc: any) => ({
+    title: `${ioc.malware_printable || ioc.threat_type_desc || "IOC"}: ${ioc.ioc}`,
+    description: `${ioc.threat_type_desc || ioc.threat_type || ""} · IOC type: ${ioc.ioc_type || "?"} · Confidence: ${ioc.confidence_level ?? "?"}%`,
+    link: ioc.reference || `https://threatfox.abuse.ch/ioc/${ioc.id}/`,
+    pubDate: parseAbuseChDate(ioc.first_seen),
+    guid: String(ioc.id),
+  }));
 }
 
 function extractText(xml: string, tag: string): string {
@@ -103,15 +165,27 @@ function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
-async function fetchAndStoreDefaultFeed(sourceId: string, url: string): Promise<{ success: boolean; itemsAdded: number; error?: string }> {
+async function fetchAndStoreDefaultFeed(sourceId: string, url: string, fetchType = "rss"): Promise<{ success: boolean; itemsAdded: number; error?: string }> {
   try {
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ThreatIntelBot/1.0)" },
-    });
-    if (!response.ok) return { success: false, itemsAdded: 0, error: `HTTP ${response.status}` };
+    let items: RSSItem[];
 
-    const xmlText = await response.text();
-    const items = parseRSSFeed(xmlText);
+    if (fetchType === "rss") {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; ThreatIntelBot/1.0)" },
+      });
+      if (!response.ok) return { success: false, itemsAdded: 0, error: `HTTP ${response.status}` };
+      const xmlText = await response.text();
+      items = parseRSSFeed(xmlText);
+    } else {
+      if (!ABUSECH_AUTH_KEY) {
+        return { success: false, itemsAdded: 0, error: "ABUSECH_AUTH_KEY secret not configured — register free at auth.abuse.ch and set the secret" };
+      }
+      if (fetchType === "abusech_bazaar") items = await fetchBazaarRecent(url);
+      else if (fetchType === "abusech_urlhaus") items = await fetchUrlhausRecent(url);
+      else if (fetchType === "abusech_threatfox") items = await fetchThreatFoxRecent(url);
+      else return { success: false, itemsAdded: 0, error: `Unknown fetch_type: ${fetchType}` };
+    }
+
     if (items.length === 0) return { success: false, itemsAdded: 0, error: "No items found" };
 
     let itemsAdded = 0;
@@ -219,7 +293,7 @@ Deno.serve(async (req: Request) => {
       if (!sources?.length) return errorResponse("No sources found", 404);
 
       const results = await Promise.all(
-        sources.map(s => fetchAndStoreDefaultFeed(s.id, s.url))
+        sources.map(s => fetchAndStoreDefaultFeed(s.id, s.url, s.fetch_type))
       );
 
       return jsonResponse({
@@ -446,7 +520,7 @@ Deno.serve(async (req: Request) => {
       const customSources = customRes.data ?? [];
 
       const [defaultResults, customResults] = await Promise.all([
-        Promise.all(defaultSources.map(s => fetchAndStoreDefaultFeed(s.id, s.url))),
+        Promise.all(defaultSources.map(s => fetchAndStoreDefaultFeed(s.id, s.url, s.fetch_type))),
         Promise.all(customSources.map(s => fetchAndStoreUserFeed(user.id, s.id, s.url))),
       ]);
 
