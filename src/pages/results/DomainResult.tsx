@@ -21,7 +21,7 @@ export default function DomainResult({ domain, onScan }: DomainResultProps) {
   const [error, setError] = useState('');
   const [result, setResult] = useState<DomainLookupResult | null>(null);
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
-  const [proMode, setProMode] = useState(false);
+  const [proMode, setProMode] = useState(true);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

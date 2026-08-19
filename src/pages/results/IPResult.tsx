@@ -56,7 +56,7 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
   const [error, setError] = useState('');
   const [result, setResult] = useState<IPLookupResult | null>(null);
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
-  const [proMode, setProMode] = useState(false);
+  const [proMode, setProMode] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

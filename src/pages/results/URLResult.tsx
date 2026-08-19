@@ -23,7 +23,7 @@ export default function URLResult({ url }: URLResultProps) {
   const [error, setError] = useState('');
   const [result, setResult] = useState<URLLookupResult | null>(null);
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
-  const [proMode, setProMode] = useState(false);
+  const [proMode, setProMode] = useState(true);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const [detonation, setDetonation] = useState<UrlscanDetonation | null>(null);

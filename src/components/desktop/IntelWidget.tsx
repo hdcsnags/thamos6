@@ -23,6 +23,7 @@ interface FeedItem {
 }
 
 const STORAGE_KEY = 'thamos.intelWidget';
+const NEWS_ONLY_KEY = 'thamos.intelWidget.newsOnly';
 type WidgetState = 'open' | 'collapsed' | 'hidden';
 const POLL_MS = 5 * 60 * 1000;
 const ITEM_LIMIT = 15;
@@ -42,6 +43,27 @@ function writeState(state: WidgetState) {
     localStorage.setItem(STORAGE_KEY, state);
   } catch {
     // ignore storage failures (private browsing, quota, etc.)
+  }
+}
+
+// Defaults to News-only: the abuse.ch IOC feeds (ThreatFox/URLhaus/MalwareBazaar)
+// are all tagged category "threats" and are high-volume — great for the full
+// Intel Stream tab, too noisy for a glanceable desktop ticker.
+function readNewsOnly(): boolean {
+  try {
+    const v = localStorage.getItem(NEWS_ONLY_KEY);
+    if (v === 'false') return false;
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
+function writeNewsOnly(v: boolean) {
+  try {
+    localStorage.setItem(NEWS_ONLY_KEY, String(v));
+  } catch {
+    // ignore
   }
 }
 
@@ -74,6 +96,7 @@ const catColor = (cat: string) => {
 
 export function IntelWidget() {
   const [state, setStateRaw] = useState<WidgetState>(readState);
+  const [newsOnly, setNewsOnlyRaw] = useState<boolean>(readNewsOnly);
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +107,11 @@ export function IntelWidget() {
     writeState(next);
     setStateRaw(next);
     window.dispatchEvent(new Event('thamos:intel-widget-changed'));
+  }, []);
+
+  const setNewsOnly = useCallback((next: boolean) => {
+    writeNewsOnly(next);
+    setNewsOnlyRaw(next);
   }, []);
 
   // React to the state being changed elsewhere (e.g. the desktop context menu toggle).
@@ -103,7 +131,10 @@ export function IntelWidget() {
       const headers: Record<string, string> = { apikey: ANON_KEY };
       if (isAuth) headers['Authorization'] = `Bearer ${session!.access_token}`;
 
-      const res = await fetch(`${newsFeedsUrl(endpoint)}?limit=${ITEM_LIMIT}`, { headers });
+      const res = await fetch(`${newsFeedsUrl(endpoint)}?${new URLSearchParams({
+        limit: String(ITEM_LIMIT),
+        ...(newsOnly ? { category: 'news' } : {}),
+      })}`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setItems((data.items || []).slice(0, ITEM_LIMIT));
@@ -112,7 +143,7 @@ export function IntelWidget() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [newsOnly]);
 
   // Fetch on open/expand, and silently re-poll every 5 minutes while open.
   useEffect(() => {
@@ -207,6 +238,21 @@ export function IntelWidget() {
           </span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setNewsOnly(!newsOnly)}
+            title={newsOnly ? 'Showing news only — click for all sources (incl. IOC feeds)' : 'Showing all sources — click for news only'}
+            className="px-1.5 py-0.5 rounded uppercase"
+            style={{
+              fontSize: '9px',
+              fontFamily: typography.mono,
+              letterSpacing: '0.05em',
+              color: newsOnly ? palette.cyan : palette.textTertiary,
+              background: newsOnly ? `${palette.cyan}1a` : 'transparent',
+              border: `1px solid ${newsOnly ? `${palette.cyan}40` : palette.borderSubtle}`,
+            }}
+          >
+            {newsOnly ? 'News' : 'All'}
+          </button>
           <button
             onClick={handleRefresh}
             title="Refresh"
