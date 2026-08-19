@@ -216,10 +216,15 @@ export interface BulkIPResult {
   ip: string;
   threatScore: number;
   isMalicious: boolean;
+  scoring?: CalibratedScoring;
   country: string | null;
   countryCode: string | null;
   city: string | null;
   isp: string | null;
+  org?: string | null;
+  isTor?: boolean;
+  isVPN?: boolean;
+  vpnService?: string | null;
   isProxy: boolean;
   isHosting: boolean;
   abuseConfidence: number | null;
@@ -229,6 +234,8 @@ export interface BulkIPResult {
   greynoiseClassification: string | null;
   spamhausListed: boolean;
   spamhausLists: string[];
+  blocklistdeListed?: boolean;
+  blocklistdeLists?: string[];
 }
 
 export interface IPLookupRecord {

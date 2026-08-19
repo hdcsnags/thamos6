@@ -203,6 +203,7 @@ export function DesktopTerminal() {
     addOutput('', 'info');
     addOutput('SCANNING & INTELLIGENCE:', 'success', palette.cyan);
     addOutput('  scan -ip [IP]          Scan IP address', 'info');
+    addOutput('  scan -ip [IP,IP,...]   Bulk scan up to 20 IPs (opens Bulk Lookup)', 'info');
     addOutput('  scan -hash [HASH]      Scan file hash (MD5/SHA256)', 'info');
     addOutput('  scan -url [URL]        Scan URL for threats', 'info');
     addOutput('  scan -domain [DOM]     Scan domain and DNS', 'info');
@@ -277,6 +278,7 @@ export function DesktopTerminal() {
     addOutput('EXAMPLES:', 'success', palette.cyan);
     addOutput('  scan -ip 8.8.8.8', 'info');
     addOutput('  scan -ip 8.8.8.8 -v', 'info');
+    addOutput('  scan -ip 8.8.8.8,1.1.1.1,9.9.9.9   (bulk, opens Bulk Lookup)', 'info');
     addOutput('  scan -hash abc123... --threats', 'info');
     addOutput('  scan -url https://example.com --json', 'info');
     addOutput('', 'info');
@@ -350,6 +352,30 @@ export function DesktopTerminal() {
       addOutput('Type "scan --help" for more information', 'info');
       addOutput('', 'info');
       return;
+    }
+
+    // Bulk IP support: `scan -ip 1.1.1.1,8.8.8.8,9.9.9.9` (comma and/or
+    // whitespace separated) opens the Bulk Lookup window pre-filled instead
+    // of a single IP result window.
+    if (scanType === 'ip') {
+      const tokens = value.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+      if (tokens.length > 1) {
+        if (tokens.length > 20) {
+          addOutput(`ERROR: ${tokens.length} IPs given, maximum 20 per bulk scan`, 'error');
+          addOutput('', 'info');
+          return;
+        }
+        addOutput('', 'info');
+        addOutput(`[*] Initiating bulk IP scan: ${tokens.length} addresses`, 'success');
+        addOutput('[*] Opening Bulk Lookup window...', 'info');
+        addOutput('', 'info');
+        desktop.openWindow({
+          appId: 'bulk-lookup' as any,
+          title: `Bulk Lookup: ${tokens.length} IPs`,
+          data: { ips: tokens },
+        });
+        return;
+      }
     }
 
     addOutput('', 'info');

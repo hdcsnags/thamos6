@@ -3136,11 +3136,17 @@ Deno.serve(async (req: Request) => {
       const bulkResults = await Promise.allSettled(limitedIps.map(async (ip) => {
         const sourcePromises: Promise<ThreatResult>[] = [];
 
+        // Same source set as the single-IP /ip route, so a bulk result matches
+        // what you'd get scanning the same address individually.
         sourcePromises.push(checkTorExitList(ip));
         if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
         if (allowedSources.includes("ip2proxy")) sourcePromises.push(checkIP2Proxy(ctx, ip, apiKeys.ip2proxy ?? ""));
+        if (allowedSources.includes("proxycheck")) sourcePromises.push(checkProxyCheck(ctx, ip, apiKeys.proxycheck ?? ""));
+        if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotal(ctx, ip, apiKeys.virustotal ?? ""));
         if (allowedSources.includes("teoh")) sourcePromises.push(checkTeohVPN(ctx, ip));
         if (allowedSources.includes("abuseipdb")) sourcePromises.push(checkAbuseIPDB(ctx, ip, apiKeys.abuseipdb ?? ""));
+        if (allowedSources.includes("ipqualityscore")) sourcePromises.push(checkIPQualityScore(ctx, ip, apiKeys.ipqualityscore ?? ""));
+        if (allowedSources.includes("shodan_internetdb")) sourcePromises.push(checkShodanInternetDB(ctx, ip));
         if (allowedSources.includes("threatfox")) sourcePromises.push(checkThreatFox(ctx, ip));
         if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhaus(ctx, ip));
         if (allowedSources.includes("greynoise")) sourcePromises.push(checkGreyNoise(ctx, ip, apiKeys.greynoise ?? ""));
@@ -3174,10 +3180,16 @@ Deno.serve(async (req: Request) => {
         if (enrichment.spamhausListed) threatBoost += 25;
         if (enrichment.isMassScanner && enrichment.scannerType === "malicious") threatBoost += 30;
 
+        const legacyScore = Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100);
+        // Calibrated scoring is the real verdict (same engine the single-IP route
+        // uses) — legacy is kept only as a reference/divergence explainer.
+        const scoring = computeCalibratedScoring(ipResults, legacyScore, enrichment);
+
         return {
           ip,
-          threatScore: Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100),
-          isMalicious: hasMaliciousHit || avgScore > 50,
+          threatScore: scoring.calibrated,
+          isMalicious: scoring.verdict === "malicious",
+          scoring,
           enrichment,
           country: enrichment.country ?? null,
           countryCode: enrichment.countryCode ?? null,

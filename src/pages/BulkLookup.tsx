@@ -1,14 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Search, Loader2, Download, Layers, AlertTriangle, CheckCircle, XCircle, Info, MapPin, Server, Radio, Ban } from 'lucide-react';
 import { bulkLookupIPs, isValidIP } from '../lib/threatIntel';
 import type { BulkIPResult } from '../types';
 import { ThreatBadge } from '../components/ThreatScore';
 
-export default function BulkLookup() {
-  const [input, setInput] = useState('');
+interface BulkLookupProps {
+  /** Pre-fill (and auto-run) with IPs handed off from another surface, e.g. the Terminal's `scan -ip a,b,c`. */
+  initialIPs?: string[];
+}
+
+export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
+  const [input, setInput] = useState(() => initialIPs?.join('\n') ?? '');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BulkIPResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const autoRanFor = useRef<string | null>(null);
 
   const parseIPs = (text: string): string[] => {
     const lines = text.split(/[\n,;]+/);
@@ -24,11 +30,7 @@ export default function BulkLookup() {
     return [...new Set(ips)];
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const ips = parseIPs(input);
-
+  const runLookup = async (ips: string[]) => {
     if (ips.length === 0) {
       setError('Please enter at least one valid IP address');
       return;
@@ -53,13 +55,29 @@ export default function BulkLookup() {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runLookup(parseIPs(input));
+  };
+
+  // Auto-run once when handed a fresh list of IPs from another surface
+  // (Terminal bulk `scan`), so the user doesn't have to click Analyze again.
+  useEffect(() => {
+    if (!initialIPs || initialIPs.length === 0) return;
+    const key = initialIPs.join(',');
+    if (autoRanFor.current === key) return;
+    autoRanFor.current = key;
+    void runLookup(parseIPs(initialIPs.join('\n')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialIPs]);
+
   const handleExportCSV = () => {
     if (results.length === 0) return;
 
     const headers = ['IP', 'Threat Score', 'Is Malicious', 'Country', 'City', 'ISP', 'Proxy', 'Hosting', 'Abuse Confidence', 'In ThreatFox', 'In URLhaus', 'Mass Scanner', 'GreyNoise Class', 'Spamhaus Listed', 'Spamhaus Lists'];
     const rows = results.map(r => [
       r.ip,
-      r.threatScore,
+      r.scoring?.calibrated ?? r.threatScore,
       r.isMalicious ? 'Yes' : 'No',
       r.country ?? 'N/A',
       r.city ?? 'N/A',
@@ -243,8 +261,8 @@ export default function BulkLookup() {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3">
-                        <ThreatBadge score={result.threatScore} />
+                      <td className="px-3 py-3" title={result.scoring?.legacyDivergence ?? undefined}>
+                        <ThreatBadge score={result.scoring?.calibrated ?? result.threatScore} />
                       </td>
                       <td className="px-3 py-3">
                         {result.isMassScanner ? (
@@ -304,7 +322,7 @@ export default function BulkLookup() {
               Bulk lookups include location data, scanner detection, blocklist status, and threat intel:
             </p>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              {['IP-API', 'AbuseIPDB', 'ThreatFox', 'URLhaus', 'GreyNoise', 'Spamhaus'].map(source => (
+              {['IP-API', 'VirusTotal', 'ProxyCheck', 'AbuseIPDB', 'IPQualityScore', 'ThreatFox', 'URLhaus', 'GreyNoise', 'Spamhaus', 'Blocklist.de'].map(source => (
                 <div key={source} className="p-3 bg-slate-800/50 rounded-lg text-center">
                   <span className="text-sm text-slate-400">{source}</span>
                 </div>

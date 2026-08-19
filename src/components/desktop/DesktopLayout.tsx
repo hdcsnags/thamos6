@@ -506,7 +506,7 @@ function renderWindowContent(appId: string, data?: any) {
     case 'ioc-extractor':
       return <IOCExtractor />;
     case 'bulk-lookup':
-      return <BulkLookup />;
+      return <BulkLookup initialIPs={data?.ips} />;
     case 'extension-scanner':
       return <ExtensionScanner />;
     default:
