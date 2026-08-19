@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Bulk Lookup: Flag-Optional Detection, Redesign, Collapse + Drill-Down)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Bulk Lookup Phase 1: Persisted Scan Artifacts)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,25 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19f — Bulk Lookup Phase 1: Persisted Scan Artifacts (Sol audit)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Sol (another agent) audited Bulk Lookup and found the "Full scan" drill-down (shipped in 2026-08-19e) was hollow: `/bulk` computes a full ip_lookups-shaped result per IP — raw source data, enrichment, calibrated scoring — then discards all of it except a thin summary. Nothing was persisted, so clicking "Full scan" just re-ran the entire `/ip` pipeline from scratch (cache-assisted, but still a second live orchestration). Sol also proposed a much larger "Batch Investigation Workbench" (Triage/Correlation/Evidence/Report tabs) — user picked Phase 1 (persist artifacts + Open report/Deep enrich) as the starting point; later phases are deferred pending design work.
+
+**Completed:**
+- [x] Verified Sol's diagnosis directly in code: `/bulk` (`threat-intel/index.ts`) builds `ipResults[]` per IP then only returns a thin projection; unlike `/ip`, it never wrote to `ip_lookups`. `IPResult.tsx` always calls `lookupIP(ip)` unconditionally — no way to accept a preloaded result.
+- [x] Migration `20260819170000_bulk_lookup_artifacts.sql`: added `batch_id uuid` column + index to `ip_lookups`.
+- [x] `/bulk` now persists a full `ip_lookups`-shaped artifact per IP (same shape `/ip` writes — `ip, enrichment, overallThreatScore, scoring, sources, checkedAt, sourcesAvailable`, tagged `fromBulkBatch: true`), tied together by a per-request `batchId`. Each bulk result now returns `artifactId` (the `ip_lookups` row id) and `batchId`.
+- [x] New `POST /ip/artifact` — reads a stored artifact by id, zero external calls, scoped to the caller's `context` (org/user tenancy). This is "Open report."
+- [x] New `POST /ip/deep-enrich` — re-runs the full `/ip` source list (25 sources; cache-assisted so the ~14 bulk already fetched resolve instantly) and overwrites the artifact row in place, upgrading it to full single-IP coverage (adds AlienVault, full Shodan, DShield, RDAP, Team Cymru, VPNAPI, VT resolutions, passive DNS, Censys, IPHub). This is "Deep enrich."
+- [x] `IPResult.tsx` accepts an optional `artifactId` prop: when present, loads the stored artifact instead of scanning live, shows a banner naming the narrower bulk source set, and offers a "Deep enrich" button that calls the new endpoint and swaps in the upgraded result in place.
+- [x] Threaded `artifactId` through both host surfaces' drill-down wiring: `App.tsx` (Tactical `scanResult` state) and `DesktopLayout.tsx` (`ip-result` window `data`), plus `BulkLookup.tsx`'s `onDrillDown(ip, artifactId)` call site.
+- [x] Caught and fixed a bug during implementation: `/ip`'s real aggregate field is `sources` (not `results`, despite the `IPLookupResult` type saying `results`) — matched that in the new artifact/deep-enrich code so `IPResult.tsx`'s existing `result.sources` reads work correctly against artifacts.
+- [x] `npm run build` + `tsc --noEmit` clean; migration pushed (`supabase db push`); `threat-intel` deployed live; committed/pushed (`913b9dd`).
+
+**Deferred / Next Sprint (Sol's remaining workbench phases, needs mockups first per Sol's own recommendation):** Evidence matrix tab (source × IP grid), Batch Correlation Map (shared ASN/org/VPN/country clustering + outlier detection — distinct from the single-IP pivot graph), and a batch-level Report tab (decision summary, shared infrastructure, per-IP appendices). Not started — no code changes yet toward these.
+
+---
 
 ### Sprint 2026-08-19e — Bulk Lookup: Flag-Optional Detection, Design-Token Redesign, Collapse + Drill-Down
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
