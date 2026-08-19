@@ -316,6 +316,31 @@ export function DesktopTerminal() {
 
   const handleScan = (args: string[]) => {
     const { flags, remainingArgs } = parseFlags(args);
+
+    // Bulk IP detection: works whether or not -ip was typed explicitly, and
+    // whether IPs are comma- or space-separated — e.g. `scan -ip 1.1.1.1,8.8.8.8`
+    // or bare `scan 1.1.1.1 8.8.8.8 9.9.9.9`. If 2+ tokens all resolve to a
+    // valid IP, open the Bulk Lookup window pre-filled instead of erroring.
+    const bulkCandidateArgs = remainingArgs[0]?.toLowerCase() === '-ip' ? remainingArgs.slice(1) : remainingArgs;
+    const bulkTokens = bulkCandidateArgs.join(' ').split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+    if (bulkTokens.length > 1 && bulkTokens.every(t => detectIOCType(t).type === 'ip')) {
+      if (bulkTokens.length > 20) {
+        addOutput(`ERROR: ${bulkTokens.length} IPs given, maximum 20 per bulk scan`, 'error');
+        addOutput('', 'info');
+        return;
+      }
+      addOutput('', 'info');
+      addOutput(`[*] Initiating bulk IP scan: ${bulkTokens.length} addresses`, 'success');
+      addOutput('[*] Opening Bulk Lookup window...', 'info');
+      addOutput('', 'info');
+      desktop.openWindow({
+        appId: 'bulk-lookup' as any,
+        title: `Bulk Lookup: ${bulkTokens.length} IPs`,
+        data: { ips: bulkTokens },
+      });
+      return;
+    }
+
     let type = remainingArgs[0]?.toLowerCase();
     let value = remainingArgs.slice(1).join(' ');
 
@@ -352,30 +377,6 @@ export function DesktopTerminal() {
       addOutput('Type "scan --help" for more information', 'info');
       addOutput('', 'info');
       return;
-    }
-
-    // Bulk IP support: `scan -ip 1.1.1.1,8.8.8.8,9.9.9.9` (comma and/or
-    // whitespace separated) opens the Bulk Lookup window pre-filled instead
-    // of a single IP result window.
-    if (scanType === 'ip') {
-      const tokens = value.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
-      if (tokens.length > 1) {
-        if (tokens.length > 20) {
-          addOutput(`ERROR: ${tokens.length} IPs given, maximum 20 per bulk scan`, 'error');
-          addOutput('', 'info');
-          return;
-        }
-        addOutput('', 'info');
-        addOutput(`[*] Initiating bulk IP scan: ${tokens.length} addresses`, 'success');
-        addOutput('[*] Opening Bulk Lookup window...', 'info');
-        addOutput('', 'info');
-        desktop.openWindow({
-          appId: 'bulk-lookup' as any,
-          title: `Bulk Lookup: ${tokens.length} IPs`,
-          data: { ips: tokens },
-        });
-        return;
-      }
     }
 
     addOutput('', 'info');
