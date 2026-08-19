@@ -2,10 +2,10 @@ import { useEffect, useState, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   AlertTriangle, Shield, Database, MapPin, Server, Wifi,
-  ExternalLink, Target, GitBranch, Scale, ChevronDown, ChevronRight, ArrowRight,
+  ExternalLink, Target, GitBranch, Scale, ChevronDown, ChevronRight, ArrowRight, Zap, Loader2,
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
-import { lookupIP } from '../../lib/threatIntel';
+import { lookupIP, getIPArtifact, deepEnrichIPArtifact } from '../../lib/threatIntel';
 import type { IPLookupResult, CalibratedScoring, ScoreContribution } from '../../types';
 import { RelatedIOCs } from '../../components/RelatedIOCs';
 import VerdictPanel from '../../components/scanner/VerdictPanel';
@@ -20,6 +20,8 @@ import {
 interface IPResultProps {
   ip: string;
   onScan?: (type: string, value: string) => void;
+  /** When set, loads a stored scan artifact instead of running a live scan — used for Bulk Lookup drill-down. */
+  artifactId?: string;
 }
 
 type MenuItem = 'overview' | 'verdict' | 'threats' | 'vpn' | 'pivot' | 'sources';
@@ -50,13 +52,14 @@ function normalizeProxyCheck(raw: any): any | null {
   return key && raw[key] && typeof raw[key] === 'object' ? raw[key] : null;
 }
 
-export default function IPResult({ ip, onScan }: IPResultProps) {
+export default function IPResult({ ip, onScan, artifactId }: IPResultProps) {
   const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<IPLookupResult | null>(null);
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
   const [proMode, setProMode] = useState(true);
+  const [enriching, setEnriching] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -75,7 +78,9 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
       setError('');
 
       try {
-        const data = await lookupIP(ip);
+        // Drill-down from Bulk Lookup: open the artifact bulk already
+        // computed instead of re-running the whole scan pipeline.
+        const data = artifactId ? await getIPArtifact(artifactId) : await lookupIP(ip);
         setResult(data);
       } catch (err: any) {
         setError(err.message || 'Failed to lookup IP');
@@ -85,7 +90,20 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
     };
 
     performLookup();
-  }, [ip]);
+  }, [ip, artifactId]);
+
+  const handleDeepEnrich = async () => {
+    if (!result?.artifactId) return;
+    setEnriching(true);
+    try {
+      const data = await deepEnrichIPArtifact(result.artifactId, ip);
+      setResult(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to deep-enrich IP');
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   if (loading && !result) {
     return <div ref={containerRef} className="h-full"><ResultLoading message={`Analyzing ${ip}…`} /></div>;
@@ -176,6 +194,27 @@ export default function IPResult({ ip, onScan }: IPResultProps) {
         onToggleProMode={() => setProMode(!proMode)}
         headerActions={<SummaryActions getSummary={getSummary} getJson={() => result} />}
       >
+        {result.fromBulkBatch && (
+          <div className="mb-4">
+            <Callout
+              icon={<Zap className="w-4 h-4" />}
+              tone="accent"
+              title="Showing a saved Bulk Lookup scan"
+              detail={`~${result.sourcesAvailable?.length ?? 14} sources checked at bulk-scan time. Deep enrich adds AlienVault, full Shodan, DShield, RDAP, Team Cymru, VPNAPI, VT resolutions, passive DNS, Censys, and IPHub.`}
+            >
+              <button
+                onClick={handleDeepEnrich}
+                disabled={enriching}
+                className="mt-3 h-8 px-3 rounded-md flex items-center gap-2 text-xs font-semibold transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: palette.accent, color: palette.void }}
+              >
+                {enriching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                {enriching ? 'Enriching…' : 'Deep enrich'}
+              </button>
+            </Callout>
+          </div>
+        )}
+
         {activeMenu === 'overview' && (
           <OverviewSection
             enrichment={enrichment}

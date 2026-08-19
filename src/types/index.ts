@@ -70,6 +70,13 @@ export interface IPLookupResult {
   results: Record<string, ThreatResult>;
   scoring?: CalibratedScoring;
   checkedAt: string;
+  /** Present when this result was read from a stored artifact instead of a live scan (e.g. Bulk Lookup drill-down). */
+  artifactId?: string;
+  artifactCreatedAt?: string;
+  fromArtifact?: boolean;
+  /** True when the artifact came from the /bulk route's narrower ~14-source set rather than a full single-IP scan. */
+  fromBulkBatch?: boolean;
+  sourcesAvailable?: string[];
 }
 
 export interface URLLookupResult {
@@ -236,6 +243,9 @@ export interface BulkIPResult {
   spamhausLists: string[];
   blocklistdeListed?: boolean;
   blocklistdeLists?: string[];
+  /** Durable ip_lookups row id for this bulk result — pass to getIPArtifact/deepEnrichIP for drill-down. */
+  artifactId?: string | null;
+  batchId?: string;
 }
 
 export interface IPLookupRecord {

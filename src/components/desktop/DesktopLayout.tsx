@@ -480,7 +480,7 @@ function renderWindowContent(appId: string, data?: any, openWindow?: (config: Pa
     case 'settings':
       return <DesktopSettings />;
     case 'ip-result':
-      return <IPResult ip={data?.value} />;
+      return <IPResult ip={data?.value} artifactId={data?.artifactId} />;
     case 'url-result':
       return <URLResult url={data?.value} />;
     case 'domain-result':
@@ -509,7 +509,7 @@ function renderWindowContent(appId: string, data?: any, openWindow?: (config: Pa
       return (
         <BulkLookup
           initialIPs={data?.ips}
-          onDrillDown={openWindow ? (ip: string) => openWindow({ appId: 'ip-result', title: `IP: ${ip}`, data: { value: ip } }) : undefined}
+          onDrillDown={openWindow ? (ip: string, artifactId?: string) => openWindow({ appId: 'ip-result', title: `IP: ${ip}`, data: { value: ip, artifactId } }) : undefined}
         />
       );
     case 'extension-scanner':

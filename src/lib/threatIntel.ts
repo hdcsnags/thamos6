@@ -268,7 +268,7 @@ export async function lookupEmail(email: string): Promise<EmailLookupResult> {
   return response.json();
 }
 
-export async function bulkLookupIPs(ips: string[]): Promise<{ results: BulkIPResult[]; total: number; tier?: string }> {
+export async function bulkLookupIPs(ips: string[]): Promise<{ results: BulkIPResult[]; total: number; tier?: string; batchId?: string }> {
   const headers = await getAuthHeaders();
 
   const response = await fetch(`${EDGE_FUNCTION_URL}/bulk`, {
@@ -279,6 +279,44 @@ export async function bulkLookupIPs(ips: string[]): Promise<{ results: BulkIPRes
 
   if (!response.ok) {
     throw new Error(`Failed to bulk lookup IPs: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// Instant read of a persisted scan artifact — no external calls. Used to
+// drill down from a Bulk Lookup row into the full IPResult view without
+// re-running the whole scan pipeline for evidence that already exists.
+export async function getIPArtifact(artifactId: string): Promise<IPLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/ip/artifact`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: artifactId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load scan artifact: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// Upgrades a bulk-scanned artifact to full single-IP source coverage
+// (AlienVault, full Shodan, DShield, RDAP, Team Cymru, VPNAPI, VT
+// resolutions, passive DNS, Censys, IPHub) and overwrites it in place.
+export async function deepEnrichIPArtifact(artifactId: string, ip: string): Promise<IPLookupResult> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(`${EDGE_FUNCTION_URL}/ip/deep-enrich`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: artifactId, ip }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to deep-enrich IP: ${response.statusText}`);
   }
 
   return response.json();

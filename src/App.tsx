@@ -46,7 +46,7 @@ function App() {
   const { theme } = useTheme();
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('scanner');
-  const [scanResult, setScanResult] = useState<{ type: string; value: string; flags?: ScanFlags } | null>(null);
+  const [scanResult, setScanResult] = useState<{ type: string; value: string; flags?: ScanFlags; artifactId?: string } | null>(null);
 
   const handleScan = (type: string, value: string, flags?: ScanFlags) => {
     setScanResult({ type, value, flags });
@@ -94,7 +94,7 @@ function App() {
     if (currentPage === 'scanner' && scanResult) {
       switch (scanResult.type) {
         case 'ip':
-          return <IPResult ip={scanResult.value} onScan={handleScan} />;
+          return <IPResult ip={scanResult.value} onScan={handleScan} artifactId={scanResult.artifactId} />;
         case 'url':
           return <URLResult url={scanResult.value} />;
         case 'domain':
@@ -119,7 +119,7 @@ function App() {
       case 'aiworkshop': return <AIWorkshop />;
       case 'ip': return <IPLookup />;
       case 'url': return <URLScanner />;
-      case 'bulk': return <BulkLookup onDrillDown={(ip) => { setScanResult({ type: 'ip', value: ip }); setCurrentPage('scanner'); }} />;
+      case 'bulk': return <BulkLookup onDrillDown={(ip, artifactId) => { setScanResult({ type: 'ip', value: ip, artifactId }); setCurrentPage('scanner'); }} />;
       case 'history': return <History />;
       case 'email': return <EmailAnalyzer />;
       case 'ioc': return <IOCExtractor />;

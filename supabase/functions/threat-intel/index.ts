@@ -3132,6 +3132,9 @@ Deno.serve(async (req: Request) => {
       }
 
       const limitedIps = ips.slice(0, 20);
+      // One batch id ties every IP scanned in this request together so the UI
+      // can group/correlate them later without re-parsing the original list.
+      const batchId = crypto.randomUUID();
 
       const bulkResults = await Promise.allSettled(limitedIps.map(async (ip) => {
         const sourcePromises: Promise<ThreatResult>[] = [];
@@ -3171,6 +3174,7 @@ Deno.serve(async (req: Request) => {
         const blocklistde = ipResults.find(r => r.source === "blocklistde")?.data as any;
         const scores = ipResults.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
         const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+        const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
         const hasMaliciousHit = ipResults.some(r => r.isMalicious);
 
         let threatBoost = 0;
@@ -3184,6 +3188,46 @@ Deno.serve(async (req: Request) => {
         // Calibrated scoring is the real verdict (same engine the single-IP route
         // uses) — legacy is kept only as a reference/divergence explainer.
         const scoring = computeCalibratedScoring(ipResults, legacyScore, enrichment);
+
+        // Full ip_lookups-shaped artifact — same shape /ip persists — so this
+        // is a real scan record (not a throwaway summary) and can later be
+        // opened directly by IPResult without re-querying any sources.
+        const normalizedSources: Record<string, any> = {};
+        for (const r of ipResults) normalizedSources[r.source] = r.data;
+        const checkedAt = new Date().toISOString();
+        const artifact = {
+          ip,
+          enrichment,
+          overallThreatScore: legacyScore,
+          scoring,
+          maxThreatScore: maxScore,
+          isMalicious: hasMaliciousHit || maxScore > 50,
+          // NOTE: field is `sources`, not `results` — matches the actual /ip
+          // aggregate shape IPResult.tsx reads from (`result.sources`), even
+          // though the IPLookupResult type declares this as `results`.
+          sources: normalizedSources,
+          checkedAt,
+          tier: ctx.tier,
+          // What bulk actually queried — the gap between this and the full /ip
+          // source list is exactly what "Deep enrich" adds.
+          sourcesAvailable: ipResults.map(r => r.source),
+          fromBulkBatch: true,
+        };
+
+        let artifactId: string | null = null;
+        if (canPersist) {
+          const { data: inserted, error: insertError } = await serviceClient.from("ip_lookups").insert({
+            ip_address: ip,
+            results: artifact,
+            threat_score: legacyScore,
+            sources_checked: ipResults.map(r => r.source),
+            user_id: ctx.userId,
+            context: ctx.cacheContext,
+            batch_id: batchId,
+          }).select("id").single();
+          if (insertError) console.error("bulk ip_lookups insert:", insertError);
+          artifactId = inserted?.id ?? null;
+        }
 
         return {
           ip,
@@ -3209,7 +3253,9 @@ Deno.serve(async (req: Request) => {
           spamhausListed: (spamhaus?.listedIn?.length ?? 0) > 0,
           spamhausLists: spamhaus?.listedIn ?? [],
           blocklistdeListed: (blocklistde?.listedIn?.length ?? 0) > 0,
-          blocklistdeLists: blocklistde?.listedIn ?? []
+          blocklistdeLists: blocklistde?.listedIn ?? [],
+          artifactId,
+          batchId,
         };
       }));
 
@@ -3221,7 +3267,161 @@ Deno.serve(async (req: Request) => {
         await logAuditEvent(req, ctx, "bulk_lookup", "ip_batch", `${results.length}_ips`, { count: results.length, tier: ctx.tier });
       }
 
-      return new Response(JSON.stringify({ results, total: results.length, tier: ctx.tier }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ results, total: results.length, tier: ctx.tier, batchId }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Instant read of a persisted scan artifact (bulk or single-IP) — zero
+    // external calls. This is what "Open report" does after a drill-down from
+    // Bulk Lookup: reuse the evidence bulk already computed instead of
+    // re-running the whole pipeline.
+    if (path === "/ip/artifact" || path === "/ip/artifact/") {
+      const body = await req.json();
+      const id = body.id;
+      if (!id || typeof id !== "string") {
+        return new Response(JSON.stringify({ error: "Artifact id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const { data: row, error: fetchError } = await serviceClient
+        .from("ip_lookups")
+        .select("results, created_at, context")
+        .eq("id", id)
+        .eq("context", ctx.cacheContext)
+        .maybeSingle();
+
+      if (fetchError) console.error("ip artifact fetch:", fetchError);
+      if (!row) {
+        return new Response(JSON.stringify({ error: "Scan artifact not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      return new Response(JSON.stringify({
+        ...(row.results as Record<string, unknown>),
+        artifactId: id,
+        artifactCreatedAt: row.created_at,
+        fromArtifact: true,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Upgrade a bulk-scanned artifact to full single-IP coverage: re-runs the
+    // complete /ip source set (cache-assisted, so sources bulk already fetched
+    // resolve instantly) and overwrites the stored artifact in place, adding
+    // the ~11 deeper sources bulk skips (AlienVault, full Shodan, DShield,
+    // RDAP, Team Cymru, VPNAPI, VT resolutions, passive DNS, Censys, IPHub).
+    if (path === "/ip/deep-enrich" || path === "/ip/deep-enrich/") {
+      const body = await req.json();
+      const id = body.id;
+      const ip = body.ip;
+      if (!id || typeof id !== "string" || !ip || typeof ip !== "string") {
+        return new Response(JSON.stringify({ error: "Artifact id and ip required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const { data: existing, error: existingError } = await serviceClient
+        .from("ip_lookups")
+        .select("id, context")
+        .eq("id", id)
+        .eq("context", ctx.cacheContext)
+        .maybeSingle();
+      if (existingError) console.error("deep-enrich fetch:", existingError);
+      if (!existing) {
+        return new Response(JSON.stringify({ error: "Scan artifact not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const sourcePromises: Promise<ThreatResult>[] = [];
+      sourcePromises.push(checkTorExitList(ip));
+      if (allowedSources.includes("ipapi")) sourcePromises.push(checkIPAPI(ctx, ip));
+      if (allowedSources.includes("ip2proxy")) sourcePromises.push(checkIP2Proxy(ctx, ip, apiKeys.ip2proxy ?? ""));
+      if (allowedSources.includes("proxycheck")) sourcePromises.push(checkProxyCheck(ctx, ip, apiKeys.proxycheck ?? ""));
+      if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotal(ctx, ip, apiKeys.virustotal ?? ""));
+      if (allowedSources.includes("abuseipdb")) sourcePromises.push(checkAbuseIPDB(ctx, ip, apiKeys.abuseipdb ?? ""));
+      if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, ip, apiKeys.alienvault ?? ""));
+      if (allowedSources.includes("shodan")) sourcePromises.push(checkShodan(ctx, ip, apiKeys.shodan ?? ""));
+      if (allowedSources.includes("shodan_internetdb")) sourcePromises.push(checkShodanInternetDB(ctx, ip));
+      if (allowedSources.includes("dshield")) sourcePromises.push(checkDShield(ctx, ip));
+      if (allowedSources.includes("ipqualityscore")) sourcePromises.push(checkIPQualityScore(ctx, ip, apiKeys.ipqualityscore ?? ""));
+      if (allowedSources.includes("threatfox")) sourcePromises.push(checkThreatFox(ctx, ip));
+      if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhaus(ctx, ip));
+      if (allowedSources.includes("rdap")) sourcePromises.push(checkRDAP(ctx, ip));
+      if (allowedSources.includes("teoh")) sourcePromises.push(checkTeohVPN(ctx, ip));
+      if (allowedSources.includes("greynoise")) sourcePromises.push(checkGreyNoise(ctx, ip, apiKeys.greynoise ?? ""));
+      if (allowedSources.includes("spamhaus")) sourcePromises.push(checkSpamhaus(ctx, ip));
+      if (allowedSources.includes("blocklistde")) sourcePromises.push(checkBlocklistDE(ctx, ip));
+      if (allowedSources.includes("iphub")) sourcePromises.push(checkIPHub(ctx, ip, apiKeys.iphub ?? ""));
+      if (allowedSources.includes("teamcymru")) sourcePromises.push(checkTeamCymru(ctx, ip));
+      if (allowedSources.includes("vpnapi")) sourcePromises.push(checkVPNAPI(ctx, ip, apiKeys.vpnapi ?? ""));
+      if (allowedSources.includes("virustotal")) sourcePromises.push(checkVTResolutions(ctx, ip, "ip", apiKeys.virustotal ?? ""));
+      if (allowedSources.includes("circl_pdns")) sourcePromises.push(checkCIRCLPDNS(ctx, ip, apiKeys.circl_pdns ?? ""));
+      if (allowedSources.includes("mnemonic_pdns")) sourcePromises.push(checkMnemonicPDNS(ctx, ip));
+      if (allowedSources.includes("censys")) sourcePromises.push(checkCensys(ctx, ip, apiKeys.censys ?? ""));
+
+      const settledResults = await Promise.allSettled(sourcePromises);
+      const results: ThreatResult[] = settledResults
+        .filter((r): r is PromiseFulfilledResult<ThreatResult> => r.status === "fulfilled")
+        .map(r => r.value);
+
+      const ipapi = results.find(r => r.source === "ipapi")?.data as any;
+      const vpnCheck = await checkVPNProvider(ipapi?.as, ipapi?.org);
+      results.push(vpnCheck);
+
+      const pdnsRecords = aggregatePDNS(results);
+      const enrichment = extractEnrichment(results);
+      const scores = results.filter(r => r.threatScore !== undefined).map(r => r.threatScore!);
+      const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
+      const hasMaliciousHit = results.some(r => r.isMalicious);
+
+      let threatBoost = 0;
+      if (enrichment.isTor) threatBoost += 20;
+      if (enrichment.isVPN) threatBoost += 10;
+      if (enrichment.isProxy) threatBoost += 15;
+      if (enrichment.spamhausListed) threatBoost += 25;
+      if (enrichment.isMassScanner && enrichment.scannerType === "malicious") threatBoost += 30;
+
+      const legacyScore = Math.min(Math.max(avgScore, hasMaliciousHit ? 50 : 0) + threatBoost, 100);
+      const scoring = computeCalibratedScoring(results, legacyScore, enrichment);
+
+      const normalizedSources: Record<string, any> = {};
+      for (const r of results) normalizedSources[r.source] = r.data;
+
+      const aggregated = {
+        ip,
+        enrichment,
+        overallThreatScore: legacyScore,
+        scoring,
+        maxThreatScore: maxScore,
+        isMalicious: hasMaliciousHit || maxScore > 50,
+        sources: normalizedSources,
+        detectionSources: [],
+        detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        pdns: pdnsRecords,
+        checkedAt: new Date().toISOString(),
+        tier: ctx.tier,
+        sourcesAvailable: results.map(r => r.source),
+        fromBulkBatch: false,
+      };
+
+      if (canPersist) {
+        const { error: updateError } = await serviceClient.from("ip_lookups").update({
+          results: aggregated,
+          threat_score: aggregated.overallThreatScore,
+          sources_checked: results.map(r => r.source),
+        }).eq("id", id);
+        if (updateError) console.error("deep-enrich update:", updateError);
+
+        savePDNSEdges(pdnsRecords).catch(e => console.error("deep-enrich savePDNSEdges:", e));
+        await saveIPScanGraph(
+          ctx,
+          ip,
+          enrichment,
+          aggregated.overallThreatScore,
+          aggregated.isMalicious,
+          aggregated.detectionConfidence,
+          results.map(r => r.source),
+          aggregated.checkedAt,
+        );
+        await logAuditEvent(req, ctx, "ip_deep_enrich", "ip", ip, { sources: results.map(r => r.source), threat_score: aggregated.overallThreatScore });
+      }
+
+      return new Response(JSON.stringify({ ...aggregated, artifactId: id }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (path === "/config" || path === "/config/") {

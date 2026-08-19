@@ -22,8 +22,10 @@ interface BulkLookupProps {
   /** Pre-fill (and auto-run) with IPs handed off from another surface, e.g. the Terminal's `scan -ip a,b,c`. */
   initialIPs?: string[];
   /** Drill into a single IP's full scan (hostname, VPN/Tor detail, abuse reports, pivot graph, etc).
-   *  Wired to open an ip-result window (Desktop) or navigate to the scanner page (Tactical). */
-  onDrillDown?: (ip: string) => void;
+   *  Wired to open an ip-result window (Desktop) or navigate to the scanner page (Tactical).
+   *  Passes the persisted artifactId (if the bulk scan wrote one) so the destination can open
+   *  the stored artifact instantly instead of re-running the whole scan pipeline. */
+  onDrillDown?: (ip: string, artifactId?: string) => void;
 }
 
 export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps = {}) {
@@ -404,7 +406,7 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
                             <td className="px-3 py-2.5">
                               {onDrillDown && (
                                 <button
-                                  onClick={() => onDrillDown(result.ip)}
+                                  onClick={() => onDrillDown(result.ip, result.artifactId ?? undefined)}
                                   title={`Open full scan for ${result.ip} — hostname, full VPN/Tor detail, abuse reports, pivot graph`}
                                   className="h-7 px-2.5 rounded-md flex items-center gap-1 text-xs font-medium whitespace-nowrap transition-colors hover:brightness-125"
                                   style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.accent }}
