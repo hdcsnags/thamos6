@@ -2770,7 +2770,7 @@ if (proxycheckRaw && (proxycheckRaw.status === "ok" || proxycheckRaw.status === 
       enrichment.country = loc.country || loc.country_name;
     }
 
-    if (typeof ipResult.risk === "number") enrichment.riskScore = ipResult.risk;
+    if (typeof det.risk === "number") enrichment.riskScore = det.risk;
 
     if (typeof det.confidence === "number") enrichment.confidence = det.confidence;
   }

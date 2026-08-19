@@ -25,7 +25,7 @@ function extractText(xml: string, tag: string): string {
   const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i');
   const match = xml.match(regex);
   if (!match) return '';
-  return match[1].replace(/<!\[CDATA\[([\\s\\S]*?)\]\]>/g, '$1').trim();
+  return match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
 }
 
 function parseRSSFeed(xmlText: string): RSSItem[] {
@@ -430,23 +430,32 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: true, item: data });
     }
 
-    // POST /my/refresh - refresh user's custom feeds
+    // POST /my/refresh - refresh default feeds AND the user's custom feeds
+    // (this used to only touch user_custom_sources, so signed-in users with
+    // no custom feeds never pulled fresh data into the default feed_items
+    // table the main Intel Stream reads from — it just sat stale forever)
     if (path === "/my/refresh" && req.method === "POST") {
-      const { data: sources, error } = await serviceClient
-        .from("user_custom_sources")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("is_active", true);
+      const [defaultRes, customRes] = await Promise.all([
+        serviceClient.from("rss_sources").select("*").eq("is_active", true),
+        serviceClient.from("user_custom_sources").select("*").eq("user_id", user.id).eq("is_active", true),
+      ]);
+      if (defaultRes.error) throw defaultRes.error;
+      if (customRes.error) throw customRes.error;
 
-      if (error) throw error;
-      if (!sources?.length) return jsonResponse({ total: 0, successful: 0, failed: 0, totalItemsAdded: 0 });
+      const defaultSources = defaultRes.data ?? [];
+      const customSources = customRes.data ?? [];
 
-      const results = await Promise.all(
-        sources.map(s => fetchAndStoreUserFeed(user.id, s.id, s.url))
-      );
+      const [defaultResults, customResults] = await Promise.all([
+        Promise.all(defaultSources.map(s => fetchAndStoreDefaultFeed(s.id, s.url))),
+        Promise.all(customSources.map(s => fetchAndStoreUserFeed(user.id, s.id, s.url))),
+      ]);
+
+      const results = [...defaultResults, ...customResults];
+      const total = defaultSources.length + customSources.length;
+      if (!total) return jsonResponse({ total: 0, successful: 0, failed: 0, totalItemsAdded: 0 });
 
       return jsonResponse({
-        total: sources.length,
+        total,
         successful: results.filter(r => r.success).length,
         failed: results.filter(r => !r.success).length,
         totalItemsAdded: results.reduce((sum, r) => sum + r.itemsAdded, 0),
