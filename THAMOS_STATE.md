@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Intel Stream + Thamos AI Design-Token Migration)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (MS Learn Agent Fix + Bulk IP Scan)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,24 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19d — MS Learn Agent Truncation Fix + Model Switch + Bulk IP Scan
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Diagnose a bad/incomplete MS Learn MCP answer, evaluate GitHub custom-agent proxying vs. current direct-MCP architecture, and add bulk/multi-IP scanning to the Scanner + Terminal.
+
+**Completed:**
+- [x] MS Learn agent was truncating: `max_tokens: 4096` in `T6.tsx` `DEFAULT_AGENTS` — half the ceiling of the other analyst agents (all 8192) — despite needing the longest synthesized answers after multi-round MCP grounding. Bumped to 8192 (code default + migration `20260819150000_mslearn_agent_max_tokens.sql` to patch existing users' rows, since `loadAgents()` only inserts missing agents, never patches stale existing ones).
+- [x] Switched the MS Learn agent from `openai`/`gpt-4o-mini` to `anthropic`/`claude-haiku-4-5-20251001` for stronger multi-domain tool-use/reasoning (code default + migration `20260819160000_mslearn_agent_switch_haiku.sql`). `ai-chat/index.ts`'s `callAnthropicWithTools` loop already fully supported this — zero backend changes needed. **Requires an Anthropic API key configured** to keep working.
+- [x] Evaluated "route through a GitHub Enterprise custom agent instead" — not viable: Copilot custom agents/Extensions are invoked from licensed Copilot Chat surfaces, no supported API for a third-party product to call one on behalf of many unlicensed end users. Confirmed the existing direct-MCP-client architecture in `ai-chat` is the correct integration, not a workaround.
+- [x] Bulk IP scanning: found Bulk Lookup already existed (`BulkLookup.tsx` + `/bulk` edge route, 20-IP cap) but ran a **separate, stale, uncalibrated scoring formula** (flat uncapped Spamhaus +25 — the exact bug fixed in the main `/ip` route on 2026-08-13b, never propagated here) and was missing VirusTotal/ProxyCheck/IPQualityScore/Shodan from its source set.
+- [x] Recalibrated `/bulk` to call the same `computeCalibratedScoring()` engine as `/ip` (per-IP `scoring` object now included in the response) and added the missing sources for parity. `BulkIPResult` type extended (`scoring`, `org`, `vpnService`, `isTor`/`isVPN`, `blocklistde*`).
+- [x] `BulkLookup.tsx` now displays/exports the calibrated score, accepts an optional `initialIPs` prop that pre-fills + auto-runs.
+- [x] Terminal: `scan -ip 1.1.1.1,8.8.8.8,9.9.9.9` (comma/space separated, up to 20) now opens the Bulk Lookup window pre-filled and auto-running instead of erroring on a mashed-together value; help text/examples updated.
+- [x] `npm run build` + `tsc --noEmit` clean; `threat-intel` edge function + both migrations deployed live; committed/pushed (70562be, c46d86c).
+
+**Deferred / Next Sprint:** Bulk Lookup's visual style is still old Tailwind slate/emerald (not migrated onto `tokens.ts`/result kit) — candidate for the same design-token pass done to Intel Stream/Thamos AI; 20-IP cap left as-is (external API rate limits, e.g. VirusTotal free tier, were the likely original reason — not raised without confirming per-source limits first).
+
+---
 
 ### Sprint 2026-08-19b — Intel Stream + Thamos AI: Design-Token Migration
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
