@@ -306,13 +306,15 @@ export async function getIPArtifact(artifactId: string): Promise<IPLookupResult>
 // Upgrades a bulk-scanned artifact to full single-IP source coverage
 // (AlienVault, full Shodan, DShield, RDAP, Team Cymru, VPNAPI, VT
 // resolutions, passive DNS, Censys, IPHub) and overwrites it in place.
-export async function deepEnrichIPArtifact(artifactId: string, ip: string): Promise<IPLookupResult> {
+// The IP is derived server-side from the stored artifact — not supplied
+// here — so a stale/mismatched id can't enrich the wrong address.
+export async function deepEnrichIPArtifact(artifactId: string): Promise<IPLookupResult> {
   const headers = await getAuthHeaders();
 
   const response = await fetch(`${EDGE_FUNCTION_URL}/ip/deep-enrich`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ id: artifactId, ip }),
+    body: JSON.stringify({ id: artifactId }),
   });
 
   if (!response.ok) {

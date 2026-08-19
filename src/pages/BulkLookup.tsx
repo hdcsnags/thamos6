@@ -407,11 +407,11 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
                               {onDrillDown && (
                                 <button
                                   onClick={() => onDrillDown(result.ip, result.artifactId ?? undefined)}
-                                  title={`Open full scan for ${result.ip} — hostname, full VPN/Tor detail, abuse reports, pivot graph`}
+                                  title={`Open the saved scan report for ${result.ip} — hostname, full VPN/Tor detail, abuse reports, pivot graph`}
                                   className="h-7 px-2.5 rounded-md flex items-center gap-1 text-xs font-medium whitespace-nowrap transition-colors hover:brightness-125"
                                   style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.accent }}
                                 >
-                                  Full scan
+                                  Open report
                                   <ArrowUpRight className="w-3 h-3" />
                                 </button>
                               )}

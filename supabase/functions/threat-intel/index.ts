@@ -3227,6 +3227,21 @@ Deno.serve(async (req: Request) => {
           }).select("id").single();
           if (insertError) console.error("bulk ip_lookups insert:", insertError);
           artifactId = inserted?.id ?? null;
+
+          // Without this, a freshly bulk-scanned batch has no scan_observations/
+          // graph edges at all until each IP is individually deep-enriched —
+          // the planned batch correlation graph needs every IP represented,
+          // not just the ones an analyst happened to click into.
+          await saveIPScanGraph(
+            ctx,
+            ip,
+            enrichment,
+            legacyScore,
+            artifact.isMalicious,
+            enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
+            ipResults.map(r => r.source),
+            checkedAt,
+          );
         }
 
         return {
@@ -3309,14 +3324,16 @@ Deno.serve(async (req: Request) => {
     if (path === "/ip/deep-enrich" || path === "/ip/deep-enrich/") {
       const body = await req.json();
       const id = body.id;
-      const ip = body.ip;
-      if (!id || typeof id !== "string" || !ip || typeof ip !== "string") {
-        return new Response(JSON.stringify({ error: "Artifact id and ip required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!id || typeof id !== "string") {
+        return new Response(JSON.stringify({ error: "Artifact id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // The IP comes from the stored artifact, never the client — otherwise a
+      // caller could pass a mismatched (id, ip) pair and enrich/overwrite one
+      // IP's artifact with another IP's data.
       const { data: existing, error: existingError } = await serviceClient
         .from("ip_lookups")
-        .select("id, context")
+        .select("id, ip_address, results, context")
         .eq("id", id)
         .eq("context", ctx.cacheContext)
         .maybeSingle();
@@ -3324,6 +3341,7 @@ Deno.serve(async (req: Request) => {
       if (!existing) {
         return new Response(JSON.stringify({ error: "Scan artifact not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      const ip = existing.ip_address;
 
       const sourcePromises: Promise<ThreatResult>[] = [];
       sourcePromises.push(checkTorExitList(ip));
@@ -3381,6 +3399,14 @@ Deno.serve(async (req: Request) => {
       const normalizedSources: Record<string, any> = {};
       for (const r of results) normalizedSources[r.source] = r.data;
 
+      // Preserve the original bulk-scan snapshot rather than silently
+      // overwriting it — a forensic record should show what the batch scan
+      // actually saw at the time, even after later enrichment. If this
+      // artifact was already enriched once before, keep the very first
+      // snapshot rather than nesting snapshots-of-snapshots.
+      const priorResults = existing.results as Record<string, any> | null;
+      const initialSnapshot = priorResults?.initialSnapshot ?? priorResults ?? null;
+
       const aggregated = {
         ip,
         enrichment,
@@ -3397,6 +3423,7 @@ Deno.serve(async (req: Request) => {
         tier: ctx.tier,
         sourcesAvailable: results.map(r => r.source),
         fromBulkBatch: false,
+        initialSnapshot,
       };
 
       if (canPersist) {

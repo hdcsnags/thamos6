@@ -77,6 +77,8 @@ export interface IPLookupResult {
   /** True when the artifact came from the /bulk route's narrower ~14-source set rather than a full single-IP scan. */
   fromBulkBatch?: boolean;
   sourcesAvailable?: string[];
+  /** The original bulk-scan snapshot, preserved once this artifact has been deep-enriched (forensic provenance). */
+  initialSnapshot?: { checkedAt: string; overallThreatScore: number; sourcesAvailable?: string[] } | null;
 }
 
 export interface URLLookupResult {

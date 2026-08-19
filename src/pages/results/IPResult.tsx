@@ -60,6 +60,10 @@ export default function IPResult({ ip, onScan, artifactId }: IPResultProps) {
   const [activeMenu, setActiveMenu] = useState<MenuItem>('overview');
   const [proMode, setProMode] = useState(true);
   const [enriching, setEnriching] = useState(false);
+  // Deliberately separate from `error` (initial-load failure, which blanks
+  // the whole page): a failed deep-enrich should never discard an already
+  // loaded, valid report — just surface a dismissible inline notice.
+  const [enrichError, setEnrichError] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,11 +99,12 @@ export default function IPResult({ ip, onScan, artifactId }: IPResultProps) {
   const handleDeepEnrich = async () => {
     if (!result?.artifactId) return;
     setEnriching(true);
+    setEnrichError('');
     try {
-      const data = await deepEnrichIPArtifact(result.artifactId, ip);
+      const data = await deepEnrichIPArtifact(result.artifactId);
       setResult(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to deep-enrich IP');
+      setEnrichError(err.message || 'Failed to deep-enrich IP');
     } finally {
       setEnriching(false);
     }
@@ -210,6 +215,36 @@ export default function IPResult({ ip, onScan, artifactId }: IPResultProps) {
               >
                 {enriching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
                 {enriching ? 'Enriching…' : 'Deep enrich'}
+              </button>
+            </Callout>
+          </div>
+        )}
+
+        {result.initialSnapshot && (
+          <div className="mb-4">
+            <Callout
+              icon={<Database className="w-4 h-4" />}
+              tone="neutral"
+              title="Deep-enriched from a Bulk Lookup scan"
+              detail={`Originally bulk-scanned ${new Date(result.initialSnapshot.checkedAt).toLocaleString()} (score ${result.initialSnapshot.overallThreatScore}, ~${result.initialSnapshot.sourcesAvailable?.length ?? 14} sources). This view now reflects the full-coverage rescan below.`}
+            />
+          </div>
+        )}
+
+        {enrichError && (
+          <div className="mb-4">
+            <Callout
+              icon={<AlertTriangle className="w-4 h-4" />}
+              tone="danger"
+              title="Deep enrich failed"
+              detail={enrichError}
+            >
+              <button
+                onClick={() => setEnrichError('')}
+                className="mt-2 text-xs font-medium underline"
+                style={{ color: palette.textSecondary }}
+              >
+                Dismiss
               </button>
             </Callout>
           </div>
