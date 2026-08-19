@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { T6Orb, type T6OrbState } from './T6Orb';
+import { palette, typography } from '../../design-system/tokens';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ const PERSONAS: Record<string, { name: string; icon: string; color: string; one_
   none: {
     name: 'Default',
     icon: '◈',
-    color: '#8a8fa8',
+    color: palette.textSecondary,
     one_liner: 'General cybersecurity analyst',
     voice_preamble: '',
     deliberation_signature: '',
@@ -91,7 +92,7 @@ const PERSONAS: Record<string, { name: string; icon: string; color: string; one_
   'red-teamer': {
     name: 'Red Teamer',
     icon: '⚔',
-    color: '#f43f5e',
+    color: palette.rose,
     one_liner: 'Adversarial mindset, attack surface focus',
     voice_preamble: `You are analyzing this with an adversarial mindset. Assume malicious intent is possible. Look for attack vectors, exploitation paths, and ways this could be weaponized or abused. If a threat exists, find it. If a defense is proposed, find its gaps. If something looks benign, consider how an attacker would leverage it anyway.
 
@@ -101,7 +102,7 @@ Your instinct: everything is an attack surface until proven otherwise. Do not so
   'defender': {
     name: 'Defender',
     icon: '🛡',
-    color: '#3b82f6',
+    color: palette.blue,
     one_liner: 'Blue team, MITRE ATT&CK, detection engineering',
     voice_preamble: `You are analyzing this from a defensive security perspective. Map observations to MITRE ATT&CK tactics and techniques. Identify what detection rules, controls, or mitigations apply. Think about what telemetry a SOC would have — what does Sentinel/Defender/EDR actually log here, and how would you write a KQL query to detect it?
 
@@ -111,7 +112,7 @@ Your instinct: every threat has indicators. Every attack has telemetry. Your job
   'skeptic': {
     name: 'Skeptic',
     icon: '⚖',
-    color: '#fbbf24',
+    color: palette.amber,
     one_liner: 'False positive hunter, demands evidence',
     voice_preamble: `You critically evaluate whether the threat is real. Question every assumption. Consider benign explanations — legitimate admin tools, misconfiguration, authorized pen testing, false correlation. Demand concrete, observable evidence before escalating.
 
@@ -121,7 +122,7 @@ Your instinct: the worst outcome in SOC operations is burning analyst time on a 
   'forensics': {
     name: 'Forensics',
     icon: '🔬',
-    color: '#00d9ff',
+    color: palette.cyan,
     one_liner: 'Evidence chains, attribution, IOC correlation',
     voice_preamble: `You analyze through the lens of digital forensics. Focus on artifact provenance, IOC correlation, timeline reconstruction, and attribution. Every claim must be tied to a specific observable artifact, log entry, or indicator — not inference.
 
@@ -132,26 +133,30 @@ Your instinct: facts before conclusions. Build the evidence chain first. Correla
 
 // ─── Design Tokens ───────────────────────────────────────────────────────────
 
+// Aliased onto the shared operator-workstation palette (tokens.ts) so the
+// Thamos AI workshop reads as one OS with the rest of Desktop instead of a
+// leftover neon-hacker terminal skin. Keys kept stable to avoid touching
+// every call site below.
 const C = {
-  bg: '#060610',
-  surface: '#0a0e1a',
-  surfaceAlt: '#0d1220',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  rose: '#f43f5e',
-  blue: '#3b82f6',
+  bg: palette.void,
+  surface: palette.elevated,
+  surfaceAlt: palette.float,
+  border: palette.borderSubtle,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
+  cyan: palette.cyan,
+  green: palette.green,
+  amber: palette.amber,
+  rose: palette.rose,
+  blue: palette.blue,
 };
 
 const AGENT_COLOR: Record<string, string> = {
   anthropic: C.green,
-  openai: '#ff6b35',
+  openai: palette.orange,
   google: C.cyan,
-  openrouter: '#9370DB',
+  openrouter: palette.pink,
 };
 
 const DEFAULT_AGENTS: Array<Omit<Agent, 'id'>> = [
@@ -197,7 +202,7 @@ function renderMarkdown(text: string): React.ReactNode {
     while ((m = regex.exec(remaining)) !== null) {
       if (m.index > idx) res.push(remaining.slice(idx, m.index));
       const tok = m[0];
-      if (tok.startsWith('`')) res.push(<span key={`${key++}-c`} style={{ background: '#1a1f35', padding: '1px 4px', borderRadius: 3, color: C.green, fontSize: '0.7rem' }}>{tok.slice(1, -1)}</span>);
+      if (tok.startsWith('`')) res.push(<span key={`${key++}-c`} style={{ background: C.surfaceAlt, padding: '1px 4px', borderRadius: 3, color: C.green, fontSize: '0.7rem', fontFamily: typography.mono }}>{tok.slice(1, -1)}</span>);
       else if (tok.startsWith('**')) res.push(<strong key={`${key++}-b`} style={{ color: C.textLight, fontWeight: 600 }}>{tok.slice(2, -2)}</strong>);
       idx = m.index + tok.length;
     }
@@ -215,7 +220,7 @@ function renderMarkdown(text: string): React.ReactNode {
               <span style={{ color: C.dim, fontSize: '0.6rem' }}>{lang || 'code'}</span>
               <button onClick={() => navigator.clipboard.writeText(code)} style={{ color: C.dim, fontSize: '0.55rem', border: `1px solid ${C.border}`, borderRadius: 3, padding: '1px 5px', background: 'transparent', cursor: 'pointer' }}>COPY</button>
             </div>
-            <pre style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: C.green, margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{code}</pre>
+            <pre style={{ fontFamily: typography.mono, fontSize: '0.68rem', color: C.green, margin: 0, padding: '8px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{code}</pre>
           </div>
         );
         codeBuf = []; codeLang = ''; inCode = false;
@@ -245,7 +250,7 @@ function PersonaBadge({ persona, onClick }: { persona: string; onClick: () => vo
       style={{
         fontSize: '0.55rem', padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
         color: p.color, border: `1px solid ${p.color}40`, background: `${p.color}10`,
-        fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em',
+        fontFamily: typography.mono, letterSpacing: '0.06em',
       }}
     >
       {p.icon} {p.name.toUpperCase()}
@@ -261,30 +266,30 @@ function DeliberationCard({ result }: { result: DeliberationResult }) {
     <div style={{ marginTop: 6, border: `1px solid ${C.border}`, borderRadius: 5, overflow: 'hidden' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        style={{ width: '100%', padding: '5px 10px', background: '#0d1220', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: C.text, fontSize: '0.6rem', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em' }}
+        style={{ width: '100%', padding: '5px 10px', background: C.surfaceAlt, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: C.text, fontSize: '0.6rem', fontFamily: typography.mono, letterSpacing: '0.06em' }}
       >
-        <span style={{ color: '#5a8fe0' }}>DELIBERATION · {result.agent_name.toUpperCase()}</span>
+        <span style={{ color: palette.blue }}>DELIBERATION · {result.agent_name.toUpperCase()}</span>
         <span style={{ color: C.dim }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div style={{ padding: '8px 10px', background: '#080b16', display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.68rem', color: C.text, fontFamily: 'JetBrains Mono, monospace' }}>
+        <div style={{ padding: '8px 10px', background: C.bg, display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.68rem', color: C.text, fontFamily: typography.ui }}>
           {result.objection && (
             <div style={{ borderLeft: `2px solid ${C.rose}`, paddingLeft: 8 }}>
-              <span style={{ color: C.rose, fontSize: '0.6rem' }}>✗ OBJECTS TO {(result.objection.target_agent_name || result.objection.target_voice).toUpperCase()}</span>
+              <span style={{ color: C.rose, fontSize: '0.6rem', fontFamily: typography.mono }}>✗ OBJECTS TO {(result.objection.target_agent_name || result.objection.target_voice).toUpperCase()}</span>
               <div style={{ marginTop: 3, color: C.textLight }}>{result.objection.point}</div>
               <div style={{ marginTop: 2, color: C.text }}>{result.objection.rationale}</div>
             </div>
           )}
           {result.agreement && (
             <div style={{ borderLeft: `2px solid ${C.green}`, paddingLeft: 8 }}>
-              <span style={{ color: C.green, fontSize: '0.6rem' }}>✓ AGREES WITH {(result.agreement.target_agent_name || result.agreement.target_voice).toUpperCase()}</span>
+              <span style={{ color: C.green, fontSize: '0.6rem', fontFamily: typography.mono }}>✓ AGREES WITH {(result.agreement.target_agent_name || result.agreement.target_voice).toUpperCase()}</span>
               <div style={{ marginTop: 3, color: C.textLight }}>{result.agreement.point}</div>
               <div style={{ marginTop: 2, color: C.text }}>What I missed: {result.agreement.why_i_missed_it}</div>
             </div>
           )}
           {result.self_critique && (
             <div style={{ borderLeft: `2px solid ${C.amber}`, paddingLeft: 8 }}>
-              <span style={{ color: C.amber, fontSize: '0.6rem' }}>~ SELF-CRITIQUE</span>
+              <span style={{ color: C.amber, fontSize: '0.6rem', fontFamily: typography.mono }}>~ SELF-CRITIQUE</span>
               <div style={{ marginTop: 3, color: C.textLight }}>{result.self_critique.weakness}</div>
               <div style={{ marginTop: 2, color: C.text }}>{result.self_critique.rationale}</div>
             </div>
@@ -299,33 +304,33 @@ function SynthesisPanel({ synthesis }: { synthesis: SynthesisResult }) {
   const hasStructure = synthesis.consensus || (synthesis.trade_offs?.length ?? 0) > 0 || (synthesis.unresolved_tensions?.length ?? 0) > 0;
 
   return (
-    <div style={{ border: `1px solid ${C.green}30`, borderRadius: 8, overflow: 'hidden', background: '#060f0a' }}>
+    <div style={{ border: `1px solid ${C.green}30`, borderRadius: 8, overflow: 'hidden', background: C.bg }}>
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${C.green}20`, background: `${C.green}08`, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, boxShadow: `0 0 8px ${C.green}` }} />
-        <span style={{ color: C.green, fontSize: '0.65rem', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.1em' }}>T6 SYNTHESIS</span>
+        <span style={{ color: C.green, fontSize: '0.65rem', fontFamily: typography.mono, letterSpacing: '0.1em' }}>T6 SYNTHESIS</span>
       </div>
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {hasStructure ? (
           <>
             {synthesis.consensus && (
               <div>
-                <div style={{ color: C.textLight, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'JetBrains Mono, monospace' }}>CONSENSUS</div>
+                <div style={{ color: C.textLight, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: typography.mono }}>CONSENSUS</div>
                 <div style={{ color: C.text, fontSize: '0.72rem', lineHeight: 1.6 }}>{renderMarkdown(synthesis.consensus)}</div>
               </div>
             )}
             {synthesis.trade_offs && synthesis.trade_offs.length > 0 && (
               <div>
-                <div style={{ color: C.amber, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'JetBrains Mono, monospace' }}>TRADE-OFFS</div>
+                <div style={{ color: C.amber, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 6, fontFamily: typography.mono }}>TRADE-OFFS</div>
                 {synthesis.trade_offs.map((t, i) => (
                   <div key={i} style={{ marginBottom: 8, border: `1px solid ${C.amber}20`, borderRadius: 5, overflow: 'hidden' }}>
-                    <div style={{ padding: '4px 10px', background: `${C.amber}08`, color: C.amber, fontSize: '0.6rem', fontFamily: 'JetBrains Mono, monospace' }}>{t.axis}</div>
+                    <div style={{ padding: '4px 10px', background: `${C.amber}08`, color: C.amber, fontSize: '0.6rem', fontFamily: typography.mono }}>{t.axis}</div>
                     <div style={{ padding: '6px 10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
-                        <div style={{ color: C.dim, fontSize: '0.58rem', fontFamily: 'JetBrains Mono, monospace', marginBottom: 2 }}>{t.side_a.agent.toUpperCase()}</div>
+                        <div style={{ color: C.dim, fontSize: '0.58rem', fontFamily: typography.mono, marginBottom: 2 }}>{t.side_a.agent.toUpperCase()}</div>
                         <div style={{ color: C.text, fontSize: '0.68rem' }}>{t.side_a.position}</div>
                       </div>
                       <div>
-                        <div style={{ color: C.dim, fontSize: '0.58rem', fontFamily: 'JetBrains Mono, monospace', marginBottom: 2 }}>{t.side_b.agent.toUpperCase()}</div>
+                        <div style={{ color: C.dim, fontSize: '0.58rem', fontFamily: typography.mono, marginBottom: 2 }}>{t.side_b.agent.toUpperCase()}</div>
                         <div style={{ color: C.text, fontSize: '0.68rem' }}>{t.side_b.position}</div>
                       </div>
                     </div>
@@ -335,10 +340,10 @@ function SynthesisPanel({ synthesis }: { synthesis: SynthesisResult }) {
             )}
             {synthesis.acknowledged_weaknesses && synthesis.acknowledged_weaknesses.length > 0 && (
               <div>
-                <div style={{ color: C.amber, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'JetBrains Mono, monospace' }}>ACKNOWLEDGED WEAKNESSES</div>
+                <div style={{ color: C.amber, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: typography.mono }}>ACKNOWLEDGED WEAKNESSES</div>
                 {synthesis.acknowledged_weaknesses.map((w, i) => (
                   <div key={i} style={{ paddingLeft: 8, borderLeft: `2px solid ${C.amber}40`, marginBottom: 4 }}>
-                    <span style={{ color: C.amber, fontSize: '0.6rem', fontFamily: 'JetBrains Mono, monospace' }}>{w.agent.toUpperCase()}</span>
+                    <span style={{ color: C.amber, fontSize: '0.6rem', fontFamily: typography.mono }}>{w.agent.toUpperCase()}</span>
                     <div style={{ color: C.text, fontSize: '0.68rem', marginTop: 2 }}>{w.weakness}</div>
                   </div>
                 ))}
@@ -346,7 +351,7 @@ function SynthesisPanel({ synthesis }: { synthesis: SynthesisResult }) {
             )}
             {synthesis.unresolved_tensions && synthesis.unresolved_tensions.length > 0 && (
               <div style={{ border: `1px solid ${C.rose}30`, borderRadius: 5, overflow: 'hidden' }}>
-                <div style={{ padding: '5px 10px', background: `${C.rose}08`, color: C.rose, fontSize: '0.6rem', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em' }}>UNRESOLVED · YOUR CALL</div>
+                <div style={{ padding: '5px 10px', background: `${C.rose}08`, color: C.rose, fontSize: '0.6rem', fontFamily: typography.mono, letterSpacing: '0.08em' }}>UNRESOLVED · YOUR CALL</div>
                 <div style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {synthesis.unresolved_tensions.map((t, i) => (
                     <div key={i} style={{ color: C.textLight, fontSize: '0.68rem', paddingLeft: 8, borderLeft: `2px solid ${C.rose}40` }}>{t}</div>
@@ -356,7 +361,7 @@ function SynthesisPanel({ synthesis }: { synthesis: SynthesisResult }) {
             )}
             {synthesis.recommendation && (
               <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-                <div style={{ color: C.green, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'JetBrains Mono, monospace' }}>RECOMMENDATION</div>
+                <div style={{ color: C.green, fontSize: '0.6rem', letterSpacing: '0.08em', marginBottom: 4, fontFamily: typography.mono }}>RECOMMENDATION</div>
                 <div style={{ color: C.textLight, fontSize: '0.72rem', lineHeight: 1.7 }}>{renderMarkdown(synthesis.recommendation)}</div>
               </div>
             )}
@@ -723,7 +728,7 @@ export function T6() {
 
   if (!user) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, fontFamily: 'JetBrains Mono, monospace', color: C.text }}>
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, fontFamily: typography.ui, color: C.text }}>
         <div style={{ textAlign: 'center' }}>
           <T6Orb state="idle" size={60} />
           <div style={{ marginTop: 12, fontSize: '0.75rem' }}>Sign in to access T6</div>
@@ -733,7 +738,7 @@ export function T6() {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', background: C.bg, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem', color: C.textLight }}>
+    <div style={{ height: '100%', display: 'flex', background: C.bg, fontFamily: typography.ui, fontSize: '0.72rem', color: C.textLight }}>
 
       {/* ── Sidebar ── */}
       {sidebarOpen && (
@@ -853,14 +858,14 @@ export function T6() {
                       value={newCtxName}
                       onChange={e => setNewCtxName(e.target.value)}
                       placeholder="Name (e.g. Sentinel Schema)"
-                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: 'JetBrains Mono, monospace', outline: 'none' }}
+                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: typography.mono, outline: 'none' }}
                     />
                     <textarea
                       value={newCtxContent}
                       onChange={e => setNewCtxContent(e.target.value)}
                       placeholder="Paste schema, runbook, or any context..."
                       rows={5}
-                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', outline: 'none' }}
+                      style={{ padding: '4px 6px', fontSize: '0.6rem', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 3, color: C.textLight, fontFamily: typography.mono, resize: 'vertical', outline: 'none' }}
                     />
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button
@@ -1033,10 +1038,10 @@ export function T6() {
                     })}
                   </div>
 
-                  <span style={{ color: C.dim, fontSize: '0.58rem', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 }}>
+                  <span style={{ color: C.dim, fontSize: '0.58rem', fontFamily: typography.mono, flexShrink: 0 }}>
                     {currentSlide + 1} / {councilResponses.length}
                   </span>
-                  <span style={{ color: C.dim, fontSize: '0.55rem', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0, marginLeft: 4 }}>← → keys</span>
+                  <span style={{ color: C.dim, fontSize: '0.55rem', fontFamily: typography.mono, flexShrink: 0, marginLeft: 4 }}>← → keys</span>
 
                   <button
                     onClick={() => setCurrentSlide(s => Math.min(councilResponses.length - 1, s + 1))}
@@ -1119,7 +1124,7 @@ export function T6() {
               placeholder={mode === 'council' ? 'Broadcast to council... (Enter to send)' : `Message ${selectedAgent?.name ?? 'agent'}...`}
               disabled={isBusy}
               rows={1}
-              style={{ flex: 1, padding: '8px 12px', fontSize: '0.72rem', fontFamily: 'JetBrains Mono, monospace', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 6, color: C.textLight, resize: 'none', outline: 'none' }}
+              style={{ flex: 1, padding: '8px 12px', fontSize: '0.78rem', fontFamily: typography.ui, background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 6, color: C.textLight, resize: 'none', outline: 'none' }}
             />
             <button
               onClick={handleSend}

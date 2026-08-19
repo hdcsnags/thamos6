@@ -2,19 +2,23 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { detectIOCType } from '../../lib/iocDetection';
 import { useDesktop } from '../../contexts/DesktopContext';
+import { palette, typography } from '../../design-system/tokens';
 
+// Aliased onto the shared operator-workstation palette (tokens.ts) so Intel
+// Stream reads as one OS with the rest of Desktop instead of a leftover
+// neon-hacker skin. Keys kept stable to avoid touching every call site below.
 const P = {
-  void: '#060610',
-  surface: '#0a0e1a',
-  surfaceLight: '#0f1424',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  pink: '#ff0080',
+  void: palette.void,
+  surface: palette.elevated,
+  surfaceLight: palette.float,
+  border: palette.borderSubtle,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
+  cyan: palette.cyan,
+  green: palette.green,
+  amber: palette.amber,
+  pink: palette.pink,
 };
 
 interface FeedItem {
@@ -317,7 +321,7 @@ export function DesktopIntelDashboard({ data }: DesktopIntelDashboardProps = {})
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: 'JetBrains Mono, monospace' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: typography.ui }}>
       {/* Top tab bar */}
       <div className="flex items-center gap-1 px-3 py-2" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
         {(['feeds', 'ransomware'] as TopTab[]).map(t => (
@@ -361,7 +365,7 @@ export function DesktopIntelDashboard({ data }: DesktopIntelDashboardProps = {})
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search intel..."
                 className="w-full px-3 py-1.5 text-xs rounded focus:outline-none"
-                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight, fontFamily: 'JetBrains Mono, monospace' }}
+                style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}`, color: P.textLight }}
               />
               <div className="flex gap-1 flex-wrap">
                 {FEED_PILLS.map(({ key, label }) => {
