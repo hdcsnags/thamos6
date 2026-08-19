@@ -218,6 +218,23 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 ## Sprint Log
 
+### Sprint 2026-08-19h — Bulk Lookup: Batch Investigation Workbench (Triage/Correlation/Report)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Followed Sol's proposed "Batch Investigation Workbench" model (Triage/Correlation/Evidence/Report tabs). Built an HTML/CSS/JS mockup with fake data first (session-state artifact, not committed) to validate the UX with the user before touching real code, then implemented 3 of 4 tabs for real — entirely client-side against data `/bulk` already returns, no backend change required.
+
+**Shipped:**
+- New `src/components/bulk/` module: `clusterUtils.ts` (groups a batch by shared hosting org, shared VPN provider, and shared threat-feed tag — ThreatFox/URLhaus/Spamhaus/Blocklist.de — purely from existing `BulkIPResult` fields), `verdict.ts` (shared `verdictFor`/tone mapping, previously duplicated per-file), `BulkTriageView.tsx`, `CorrelationMap.tsx`, `BatchReport.tsx`.
+- **Triage tab**: verdict/VPN/Tor stat chips double as quick filters; clicking a row opens an inline inspector drawer (score gauge, network, abuse/blocklist chips, "Open full report") instead of navigating away — list context is preserved while drilling into any IP.
+- **Correlation tab**: a purpose-built Batch Correlation Map (distinct from the single-IP pivot graph) — hand-positioned SVG hub-and-spoke layout, cluster hubs sized by member count, outliers pushed to an outer ring. Clicking a hub shows members + what they share, with a "View all in Triage" handoff that filters Triage down to that cluster. Toggle reveals lighter same-country "one-off context" edges, off by default.
+- **Report tab**: synthesized batch document — decision summary, top priority IPs, shared infrastructure, shared threat evidence, outlier findings, methodology — plus a print/export action.
+- **Evidence tab**: placeholder explaining the one real gap (needs per-source detected/clear/error/unavailable status persisted server-side, not just aggregated flags) — queued as the immediate fast-follow, not faked.
+
+`BulkLookup.tsx` now hosts a tab shell instead of a flat table; outer container widened to `max-w-7xl` for the denser workbench layout. `npm run build` + `tsc --noEmit` clean; frontend-only, no migration or edge function deploy needed. Committed/pushed (`4d8b6d4`).
+
+**Deferred:** Evidence matrix (needs backend field), and any physics-based/auto-layout graph library — current correlation map uses a deterministic hand-positioned layout matching the existing pivot-graph convention (`RelatedIOCs.tsx`), not a new dependency.
+
+---
+
 ### Sprint 2026-08-19g — Bulk Lookup Phase 1 Correctness Fixes (Sol follow-up)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
 **Scope:** Sol reviewed the persisted-artifact work (2026-08-19f) and flagged 8 correctness/integrity issues. Verified each against the code before acting rather than applying all blindly.
