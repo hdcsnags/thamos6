@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { analyzeAttachment } from "../_shared/artifact-analyzer.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
@@ -225,9 +226,18 @@ serve(async (req) => {
       findings = r.findings;
       extractedURLs = r.urls;
     } else if (fileType === "ooxml") {
-      const r = analyzeOOXML(text);
-      findings = r.findings;
-      extractedURLs = r.urls;
+      // Real ZIP unpack + embedded-media QR decode, replacing the old
+      // Latin-1-over-the-whole-compressed-blob regex scan (which could never
+      // see inside a DOCX's media parts — see artifact-analyzer.ts).
+      const deep = await analyzeAttachment(bytes, { filename, contentType: "application/octet-stream", recipients: [] });
+      // Keep the legacy text-regex pass too — it still catches the
+      // auto-open-macro-trigger keyword, which the deep analyzer doesn't
+      // check for (it only flags vbaProject.bin's presence).
+      const legacy = analyzeOOXML(text);
+      const autoOpenFindings = legacy.findings.filter((f) => f.category === "Macro" && /auto-?open/i.test(f.detail));
+      findings = [...deep.findings, ...autoOpenFindings];
+      const qrUrls = deep.artifacts.filter((a) => a.kind === "qr-url").map((a) => a.value);
+      extractedURLs = [...new Set([...qrUrls, ...legacy.urls])];
     } else if (fileType === "ole") {
       const r = analyzeOLE(text);
       findings = r.findings;

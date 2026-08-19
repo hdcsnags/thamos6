@@ -4,7 +4,13 @@
 // uploads so the social-engineering payload and Microsoft's own verdict headers
 // become visible instead of being discarded.
 //
-// Deliberately dependency-free (Deno edge runtime).
+// The header/MIME/URL logic below is dependency-free by design. The one
+// exception is analyzeAttachmentArtifacts(), which delegates to
+// artifact-analyzer.ts (OOXML unzip + QR decode) — kept as a separate module
+// specifically so it can carry npm: deps without touching this file's parsing
+// core.
+
+import { analyzeAttachment, type AttachmentAnalysis } from "./artifact-analyzer.ts";
 
 // ---------- types ----------
 
@@ -32,6 +38,34 @@ export interface DecodedArtifact {
   kind: "email" | "url" | "domain" | "text";
 }
 
+/** Where a URL was recovered from — a plain body/header link, or extracted
+ *  from an attachment (a hyperlink inside the document, or a QR code decoded
+ *  from an embedded image). QR-sourced URLs never appear as text anywhere in
+ *  the message, so this provenance is what lets the UI say "this came from a
+ *  QR code inside the attachment," not just "here's a URL." */
+export interface UrlSource {
+  kind: "body" | "attachment-link" | "attachment-qr";
+  attachmentFilename?: string;
+  attachmentSha256?: string;
+  containerPart?: string;
+  page?: number;
+  imageIndex?: number;
+}
+
+/** Evidence that a URL's path/query/fragment embeds the message recipient's
+ *  own address — the AITM/quishing "victim UPN prefill" tell. Plain-text
+ *  fragments (never sent in the initial HTTP request, but readable by
+ *  landing-page JS) are checked alongside percent- and base64-encoded forms. */
+export interface RecipientBinding {
+  detected: boolean;
+  location: "path" | "query" | "fragment" | null;
+  encoding: "plain" | "percent" | "base64" | null;
+  matchedValue: string | null;
+  matchesMessageRecipient: boolean;
+  matchedTenantDomain: boolean;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface UrlIntel {
   /** URL exactly as it appeared in the message */
   original: string;
@@ -42,6 +76,9 @@ export interface UrlIntel {
   wrapper: "safelinks" | "mimecast" | "urldefense" | "barracuda" | "symantec" | null;
   finalHost: string;
   decodedArtifacts: DecodedArtifact[];
+  /** absent for ordinary body/header URLs — only set for attachment-recovered ones */
+  source?: UrlSource;
+  recipientBinding?: RecipientBinding;
 }
 
 export interface DefenderSignal {
@@ -62,6 +99,10 @@ export interface AttachmentInfo {
   sha256: string | null;
   risk: "high" | "medium" | "low";
   reasons: string[];
+  /** recursive content analysis (OOXML unzip + QR decode) — absent until
+   *  analyzeAttachmentArtifacts() runs, since it needs the transient bytes
+   *  that fillAttachmentHashes() clears. See artifact-analyzer.ts. */
+  analysis?: AttachmentAnalysis;
 }
 
 export interface DefenderIntel {
@@ -421,6 +462,89 @@ export function analyzeUrl(original: string): UrlIntel {
 const URL_RE = /https?:\/\/[^\s<>"'\])}]+/gi;
 const IP_RE = /\b(\d{1,3}\.){3}\d{1,3}\b/g;
 const EMAIL_RE = /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g;
+
+/**
+ * Does this URL's path/query/fragment embed the message recipient's own
+ * address? This is the AITM/quishing tell: phishing kits prefill the
+ * credential page with the victim's UPN so it looks personalized. Checks
+ * plain text (the fragment case — never sent in the initial HTTP request, but
+ * readable by landing-page JS, and NOT caught by decodeUrlTokens()'s
+ * base64-only heuristic), percent-decoded text, and base64/base64url tokens.
+ * Only reports a match against the actual message recipients or their tenant
+ * domain — a stray unrelated email address elsewhere in a URL is not this
+ * signal.
+ */
+export function analyzeRecipientBinding(url: string, recipients: string[]): RecipientBinding {
+  const none: RecipientBinding = {
+    detected: false,
+    location: null,
+    encoding: null,
+    matchedValue: null,
+    matchesMessageRecipient: false,
+    matchedTenantDomain: false,
+    confidence: "low",
+  };
+  let u: URL;
+  try { u = new URL(url); } catch { return none; }
+
+  const recipientsLower = recipients.map((r) => r.toLowerCase()).filter(Boolean);
+  if (recipientsLower.length === 0) return none;
+  const tenantDomains = new Set(recipientsLower.map((r) => r.split("@")[1]).filter(Boolean));
+
+  const check = (candidate: string, location: RecipientBinding["location"], encoding: RecipientBinding["encoding"]): RecipientBinding | null => {
+    const lower = candidate.toLowerCase();
+    const matchesRecipient = recipientsLower.includes(lower);
+    const domain = lower.split("@")[1] ?? "";
+    const matchedTenantDomain = domain.length > 0 && tenantDomains.has(domain);
+    if (!matchesRecipient && !matchedTenantDomain) return null;
+    return {
+      detected: true,
+      location,
+      encoding,
+      matchedValue: candidate,
+      matchesMessageRecipient: matchesRecipient,
+      matchedTenantDomain,
+      confidence: matchesRecipient ? "high" : "medium",
+    };
+  };
+
+  const components: Array<{ loc: RecipientBinding["location"]; raw: string }> = [
+    { loc: "path", raw: u.pathname },
+    { loc: "query", raw: u.search },
+    { loc: "fragment", raw: u.hash },
+  ];
+
+  for (const { loc, raw } of components) {
+    if (!raw) continue;
+
+    for (const m of raw.match(EMAIL_RE) ?? []) {
+      const hit = check(m, loc, "plain");
+      if (hit) return hit;
+    }
+
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch { /* leave as-is */ }
+    if (decoded !== raw) {
+      for (const m of decoded.match(EMAIL_RE) ?? []) {
+        const hit = check(m, loc, "percent");
+        if (hit) return hit;
+      }
+    }
+
+    const tokens = raw.split(/[/&=?#]/).filter((t) => t.length >= 12);
+    for (const token of tokens) {
+      const bytes = b64ToBytes(token);
+      if (!bytes) continue;
+      const text = bytesToText(bytes, "utf-8");
+      for (const m of text.match(EMAIL_RE) ?? []) {
+        const hit = check(m, loc, "base64");
+        if (hit) return hit;
+      }
+    }
+  }
+
+  return none;
+}
 
 function isPrivateIP(ip: string): boolean {
   return (
@@ -794,6 +918,93 @@ function analyzeAttachments(parts: MimePart[]): AttachmentInfo[] {
 
 function isAttachmentPart(p: MimePart): boolean {
   return p.disposition === "attachment" || Boolean(p.filename);
+}
+
+const HEADER_EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+/**
+ * Message recipient addresses (To + Cc only — never From/body addresses).
+ * Used exclusively for victim-identity-binding detection in recovered URLs;
+ * never persisted or sent to any external service.
+ */
+export function extractRecipients(parsed: ParsedEmail): string[] {
+  const raw = `${parsed.headers["to"] ?? ""}, ${parsed.headers["cc"] ?? ""}`;
+  return [...new Set((raw.match(HEADER_EMAIL_RE) ?? []).map((e) => e.toLowerCase()))];
+}
+
+/**
+ * Recover URLs hidden inside attachments (Phase A: OOXML → embedded media →
+ * QR code) and wire them into the same URL-analysis/IOC pipeline as
+ * body/header URLs, so IOC enrichment, the pivot graph, and email-verdict all
+ * see them without special-casing. MUST run BEFORE fillAttachmentHashes(),
+ * which clears the transient attachment bytes this function needs.
+ *
+ * `recipients` should be every address the message was actually sent to
+ * (To + Cc) — used only to detect victim-identity binding in recovered URLs;
+ * never persisted or sent anywhere external from here.
+ *
+ * Note: att.sha256 is still null while this runs (fillAttachmentHashes hasn't
+ * executed yet) — recovered UrlIntel.source.attachmentSha256 is left unset
+ * rather than duplicating the digest logic; callers can join back to
+ * parsed.attachments[i].sha256 by filename once that call completes.
+ */
+export async function analyzeAttachmentArtifacts(parsed: ParsedEmail, recipients: string[]): Promise<void> {
+  const attParts = parsed.parts.filter(isAttachmentPart);
+  const seenFinal = new Set(parsed.urls.map((u) => u.final));
+
+  for (let i = 0; i < parsed.attachments.length; i++) {
+    const bytes = attParts[i]?.bytes;
+    if (!bytes || bytes.length === 0) continue;
+
+    const att = parsed.attachments[i];
+    let analysis: AttachmentAnalysis;
+    try {
+      analysis = await analyzeAttachment(bytes, {
+        filename: att.filename,
+        contentType: att.contentType,
+        recipients,
+      });
+    } catch (e) {
+      analysis = {
+        status: "error",
+        detectedType: "unknown",
+        findings: [{ severity: "medium", category: "Container", detail: `Attachment analysis threw: ${String(e)}` }],
+        artifacts: [],
+      };
+    }
+    att.analysis = analysis;
+
+    for (const artifact of analysis.artifacts) {
+      if (artifact.kind !== "qr-url") continue;
+      const intel = analyzeUrl(artifact.value);
+      if (seenFinal.has(intel.final)) continue;
+      seenFinal.add(intel.final);
+      intel.source = {
+        kind: "attachment-qr",
+        attachmentFilename: att.filename,
+        containerPart: artifact.sourcePart,
+        imageIndex: artifact.imageIndex,
+      };
+      intel.recipientBinding = analyzeRecipientBinding(intel.final, recipients);
+      parsed.urls.push(intel);
+
+      if (intel.finalHost && intel.finalHost.includes(".") && !isWrapperHost(intel.finalHost) && !parsed.domains.includes(intel.finalHost)) {
+        parsed.domains.push(intel.finalHost);
+      }
+
+      if (intel.recipientBinding.detected) {
+        let pathname = "";
+        try { pathname = new URL(intel.final).pathname; } catch { /* ignore */ }
+        parsed.suspiciousIndicators.push(
+          `Targeted identity phishing: QR code in attachment "${att.filename}" resolves to ${intel.finalHost}${pathname} embedding the recipient's exact identity in the URL ${intel.recipientBinding.location} (${intel.recipientBinding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
+        );
+      } else {
+        parsed.suspiciousIndicators.push(
+          `QR code in attachment "${att.filename}" resolves to ${intel.finalHost || intel.final} — QR payloads bypass normal body/link URL-reputation checks; verify the destination before scanning.`
+        );
+      }
+    }
+  }
 }
 
 /**

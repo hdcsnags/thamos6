@@ -8,7 +8,7 @@
 // Client-supplied threat-intel enrichment is accepted but labeled as such.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { parseEmail, fillAttachmentHashes } from "../_shared/email-parser.ts";
+import { parseEmail, fillAttachmentHashes, analyzeAttachmentArtifacts, extractRecipients } from "../_shared/email-parser.ts";
 import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -186,6 +186,11 @@ Deno.serve(async (req: Request) => {
 
     // Server-side truth: re-derive everything from the raw artifact
     const parsed = parseEmail(raw_email);
+    // Recover attachment-hidden URLs (OOXML → media → QR) before the model
+    // sees the evidence, and before the bytes get cleared below — otherwise
+    // the grounded verdict would miss the exact thing Defender/SafeLinks
+    // can't see either.
+    await analyzeAttachmentArtifacts(parsed, extractRecipients(parsed));
     await fillAttachmentHashes(parsed);
 
     // Grounded sender-domain DNS posture (is the From domain even spoofable?)
@@ -205,9 +210,15 @@ Deno.serve(async (req: Request) => {
 
     const urlsStr = parsed.urls.slice(0, 20).map(u => {
       const bits = [`URL: ${u.original.slice(0, 200)}`];
+      if (u.source?.kind === "attachment-qr") {
+        bits.push(`  source: QR code decoded from attachment "${u.source.attachmentFilename}"${u.source.containerPart ? ` (${u.source.containerPart})` : ""} — this URL appears nowhere as text in the message body/headers.`);
+      }
       if (u.wrapper) bits.push(`  wrapper: ${u.wrapper} → real destination: ${u.final.slice(0, 200)} (host: ${u.finalHost})`);
       for (const a of u.decodedArtifacts) {
         bits.push(`  base64 token "${a.token.slice(0, 60)}" decodes to [${a.kind}] ${a.decoded.slice(0, 120)}`);
+      }
+      if (u.recipientBinding?.detected) {
+        bits.push(`  RECIPIENT IDENTITY BINDING: the URL ${u.recipientBinding.location} (${u.recipientBinding.encoding}-encoded) contains "${u.recipientBinding.matchedValue}" — ${u.recipientBinding.matchesMessageRecipient ? "an EXACT match to a message recipient" : "matches the recipient's tenant domain"}. This is the AITM/quishing victim-prefill pattern: treat as targeted identity phishing, but do not assert a specific named kit (e.g. Evilginx) from static evidence alone.`);
       }
       return bits.join("\n");
     }).join("\n") || "None";
@@ -215,9 +226,12 @@ Deno.serve(async (req: Request) => {
     const indicatorsStr = parsed.suspiciousIndicators.map(i => `- ${i}`).join("\n") || "None";
     const bodyFindingsStr = parsed.bodyFindings.map(f => `- ${f}`).join("\n") || "None";
     const attachmentsStr = parsed.attachments.length > 0
-      ? parsed.attachments.map(a =>
-          `[${a.risk.toUpperCase()}] ${a.filename} (${a.contentType}, ${a.sizeBytes} bytes${a.sha256 ? `, sha256 ${a.sha256}` : ""}) — ${a.reasons.join(" ")}`
-        ).join("\n")
+      ? parsed.attachments.map(a => {
+          const base = `[${a.risk.toUpperCase()}] ${a.filename} (${a.contentType}, ${a.sizeBytes} bytes${a.sha256 ? `, sha256 ${a.sha256}` : ""}) — ${a.reasons.join(" ")}`;
+          if (!a.analysis || a.analysis.findings.length === 0) return base;
+          const findings = a.analysis.findings.map(f => `    [${f.severity.toUpperCase()}/${f.category}] ${f.detail}`).join("\n");
+          return `${base}\n  Recursive content analysis (${a.analysis.status}):\n${findings}`;
+        }).join("\n")
       : "None";
 
     let enrichmentStr = "Not provided";
@@ -229,7 +243,7 @@ Deno.serve(async (req: Request) => {
 
     const systemPrompt = `You are a senior email-threat analyst inside Thamos6 performing defensive analysis of a message an analyst received and uploaded. You are given server-parsed evidence: full header intelligence (including Microsoft Defender/EOP verdict headers), the MIME-decoded body, unwrapped URLs, and base64 artifacts decoded from URL components.
 
-Your job is to produce a calibrated verdict GROUNDED IN THE SUPPLIED EVIDENCE. For each automated signal, CONFIRM or REFUTE it against the actual headers/body before accepting it. Authentication results are frequently misleading: spf=pass from a compromised third-party relay proves nothing about the From identity; dmarc=bestguesspass is a guess, not verification. Conversely, a clean SCL/CAT does not clear a message — Defender misses well-crafted BEC/AITM phish. Weigh header contradictions (authenticated sender vs From, spoofed HELO), display-name impersonation, social-engineering content (fake trust banners, urgency), dangerous attachments (HTML/script/archive/double-extension — local credential pages and malware delivery), and URL evidence (credential-harvest hosts, victim identity embedded base64) above raw filter scores.
+Your job is to produce a calibrated verdict GROUNDED IN THE SUPPLIED EVIDENCE. For each automated signal, CONFIRM or REFUTE it against the actual headers/body before accepting it. Authentication results are frequently misleading: spf=pass from a compromised third-party relay proves nothing about the From identity; dmarc=bestguesspass is a guess, not verification. Conversely, a clean SCL/CAT does not clear a message — Defender misses well-crafted BEC/AITM phish. Weigh header contradictions (authenticated sender vs From, spoofed HELO), display-name impersonation, social-engineering content (fake trust banners, urgency), dangerous attachments (HTML/script/archive/double-extension — local credential pages and malware delivery), and URL evidence (credential-harvest hosts, victim identity embedded base64) above raw filter scores. Attachments have been recursively opened server-side (OOXML unzipped, embedded images decoded, QR codes read) — a URL whose source is "QR code decoded from attachment" is real evidence you were given, not something to be skeptical of; explain it, don't second-guess whether it exists. A RECIPIENT IDENTITY BINDING note means the URL was verified server-side to contain the actual message recipient's address — call this out explicitly as targeted identity phishing, but do not claim a specific named kit (Evilginx, device-code phishing, etc.) unless the evidence explicitly describes that behavior; the URL alone proves targeting, not which framework operates behind it.
 
 Do not invent evidence. Cite the specific header, body text, or URL for every claim. If evidence is insufficient for a signal, say UNCERTAIN rather than guessing. Return only valid JSON matching the requested schema.`;
 

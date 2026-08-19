@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Bulk Lookup Phase 1: Persisted Scan Artifacts)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Email Analyzer Phase A: Recursive Attachment/QR Extraction)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,30 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19i — Email Analyzer Phase A: Recursive Attachment/QR Extraction (Sol brief)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Sol analyzed a real DSBN payroll-phishing sample locally: a DOCX attachment containing a QR code resolving to a credential-harvesting URL with the victim's exact UPN embedded in the URL fragment (`#allison.pay@dsbn.org`) — a targeted AITM/quishing tell that Microsoft Defender flagged (SCL9/HPHISH) but whose full evidence chain (email → DOCX → embedded PNG → QR → URL → recipient binding) T6 did not recursively extract; attachment bytes were hashed then discarded. Sol delivered a full engineering brief; user scoped this sprint to **Phase A only** (OOXML unzip → QR decode → recipient-binding detection). Deferred: Phase B (URLScan/VT PII/privacy gate — recovered URLs still flow into whatever `/threat-intel/url` already does, **known gap, not yet closed**) and Phase C (PDF structural analysis/OCR).
+Algorithm validated safely first in an isolated Node.js scratch script against a synthetic `.example`-domain DOCX+QR fixture (fflate/jsqr/pngjs/jpeg-js) before touching the real Deno codebase.
+
+**Shipped:**
+- New `supabase/functions/_shared/artifact-analyzer.ts` — `analyzeAttachment(bytes, metadata)`: detects container type by magic bytes (PDF/OOXML-zip/OLE/image/unknown); for OOXML, unzips via `npm:fflate` with true pre-inflation zip-bomb protection (rejects by `file.originalSize` from the central directory before decompressing), scans `word|xl|ppt/media/*` images (PNG via `npm:pngjs`, JPEG via `npm:jpeg-js`), decodes QR codes via `npm:jsqr`, flags VBA macro projects and external `.rels` relationship targets. Hard limits: 300 entries / 40MB total uncompressed / 12MB single entry / 25 images scanned / 40M pixel ceiling / 4s QR decode budget. PDF/OLE return `unsupported` (Phase C).
+- `_shared/email-parser.ts`: new `UrlSource`/`RecipientBinding` types; `UrlIntel` gained `source`/`recipientBinding`, `AttachmentInfo` gained `analysis`. New `analyzeRecipientBinding()` checks a URL's path/query/fragment for the message recipient's address in **plain text, percent-encoded, base64, and base64url** forms (the real specimen's UPN was plain-text in the fragment, which the pre-existing base64-only `decodeUrlTokens()` would have missed entirely). New `extractRecipients()` (To+Cc only) and `analyzeAttachmentArtifacts()` (runs `analyzeAttachment()` per attachment, feeds recovered QR URLs through the existing `analyzeUrl()` wrapper-unwrap pipeline, dedupes against `parsed.urls`, pushes a worded-carefully suspicious indicator — "targeted identity phishing... consistent with credential-harvesting/AITM... not proof of a specific named kit"). Must run *before* `fillAttachmentHashes()`, which clears transient attachment bytes.
+- `analyze-email/index.ts` and `email-verdict/index.ts`: wired `analyzeAttachmentArtifacts()` in ahead of `fillAttachmentHashes()`. `email-verdict`'s prompt-building (`urlsStr`/`attachmentsStr`) now surfaces QR provenance and recipient-binding evidence to the grounded model, and the system prompt was extended to tell the model this is real server-verified evidence to explain (not second-guess) while still avoiding named-kit claims (Evilginx/device-code) without behavioral proof.
+- `analyze-doc/index.ts` (standalone Document Analyzer): OOXML branch now calls the shared `analyzeAttachment()` (real unzip + QR decode) instead of treating the compressed ZIP as Latin-1 text; kept the legacy regex pass's auto-open-macro-trigger check (a signal the deep analyzer doesn't check) merged alongside.
+- `EmailAnalyzer.tsx`: mirrored the new `UrlSource`/`RecipientBinding`/`AttachmentAnalysis` types; added a prominent "RECIPIENT IDENTITY BINDING — TARGETED PHISHING" callout in the IOCs tab when detected, a lighter QR-provenance note otherwise, and per-attachment deep-extraction findings under the existing reasons list in the Attach tab. Reused existing visual patterns only — no new design (full UX pass on this page is a separate, later effort).
+
+**Verified:**
+- `npx tsc --noEmit` and `npm run build` clean.
+- `supabase functions deploy` succeeded for `analyze-email`, `email-verdict`, `analyze-doc` (confirms `npm:fflate`/`npm:jsqr`/`npm:pngjs`/`npm:jpeg-js` resolve/bundle correctly in the real Deno edge runtime, not just locally).
+- Built a synthetic (non-malicious, `.example`-domain) `.eml` + DOCX + QR fixture mirroring the real specimen's structure and attempted a live HTTP call against the deployed `analyze-email` function; the function correctly requires an authenticated user session (returned `{"error":"Authentication required"}` even with the project's public anon key) — **this could not be exercised end-to-end from the CLI sandbox and still needs a real in-app test** by uploading a synthetic fixture through the actual signed-in UI.
+
+**Known gaps / deferred (must be re-flagged before this is considered production-complete):**
+- **Phase B privacy gate not built**: a recovered QR URL containing recipient PII will currently flow into `/threat-intel/url` exactly like any other URL. If that endpoint still hardcodes public URLScan visibility (per Sol's audit), a PII-bearing recovered URL could be submitted publicly. This is the single most important follow-up.
+- Phase C (PDF embedded-image/QR extraction, JS/OpenAction/Launch detection, page-render/OCR) not implemented — PDF attachments still return `unsupported` from the deep analyzer.
+- End-to-end live UI test with a real uploaded `.eml` pending (see above) — synthetic fixture is at `C:\Thamos\SoFaSo\_scratch_verify\sample.eml` (not part of the repo).
+
+---
 
 ### Sprint 2026-08-19h — Bulk Lookup: Batch Investigation Workbench (Triage/Correlation/Report)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)

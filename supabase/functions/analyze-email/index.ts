@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { parseEmail, isWrapperHost, fillAttachmentHashes, type ParsedEmail } from "../_shared/email-parser.ts";
+import { parseEmail, isWrapperHost, fillAttachmentHashes, analyzeAttachmentArtifacts, extractRecipients, type ParsedEmail } from "../_shared/email-parser.ts";
 import { lookupDomainAuth, senderDomain } from "../_shared/dns.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -275,6 +275,10 @@ serve(async (req) => {
         return json({ error: "Email too large (max 5MB)" }, 413);
       }
       const parsed = parseEmail(rawEmail);
+      // Recover attachment-hidden URLs (OOXML → media → QR) BEFORE the bytes
+      // get cleared below — this is what makes a QR code inside a DOCX show
+      // up as a normal URL/IOC instead of silently vanishing.
+      await analyzeAttachmentArtifacts(parsed, extractRecipients(parsed));
       await fillAttachmentHashes(parsed);
       const targets = targetsFromParsed(parsed);
       // Sender-domain DNS posture (could the From domain even be spoofed?) runs

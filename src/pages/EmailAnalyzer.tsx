@@ -83,6 +83,24 @@ interface DecodedArtifact {
   kind: 'email' | 'url' | 'domain' | 'text';
 }
 
+interface UrlSource {
+  kind: 'body' | 'attachment-link' | 'attachment-qr';
+  attachmentFilename?: string;
+  attachmentSha256?: string;
+  containerPart?: string;
+  imageIndex?: number;
+}
+
+interface RecipientBinding {
+  detected: boolean;
+  location?: 'path' | 'query' | 'fragment';
+  encoding?: 'plain' | 'percent' | 'base64' | 'base64url';
+  matchedValue?: string;
+  matchesMessageRecipient?: boolean;
+  matchedTenantDomain?: boolean;
+  confidence?: 'high' | 'medium' | 'low';
+}
+
 interface UrlIntel {
   original: string;
   final: string;
@@ -90,6 +108,33 @@ interface UrlIntel {
   wrapper: 'safelinks' | 'mimecast' | 'urldefense' | null;
   finalHost: string;
   decodedArtifacts: DecodedArtifact[];
+  // present when this URL was recovered from an attachment (e.g. a QR code
+  // decoded from an embedded image) rather than found as plain body/header text
+  source?: UrlSource;
+  // present when the URL's path/query/fragment contains the message
+  // recipient's own address — the tell for a targeted identity-phishing kit
+  recipientBinding?: RecipientBinding;
+}
+
+interface AttachmentAnalysisFinding {
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  category: string;
+  detail: string;
+}
+
+interface AttachmentAnalysisArtifact {
+  kind: 'qr-url' | 'url' | 'email' | 'domain';
+  value: string;
+  defangedValue: string;
+  sourcePart?: string;
+  imageIndex?: number;
+}
+
+interface AttachmentAnalysis {
+  status: 'complete' | 'partial' | 'unsupported' | 'limit-reached' | 'error';
+  detectedType: 'pdf' | 'ooxml' | 'ole' | 'archive' | 'image' | 'unknown';
+  findings: AttachmentAnalysisFinding[];
+  artifacts: AttachmentAnalysisArtifact[];
 }
 
 interface AttachmentInfo {
@@ -101,6 +146,8 @@ interface AttachmentInfo {
   sha256: string | null;
   risk: 'high' | 'medium' | 'low';
   reasons: string[];
+  // deep recursive extraction result (OOXML unzip + embedded QR decode) — Phase A
+  analysis?: AttachmentAnalysis;
 }
 
 interface SenderAuth {
@@ -1123,6 +1170,43 @@ export default function EmailAnalyzer() {
 
             {activeTab === 'iocs' && (
               <div className="space-y-2">
+                {/* Recipient identity binding — the AITM/quishing tell: a recovered
+                    URL that embeds the message recipient's own address */}
+                {result.urls && result.urls.some(u => u.recipientBinding?.detected) && (
+                  <div className="p-3 rounded mb-3 space-y-2" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}40` }}>
+                    <span className="text-[10px] font-bold tracking-wider" style={{ color: P.rose }}>⚠ RECIPIENT IDENTITY BINDING — TARGETED PHISHING</span>
+                    {result.urls.filter(u => u.recipientBinding?.detected).map((u, i) => (
+                      <div key={i} className="text-xs space-y-0.5">
+                        <p style={{ color: P.text }}>
+                          <code style={{ color: P.rose }}>{u.finalHost}</code> URL {u.recipientBinding!.location} contains the recipient's exact address
+                          {' '}(<code style={{ color: P.textLight }}>{u.recipientBinding!.matchedValue}</code>, {u.recipientBinding!.encoding})
+                        </p>
+                        <p style={{ color: P.dim }}>
+                          Confidence: {u.recipientBinding!.confidence} — targeted identity-phishing, likely credential-harvesting/AITM infrastructure. Not proof of a specific named kit.
+                        </p>
+                        {u.source?.kind === 'attachment-qr' && (
+                          <p style={{ color: P.dim }}>
+                            Source: QR code decoded from <code style={{ color: P.textLight }}>{u.source.attachmentFilename}</code>
+                            {u.source.containerPart ? ` (${u.source.containerPart})` : ''} — not visible as text anywhere in the message.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Non-binding QR-recovered URLs still get a lightweight provenance note */}
+                {result.urls && result.urls.some(u => u.source?.kind === 'attachment-qr' && !u.recipientBinding?.detected) && (
+                  <div className="p-3 rounded mb-3 space-y-1" style={{ backgroundColor: `${P.amber}08`, border: `1px solid ${P.amber}30` }}>
+                    <span className="text-[10px] font-bold tracking-wider" style={{ color: P.amber }}>QR CODE RECOVERED FROM ATTACHMENT</span>
+                    {result.urls.filter(u => u.source?.kind === 'attachment-qr' && !u.recipientBinding?.detected).map((u, i) => (
+                      <p key={i} className="text-xs" style={{ color: P.text }}>
+                        <code style={{ color: P.textLight }}>{u.finalHost}</code> decoded from <code style={{ color: P.dim }}>{u.source?.attachmentFilename}</code> — verify before treating as safe.
+                      </p>
+                    ))}
+                  </div>
+                )}
+
                 {/* URL unwrap / decode intelligence (server-parsed only) */}
                 {result.urls && result.urls.some(u => u.wrapper || u.decodedArtifacts.length > 0) && (
                   <div className="p-3 rounded mb-3 space-y-2" style={{ backgroundColor: `${P.amber}08`, border: `1px solid ${P.amber}30` }}>
@@ -1287,6 +1371,23 @@ export default function EmailAnalyzer() {
                           {att.reasons.map((r, j) => (
                             <p key={j} className="text-xs leading-relaxed" style={{ color: att.risk === 'low' ? P.dim : rc }}>{r}</p>
                           ))}
+                          {att.analysis && att.analysis.findings.length > 0 && (
+                            <div className="mt-1.5 pt-1.5 space-y-0.5" style={{ borderTop: `1px solid ${P.border}` }}>
+                              <span className="text-[9px] tracking-wider" style={{ color: P.dim }}>
+                                DEEP EXTRACTION {att.analysis.status !== 'complete' ? `(${att.analysis.status})` : ''}
+                              </span>
+                              {att.analysis.findings.map((f, j) => {
+                                const fc = f.severity === 'critical' || f.severity === 'high' ? P.rose
+                                  : f.severity === 'medium' ? P.amber
+                                  : P.dim;
+                                return (
+                                  <p key={j} className="text-xs leading-relaxed" style={{ color: fc }}>
+                                    <span className="font-bold">{f.category}:</span> {f.detail}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          )}
                           {att.sha256 && (
                             <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${P.border}` }}>
                               <span className="text-[10px] flex-shrink-0" style={{ color: P.dim }}>SHA-256</span>
