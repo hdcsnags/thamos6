@@ -119,7 +119,7 @@ function App() {
       case 'aiworkshop': return <AIWorkshop />;
       case 'ip': return <IPLookup />;
       case 'url': return <URLScanner />;
-      case 'bulk': return <BulkLookup />;
+      case 'bulk': return <BulkLookup onDrillDown={(ip) => { setScanResult({ type: 'ip', value: ip }); setCurrentPage('scanner'); }} />;
       case 'history': return <History />;
       case 'email': return <EmailAnalyzer />;
       case 'ioc': return <IOCExtractor />;

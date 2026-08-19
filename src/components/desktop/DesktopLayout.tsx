@@ -342,7 +342,7 @@ function DesktopContent() {
 
       {visibleWindows.map(window => (
         <DesktopWindow key={window.id} id={window.id}>
-          {renderWindowContent(window.appId, window.data)}
+          {renderWindowContent(window.appId, window.data, desktop.openWindow)}
         </DesktopWindow>
       ))}
 
@@ -455,7 +455,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function renderWindowContent(appId: string, data?: any) {
+function renderWindowContent(appId: string, data?: any, openWindow?: (config: Partial<{ appId: AppId; title: string; data?: any }> & { appId: AppId; title: string }) => string) {
   switch (appId) {
     case 'terminal':
       return <DesktopTerminal />;
@@ -506,7 +506,12 @@ function renderWindowContent(appId: string, data?: any) {
     case 'ioc-extractor':
       return <IOCExtractor />;
     case 'bulk-lookup':
-      return <BulkLookup initialIPs={data?.ips} />;
+      return (
+        <BulkLookup
+          initialIPs={data?.ips}
+          onDrillDown={openWindow ? (ip: string) => openWindow({ appId: 'ip-result', title: `IP: ${ip}`, data: { value: ip } }) : undefined}
+        />
+      );
     case 'extension-scanner':
       return <ExtensionScanner />;
     default:

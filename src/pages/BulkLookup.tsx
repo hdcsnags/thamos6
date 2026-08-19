@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, Loader2, Download, AlertTriangle, Info, MapPin, Server, Radio, Ban } from 'lucide-react';
+import { Search, Loader2, Download, AlertTriangle, Info, MapPin, Server, Radio, Ban, Pencil, ArrowUpRight, Layers } from 'lucide-react';
 import { bulkLookupIPs, isValidIP } from '../lib/threatIntel';
 import type { BulkIPResult } from '../types';
 import { palette, typography } from '../design-system/tokens';
@@ -21,14 +21,22 @@ function verdictFor(result: BulkIPResult): { label: string; tone: Tone } {
 interface BulkLookupProps {
   /** Pre-fill (and auto-run) with IPs handed off from another surface, e.g. the Terminal's `scan -ip a,b,c`. */
   initialIPs?: string[];
+  /** Drill into a single IP's full scan (hostname, VPN/Tor detail, abuse reports, pivot graph, etc).
+   *  Wired to open an ip-result window (Desktop) or navigate to the scanner page (Tactical). */
+  onDrillDown?: (ip: string) => void;
 }
 
-export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
+export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps = {}) {
   const [input, setInput] = useState(() => initialIPs?.join('\n') ?? '');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BulkIPResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Once a batch renders, collapse the input drawer so the page lands on the
+  // results instead of leaving the user staring at the form with no cue to
+  // scroll down.
+  const [inputCollapsed, setInputCollapsed] = useState(false);
   const autoRanFor = useRef<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const parseIPs = (text: string): string[] => {
     const lines = text.split(/[\n,;]+/);
@@ -62,8 +70,10 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
     try {
       const data = await bulkLookupIPs(ips);
       setResults(data.results);
+      setInputCollapsed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to lookup IPs');
+      setInputCollapsed(false);
     } finally {
       setLoading(false);
     }
@@ -84,6 +94,14 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
     void runLookup(parseIPs(initialIPs.join('\n')));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIPs]);
+
+  // Land on the results, not the input form — nothing on the page otherwise
+  // hints that there's anything to scroll to below the fold.
+  useEffect(() => {
+    if (!loading && results.length > 0) {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [loading, results]);
 
   const handleExportCSV = () => {
     if (results.length === 0) return;
@@ -142,70 +160,92 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
         <div className="max-w-5xl mx-auto space-y-8">
-          <div className="max-w-3xl">
-            <h2 className="text-2xl font-semibold mb-1" style={{ color: palette.textPrimary }}>Triage a list of IPs</h2>
-            <p className="text-sm" style={{ color: palette.textSecondary }}>
-              Paste addresses from logs or an alert export — one per line, or comma/semicolon separated.
-              Each IP runs through the same calibrated scoring engine as a single-IP scan.
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="max-w-3xl">
+          {inputCollapsed && results.length > 0 && !loading ? (
             <div
-              className="rounded-lg overflow-hidden transition-colors duration-200"
-              style={{
-                background: palette.elevated,
-                border: `1px solid ${input.trim() ? palette.borderActive : palette.borderDefault}`,
-                boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
-              }}
+              className="max-w-3xl flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg"
+              style={{ background: palette.elevated, border: `1px solid ${palette.borderDefault}` }}
             >
-              <div
-                className="px-5 py-3 flex items-center justify-between"
-                style={{ backgroundColor: palette.surface, borderBottom: `1px solid ${palette.borderSubtle}` }}
+              <div className="flex items-center gap-2 text-sm" style={{ color: palette.textSecondary }}>
+                <Layers className="w-4 h-4" style={{ color: palette.textTertiary }} />
+                IP list · <span className="font-semibold" style={{ color: palette.textPrimary }}>{results.length}</span> addresses analyzed
+              </div>
+              <button
+                onClick={() => setInputCollapsed(false)}
+                className="h-7 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors hover:brightness-125"
+                style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.textSecondary }}
               >
-                <span className="text-xs font-medium" style={{ color: palette.textSecondary }}>IP list</span>
-                <span className="text-[10px]" style={{ color: palette.textTertiary }}>{validCount} valid / max 20</span>
-              </div>
-              <div className="p-5">
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder={'192.168.1.1\n10.0.0.1\n8.8.8.8'}
-                  rows={8}
-                  spellCheck={false}
-                  className="w-full bg-transparent border-none outline-none resize-none text-sm focus:ring-0"
-                  style={{ color: palette.textPrimary, caretColor: palette.accent, fontFamily: typography.mono }}
-                />
-                <div
-                  className="mt-4 pt-4 flex items-center justify-between flex-wrap gap-3"
-                  style={{ borderTop: `1px solid ${palette.borderSubtle}` }}
-                >
-                  <div className="flex items-center gap-2 text-xs" style={{ color: palette.textTertiary }}>
-                    <Info className="w-3.5 h-3.5" />
-                    Maximum 20 IPs per request
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="h-9 px-4 rounded-md flex items-center gap-2 text-xs font-semibold transition-opacity disabled:opacity-50"
-                    style={{ backgroundColor: palette.accent, color: palette.void }}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Scanning…
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-3.5 h-3.5" />
-                        Analyze IPs
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+                <Pencil className="w-3 h-3" />
+                Edit list
+              </button>
             </div>
-          </form>
+          ) : (
+            <>
+              <div className="max-w-3xl">
+                <h2 className="text-2xl font-semibold mb-1" style={{ color: palette.textPrimary }}>Triage a list of IPs</h2>
+                <p className="text-sm" style={{ color: palette.textSecondary }}>
+                  Paste addresses from logs or an alert export — one per line, or comma/semicolon separated.
+                  Each IP runs through the same calibrated scoring engine as a single-IP scan.
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="max-w-3xl">
+                <div
+                  className="rounded-lg overflow-hidden transition-colors duration-200"
+                  style={{
+                    background: palette.elevated,
+                    border: `1px solid ${input.trim() ? palette.borderActive : palette.borderDefault}`,
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
+                  }}
+                >
+                  <div
+                    className="px-5 py-3 flex items-center justify-between"
+                    style={{ backgroundColor: palette.surface, borderBottom: `1px solid ${palette.borderSubtle}` }}
+                  >
+                    <span className="text-xs font-medium" style={{ color: palette.textSecondary }}>IP list</span>
+                    <span className="text-[10px]" style={{ color: palette.textTertiary }}>{validCount} valid / max 20</span>
+                  </div>
+                  <div className="p-5">
+                    <textarea
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      placeholder={'192.168.1.1\n10.0.0.1\n8.8.8.8'}
+                      rows={8}
+                      spellCheck={false}
+                      className="w-full bg-transparent border-none outline-none resize-none text-sm focus:ring-0"
+                      style={{ color: palette.textPrimary, caretColor: palette.accent, fontFamily: typography.mono }}
+                    />
+                    <div
+                      className="mt-4 pt-4 flex items-center justify-between flex-wrap gap-3"
+                      style={{ borderTop: `1px solid ${palette.borderSubtle}` }}
+                    >
+                      <div className="flex items-center gap-2 text-xs" style={{ color: palette.textTertiary }}>
+                        <Info className="w-3.5 h-3.5" />
+                        Maximum 20 IPs per request
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="h-9 px-4 rounded-md flex items-center gap-2 text-xs font-semibold transition-opacity disabled:opacity-50"
+                        style={{ backgroundColor: palette.accent, color: palette.void }}
+                      >
+                        {loading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Scanning…
+                          </>
+                        ) : (
+                          <>
+                            <Search className="w-3.5 h-3.5" />
+                            Analyze IPs
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </>
+          )}
 
           {error && (
             <div className="max-w-3xl">
@@ -214,7 +254,7 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
           )}
 
           {results.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-4" ref={resultsRef}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 flex-1">
                   <StatCell label="Malicious" value={maliciousCount} tone="danger" />
@@ -238,9 +278,9 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
                   <table className="w-full">
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${palette.borderDefault}` }}>
-                        {['Verdict', 'IP address', 'Location', 'Type', 'Score', 'Scanner', 'Blocklist', 'Intel'].map(h => (
+                        {['Verdict', 'IP address', 'Location', 'Type', 'Score', 'Scanner', 'Blocklist', 'Intel', ''].map(h => (
                           <th
-                            key={h}
+                            key={h || 'actions'}
                             className="px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider whitespace-nowrap"
                             style={{ color: palette.textTertiary }}
                           >
@@ -281,6 +321,8 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
                             </td>
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-1 flex-wrap">
+                                {result.isTor && <Pill label="Tor" tone="danger" />}
+                                {result.isVPN && <Pill label={result.vpnService ? `VPN · ${result.vpnService}` : 'VPN'} tone="warn" />}
                                 {result.isProxy && <Pill label="Proxy" tone="warn" />}
                                 {result.isHosting && (
                                   <span
@@ -290,7 +332,7 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
                                     <Server className="w-3 h-3" /> DC
                                   </span>
                                 )}
-                                {!result.isProxy && !result.isHosting && (
+                                {!result.isTor && !result.isVPN && !result.isProxy && !result.isHosting && (
                                   <span className="text-xs" style={{ color: palette.textDisabled }}>—</span>
                                 )}
                               </div>
@@ -302,6 +344,11 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
                               >
                                 {score}
                               </span>
+                              {result.abuseConfidence != null && result.abuseConfidence > 0 && (
+                                <div className="text-[10px] whitespace-nowrap" style={{ color: palette.textTertiary }}>
+                                  {result.abuseConfidence}% abuse conf.
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2.5">
                               {result.isMassScanner ? (
@@ -353,6 +400,19 @@ export default function BulkLookup({ initialIPs }: BulkLookupProps = {}) {
                                   <span className="text-xs" style={{ color: palette.green }}>—</span>
                                 )}
                               </div>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {onDrillDown && (
+                                <button
+                                  onClick={() => onDrillDown(result.ip)}
+                                  title={`Open full scan for ${result.ip} — hostname, full VPN/Tor detail, abuse reports, pivot graph`}
+                                  className="h-7 px-2.5 rounded-md flex items-center gap-1 text-xs font-medium whitespace-nowrap transition-colors hover:brightness-125"
+                                  style={{ background: palette.float, border: `1px solid ${palette.borderDefault}`, color: palette.accent }}
+                                >
+                                  Full scan
+                                  <ArrowUpRight className="w-3 h-3" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
