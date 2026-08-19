@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (MS Learn Agent Fix + Bulk IP Scan)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Bulk Lookup: Flag-Optional Detection, Redesign, Collapse + Drill-Down)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,22 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19e — Bulk Lookup: Flag-Optional Detection, Design-Token Redesign, Collapse + Drill-Down
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Close out the deferred items from 2026-08-19d's bulk-scan work, based on live user testing of the Terminal hand-off and the Bulk Lookup page itself.
+
+**Completed:**
+- [x] Terminal `scan` bulk detection was flag-gated (`scan -ip a,b,c` worked, bare `scan a,b,c` still errored) because `detectIOCType()` on the whole joined multi-token string never resolves to `'ip'`. Restructured `handleScan` in `DesktopTerminal.tsx` to run bulk-token detection *first*, testing each whitespace/comma-split token individually via `detectIOCType(t).type === 'ip'` — bulk now works identically with or without `-ip`. (`6fc547d`)
+- [x] Full visual redesign of `BulkLookup.tsx` off old Tailwind slate/emerald onto `tokens.ts`/the `src/components/results/` kit (the deferred item from 2026-08-19d): header/hero pattern matching Scanner.tsx, terminal-style input card, `StatCell` summary row, `Pill`-based calibrated verdicts, `Callout`/`ResultCard` for error/empty states. No functional changes. (`17c0830`)
+- [x] Bulk Lookup UX pass per live-testing feedback: after a batch runs, the input drawer now auto-collapses into a compact "N addresses analyzed / Edit list" bar and the page auto-scrolls to the results (`scrollIntoView`) instead of leaving the user staring at a form with no cue to scroll down. Re-expands automatically on error so the list stays visible next to the failure message. Also fires correctly for the Terminal `initialIPs` auto-run hand-off, not just manual submissions.
+- [x] Added per-row **drill-down to full scan**: each result row now has a "Full scan" button (only rendered when the host passes `onDrillDown`) that opens the existing single-IP `IPResult` view for that IP — reuses all existing hostname/VPN/Tor/abuse/pivot-graph rendering rather than duplicating it inline. Wired for both host surfaces: Tactical (`App.tsx`, `case 'bulk'` sets `scanResult`+`currentPage:'scanner'`) and Desktop (`DesktopLayout.tsx`, `renderWindowContent` now threads `desktop.openWindow` through so `bulk-lookup` can open a dedicated `ip-result` window).
+- [x] Bulk rows also gained Tor/VPN chips (backend already returned `isTor`/`isVPN`/`vpnService` per-IP since 2026-08-19d's `/bulk` recalibration, just wasn't surfaced) and an abuse-confidence subtext under the score, closing some of the single-IP-vs-bulk data-parity gap the user flagged.
+- [x] `npm run build` + `tsc --noEmit` clean; committed/pushed (`5654f15`).
+
+**Deferred / Next Sprint:** Bulk rows still don't show hostname or a mini pivot-graph inline (full detail is one click away via drill-down, which was judged sufficient for now); user is bringing in other agents/tools ("Sol"/"Fable") to review this pass — no further Bulk Lookup work planned until that feedback lands.
+
+---
 
 ### Sprint 2026-08-19d — MS Learn Agent Truncation Fix + Model Switch + Bulk IP Scan
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
