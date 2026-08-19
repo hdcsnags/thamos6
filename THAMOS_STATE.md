@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Intel Stream Fixes + abuse.ch Sources + Scanner Pro Mode Default)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Intel Stream + Thamos AI Design-Token Migration)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,22 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19b — Intel Stream + Thamos AI: Design-Token Migration
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** User flagged that Intel Stream's own app view (not the desktop widget) and the Thamos AI workshop both look "old/AI-sloppy" and don't match the rest of the platform.
+
+**Completed:**
+- [x] Root-caused it: `DesktopIntelDashboard.tsx` and `workshop/T6.tsx` were both still running a hand-rolled "neon hacker" local palette (`P` / `C`) predating `tokens.ts` — literally identical hex values duplicated in both files (`#00d9ff` cyan, `#00ff9d` green, `#0a0e1a` surface, etc.), plus the entire UI forced into JetBrains Mono at 0.55–0.85rem. Neither had been migrated when the result kit / `ResultShell` / `IPResult` v2 / `IntelWidget` moved onto the shared operator-workstation palette back on 2026-08-13.
+- [x] Both local palette objects now alias `palette.*` from `design-system/tokens.ts` instead of hardcoded hex — future OS-wide theme tweaks propagate automatically. `tokens.ts` already had `pink`/`orange` compatibility aliases reserved for exactly this migration.
+- [x] Root shell typography switched from forced monospace to `typography.ui` (Inter) in both apps; mono kept only where it's a legitimate content type — inline code spans, section-label badge captions (CONSENSUS/TRADE-OFFS/DELIBERATION/etc.), IOC-ish snippet paste fields. Thamos AI's chat composer textarea moved off mono onto a normal readable chat font.
+- [x] Thamos AI persona colors (Red Teamer/Defender/Skeptic/Forensics) and per-provider agent colors (anthropic/openai/google/openrouter) now pull from the shared palette instead of raw neon hex (openrouter's jarring `#9370DB` purple → muted `palette.pink`).
+- [x] `T6Orb.tsx` (the semantic state orb) deliberately left untouched — already well-designed (soft desaturated radial gradients, not neon flat hex) and not part of the problem.
+- [x] `npm run build` + `tsc --noEmit` clean; committed/pushed (e2b7cc5).
+
+**Deferred / Next Sprint:** deeper layout/IA pass on both apps (not just recoloring) if the user wants it after living with the palette fix; Hash/URL/Domain result pages still not migrated onto the shared result kit (see 2026-08-13b).
+
+---
 
 ### Sprint 2026-08-19 — Intel Stream Data-Integrity Fixes + abuse.ch Auth-Key Sources + Scanner Pro Mode Default
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
