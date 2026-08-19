@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-05 by Codex (Operator Workstation Theme + State Reconciliation)
+> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Intel Stream Fixes + abuse.ch Sources + Scanner Pro Mode Default)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,35 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-19 — Intel Stream Data-Integrity Fixes + abuse.ch Auth-Key Sources + Scanner Pro Mode Default
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Fix a stuck/stale Intel Stream, audit IPv4 vs IPv6 scan-route parity, restore dead RSS sources (incl. real abuse.ch API integration), desktop widget UX polish, and default all scanner result pages to Pro Mode.
+
+**Completed:**
+- [x] **Root-caused the stuck Intel Stream** (last item dated 5/13/2026 for days): `/my/refresh` in `news-feeds/index.ts` only ever refreshed a signed-in user's *custom* RSS sources — it never touched the default `rss_sources` that actually feed the main Intel Stream, so a logged-in user's refresh silently did nothing. Fixed to refresh default + custom sources in parallel (`Promise.all`). Deployed; verified live (217 fresh items pulled, dated today).
+- [x] Fixed a secondary bug in the same pass: a double-escaped regex `/<!\[CDATA\[([\\s\\S]*?)\]\]>/g` only matched literal backslash-s/S characters (that trick only works inside `new RegExp("...")` string construction, not a regex literal) — left raw `<![CDATA[...]]>` wrappers on some stored titles. Fixed to `[\s\S]`.
+- [x] **IPv6 parity audit**: the `ipKey`/`ipResult` flat-shape fallback in `threat-intel/index.ts` already treats v4/v6 identically — no version-specific gap found. Did find a real, version-agnostic bug along the way: proxycheck v3's `risk` field lives under `detections.risk`, not top-level `ipResult.risk`, so `enrichment.riskScore` never populated from proxycheck for **any** IP (v4 or v6). Fixed. User confirmed live: IPv6 Tor-node scans now return consistent proxycheck/AbuseIPDB data; the original "missing data" report was a clean IP, not a bug.
+- [x] **RSS source health pass**: found 6/17 default sources dead (404): CISA KEV, NCSC UK, MalwareBazaar, URLhaus, ThreatFox, NVD CVE. NCSC UK had simply moved URLs — fixed to `all-rss-feed.xml` (migration `20260819130000_fix_ncsc_rss_url.sql`, verified 20 items live). CISA KEV and NVD CVE have fully retired RSS/XML in favor of JSON-only APIs — no simple URL swap possible; flagged as backlog "real integration work," explicitly not faked with an unreliable third-party mirror.
+- [x] **abuse.ch Auth-Key integration** (MalwareBazaar/URLhaus/ThreatFox all dropped open RSS for a free-account API): added `fetch_type` column to `rss_sources` (migration `20260819140000_abusech_auth_key_sources.sql`); implemented `parseAbuseChDate`, `fetchBazaarRecent` (`POST mb-api.abuse.ch/api/v1/`, form `query=get_recent&selector=time`), `fetchUrlhausRecent` (`GET urlhaus-api.abuse.ch/v1/urls/recent/`, `Auth-Key` header), `fetchThreatFoxRecent` (`POST threatfox-api.abuse.ch/api/v1/`, JSON `{query:"get_iocs",days:1}`) in `news-feeds/index.ts`; `fetchAndStoreDefaultFeed` branches on `fetch_type`, threaded through both `/refresh` and `/my/refresh`. Discovered `ABUSECH_AUTH_KEY` was **already configured** on the project (same secret `threat-intel`'s own live lookups use) — all three feeds went live immediately, no user setup needed. Feed health: 17/19 → confirmed real items rendering (ThreatFox IOCs, URLhaus malware URLs, MalwareBazaar samples).
+- [x] Added two new no-auth RSS sources per user request ("add the two solid ones"): **The Record** (therecord.media/feed) and **Malwarebytes Labs** — both verified live before adding.
+- [x] **IntelWidget UX**: clicking an article on the desktop home-screen widget now opens the link directly in a new tab (`window.open`) instead of opening the Intel app window and requiring a second click.
+- [x] **IntelWidget News/All toggle**: abuse.ch IOC feeds (category `threats`) are high-volume/noisy for a glanceable ticker. Added a header pill (defaults to "News", persisted in localStorage) that passes `category=news` into the existing `/items` / `/my/items` filters; one click switches to "All" for the full IOC firehose.
+- [x] **Pro Mode is now the default** on all four scanner result pages (`IPResult.tsx`, `HashResult.tsx`, `URLResult.tsx`, `DomainResult.tsx`) — `proMode` initial state `false` → `true`. Simple Mode is still toggleable per-session via the existing `ResultShell` header button; not removed (yet).
+- [x] `npm run build` clean throughout; all changes committed/pushed to `main` (df914a9, 7ed0851, 2b14ab4, 7bba525).
+
+**Decisions Made:**
+- Simple Mode stays as a togglable option for now; user is considering removing it outright later but didn't commit to that this sprint.
+- CISA KEV / NVD CVE JSON-API integrations deliberately deferred — real work (pagination, different schema), not a quick fix; user can request it explicitly later.
+- Frontend deploy pipeline (no `vercel.json`/`netlify.toml`/CI config found in repo) is presumed to be a dashboard-connected auto-deploy-on-push host — **not fully confirmed**. If a future "my fix isn't showing up" report recurs, verify this explicitly with the user rather than assuming propagation delay.
+
+**Deferred / Next Sprint:**
+- User flagged a **maximized-window width bug**: result cards fill correctly in a boxed/non-maximized window, but pills/content don't reflow to fill the new width when the window is maximized — called out as "easy fix," not yet started.
+- Broader Desktop Scanner result-card **restructure** pass is next (per user's original request): tighten generic icons further, refine app identities, and revisit result-card layout/IA beyond the Pro Mode default. IPResult v2 (2026-08-13b) is the template; Hash/URL/Domain are not yet migrated onto the shared result kit.
+- Email scanner UX/UI pass flagged by user (referencing a `thamosemail.md` draft from a separate session with Sonnet) — not yet started, needs either direct code investigation or clarifying questions per user's instruction not to blindly follow the draft's recommendations.
+- Consider a geo-context scoring layer and AbuseIPDB/Spamhaus recalibration follow-through (see 2026-08-13b) once more real-world scored IPs are field-tested — user has been spot-checking live scores during this sprint and reported the current AbuseIPDB/Spamhaus calibration is landing well.
+
+---
 
 ### Sprint 2026-08-15 — MS Learn MCP Agent in Thamos (T6 Workshop)
 **Agent:** GitHub Copilot CLI (Claude Fable 5)
