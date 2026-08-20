@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-19 by GitHub Copilot CLI (Email Analyzer Phase A: Recursive Attachment/QR Extraction)
+> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer Phase C: PDF Structural Extraction)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,29 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-20a — Email Analyzer Phase C: PDF Structural Extraction (link/JS/OpenAction + QR)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** User confirmed the Phase B URLScan/VT PII privacy gate can stay deferred for now ("not as important right now") and asked to skip straight to Phase C — PDF QR/link extraction — since tomorrow's real malicious samples may include PDFs, not just DOCX. Same discipline as Phase A: validated the whole pipeline (pdf-lib object-graph walk, URI action extraction, DCTDecode/JPEG and raw FlateDecode image decode, QR read, JS/OpenAction/Launch detection) in an isolated Node.js scratch script against synthetic (`.example`-domain) fixtures before touching the real Deno codebase.
+
+**Shipped:**
+- `_shared/artifact-analyzer.ts`: added `analyzePdfAttachment()` using `npm:pdf-lib@1.17.1` to parse the PDF's real object graph (handles modern cross-reference-stream/object-stream PDFs, not just classic xref tables) instead of a Latin-1 text scan. Recovers: URI link/action targets (including actions inlined directly inside an annotation's `/A` entry, not just ones registered as their own indirect object — validated this is the common case), `/Next`-chained actions (bounded to depth 8), and embedded raster images decoded to QR (JPEG/DCTDecode via `jpeg-js`; raw DeviceGray/DeviceRGB/DeviceCMYK 8-bit samples via `pdf-lib`'s `decodePDFRawStream` + manual pixel reconstruction). Structurally flags `/JS`/`/JavaScript` actions, `/OpenAction` (auto-run on open), `/Launch` (external program execution), `/SubmitForm`/`/ImportData`/`/GoToR`/`/GoToE`, embedded-file filespecs (`/EF`), and `/AcroForm`. Encrypted PDFs are caught via `EncryptedPDFError` and return a clear `partial` status instead of garbage output. Explicitly out of scope and flagged as `unsupported` per-image rather than silently dropped: Indexed color spaces, JPXDecode (JPEG2000), CCITTFaxDecode (fax/bilevel scans), >8-bit samples — real PDF features, just not decoded yet. New safety limits: `MAX_PDF_OBJECTS_SCANNED` (2000), `MAX_PDF_ACTION_DEPTH` (8), reusing the existing image-pixel/QR-time-budget ceilings from Phase A.
+- `analyzeAttachment()` is now a type dispatcher (OOXML → `analyzeOoxmlAttachment`, PDF → `analyzePdfAttachment`, else `unsupported`) — no changes needed in `email-parser.ts`'s `analyzeAttachmentArtifacts()` wiring, `analyze-email`, or `email-verdict`, since that integration was already written to be type-agnostic in Phase A.
+- `email-parser.ts`: `analyzeAttachmentArtifacts()` now also treats `RecoveredArtifact.kind === "url"` (PDF link/action targets, not just `"qr-url"`) as a recovered URL — tags `UrlSource.kind` as `"attachment-link"` vs `"attachment-qr"` accordingly, feeding both through the same wrapper-unwrap/recipient-binding pipeline.
+- `analyze-doc/index.ts`: PDF branch now calls the shared `analyzeAttachment()` instead of the old Latin-1-regex `analyzePDF()`; kept the legacy `eval()`/`unescape()` obfuscation-string and high-stream-count checks as supplemental findings (real signals the structural parser doesn't look for, since it detects that a JS action exists, not what the script source contains).
+
+**Verified:**
+- Algorithm validated in an isolated Node.js scratch script first: built synthetic PDFs (pdf-lib) with (a) a DCTDecode/JPEG-embedded QR + recipient-bound fragment URL + URI link annotation, (b) a raw FlateDecode/DeviceRGB-embedded QR, (c) an OpenAction+JavaScript action — all three round-tripped correctly (QR → exact original URL; URI annotation → exact target; JS/OpenAction → flagged findings).
+- `supabase functions deploy` succeeded for `analyze-email`, `email-verdict`, `analyze-doc` (confirms `npm:pdf-lib@1.17.1` resolves/bundles in the real Deno edge runtime).
+- Synthetic fixtures for in-app testing left at `C:\Thamos\SoFaSo\_scratch_verify\` (not part of the repo): `sample-pdf.eml` (PDF+QR attachment, for Email Analyzer), `sample-qr-jpeg.pdf` / `sample-qr-raw.pdf` / `sample-openaction-js.pdf` (standalone, for Document Analyzer). Live in-app test against a real signed-in session still pending — the deployed functions correctly require authentication, so a bare curl from the CLI sandbox can't exercise them end-to-end.
+
+**Known gaps / deferred:**
+- Phase B (URLScan/VT PII privacy gate) still not built — user-confirmed low priority for now, but re-flagging: a recovered PDF/DOCX URL containing recipient PII still flows into `/threat-intel/url` exactly like any other URL.
+- PDF page rasterization/OCR (for QR codes flattened into a scanned-image page rather than a discrete `/Image` XObject) is a further-deferred sub-phase per Sol's original brief — would need a tenant-side worker, not a Supabase Edge Function.
+- Indexed-color, JPEG2000, and CCITT-fax embedded PDF images are detected-but-not-decoded (explicit `low`-severity finding naming the reason) — a real gap if a malicious sample uses one of those, not a silent miss.
+- OLE (legacy binary `.doc`/`.xls`) attachments are still fully `unsupported`.
+
+---
 
 ### Sprint 2026-08-19i — Email Analyzer Phase A: Recursive Attachment/QR Extraction (Sol brief)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)

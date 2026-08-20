@@ -222,9 +222,23 @@ serve(async (req) => {
     let extractedURLs: string[] = [];
 
     if (fileType === "pdf") {
-      const r = analyzePDF(text);
-      findings = r.findings;
-      extractedURLs = r.urls;
+      // Real PDF object-graph parse (pdf-lib) + embedded-image QR decode,
+      // replacing the old Latin-1-over-the-whole-file regex scan for
+      // /JS /OpenAction /Launch detection and URI extraction — see
+      // artifact-analyzer.ts for why a text scan misses compressed-stream
+      // content and inline (non-indirect) action dictionaries.
+      const deep = await analyzeAttachment(bytes, { filename, contentType: "application/octet-stream", recipients: [] });
+      // Keep the legacy raw-text checks that inspect literal script source
+      // (eval/unescape obfuscation) and stream-count, which the structural
+      // parser doesn't do (it detects that a JS action exists, not what the
+      // script itself contains).
+      const legacy = analyzePDF(text);
+      const supplementalFindings = legacy.findings.filter(
+        (f) => f.category === "JavaScript" || (f.category === "Structure" && f.detail.startsWith("High stream count"))
+      );
+      findings = deep.status === "unsupported" ? legacy.findings : [...deep.findings, ...supplementalFindings];
+      const qrUrls = deep.artifacts.filter((a) => a.kind === "qr-url" || a.kind === "url").map((a) => a.value);
+      extractedURLs = [...new Set([...qrUrls, ...legacy.urls])];
     } else if (fileType === "ooxml") {
       // Real ZIP unpack + embedded-media QR decode, replacing the old
       // Latin-1-over-the-whole-compressed-blob regex scan (which could never

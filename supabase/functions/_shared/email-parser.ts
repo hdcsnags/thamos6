@@ -6,9 +6,9 @@
 //
 // The header/MIME/URL logic below is dependency-free by design. The one
 // exception is analyzeAttachmentArtifacts(), which delegates to
-// artifact-analyzer.ts (OOXML unzip + QR decode) — kept as a separate module
-// specifically so it can carry npm: deps without touching this file's parsing
-// core.
+// artifact-analyzer.ts (OOXML unzip + PDF object-graph parse + QR decode) —
+// kept as a separate module specifically so it can carry npm: deps without
+// touching this file's parsing core.
 
 import { analyzeAttachment, type AttachmentAnalysis } from "./artifact-analyzer.ts";
 
@@ -975,12 +975,13 @@ export async function analyzeAttachmentArtifacts(parsed: ParsedEmail, recipients
     att.analysis = analysis;
 
     for (const artifact of analysis.artifacts) {
-      if (artifact.kind !== "qr-url") continue;
+      if (artifact.kind !== "qr-url" && artifact.kind !== "url") continue;
+      const isQr = artifact.kind === "qr-url";
       const intel = analyzeUrl(artifact.value);
       if (seenFinal.has(intel.final)) continue;
       seenFinal.add(intel.final);
       intel.source = {
-        kind: "attachment-qr",
+        kind: isQr ? "attachment-qr" : "attachment-link",
         attachmentFilename: att.filename,
         containerPart: artifact.sourcePart,
         imageIndex: artifact.imageIndex,
@@ -992,15 +993,16 @@ export async function analyzeAttachmentArtifacts(parsed: ParsedEmail, recipients
         parsed.domains.push(intel.finalHost);
       }
 
+      const originDesc = isQr ? `QR code in attachment "${att.filename}"` : `link/action target inside attachment "${att.filename}"`;
       if (intel.recipientBinding.detected) {
         let pathname = "";
         try { pathname = new URL(intel.final).pathname; } catch { /* ignore */ }
         parsed.suspiciousIndicators.push(
-          `Targeted identity phishing: QR code in attachment "${att.filename}" resolves to ${intel.finalHost}${pathname} embedding the recipient's exact identity in the URL ${intel.recipientBinding.location} (${intel.recipientBinding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
+          `Targeted identity phishing: ${originDesc} resolves to ${intel.finalHost}${pathname} embedding the recipient's exact identity in the URL ${intel.recipientBinding.location} (${intel.recipientBinding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
         );
       } else {
         parsed.suspiciousIndicators.push(
-          `QR code in attachment "${att.filename}" resolves to ${intel.finalHost || intel.final} — QR payloads bypass normal body/link URL-reputation checks; verify the destination before scanning.`
+          `${originDesc[0].toUpperCase()}${originDesc.slice(1)} resolves to ${intel.finalHost || intel.final} — ${isQr ? "QR payloads" : "attachment-embedded links"} bypass normal body/link URL-reputation checks; verify the destination before scanning.`
         );
       }
     }
