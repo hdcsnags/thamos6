@@ -1003,6 +1003,44 @@ function computeCalibratedScoring(
   };
 }
 
+// Per-source fetch outcome, kept SEPARATE from the `sources` payload map so
+// existing consumers of `sources.<name>` (raw provider payloads) are untouched.
+// A source that errored (429/timeout/bad key) previously looked identical to a
+// clean "no findings" result downstream — the frontend Sources tab rendered an
+// "OK" pill for it. `ok = !r.error`; the error string is included when present.
+function buildSourceStatus(results: ThreatResult[]): Record<string, { ok: boolean; error?: string }> {
+  const status: Record<string, { ok: boolean; error?: string }> = {};
+  for (const r of results) {
+    status[r.source] = r.error ? { ok: false, error: r.error } : { ok: true };
+  }
+  return status;
+}
+
+// Minimal async worker pool: runs `fn` over `items` with at most `limit`
+// in-flight at once, returning settled results in 1:1 input order. Used by
+// /bulk so 20 IPs × ~15 sources don't fan out as ~360 concurrent fetches.
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        out[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (e) {
+        out[i] = { status: "rejected", reason: e };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 async function checkShodan(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
   if (!apiKey) return { source: "shodan", data: {}, error: "API key not configured" };
   const cached = await getCachedResponse(ctx, "shodan", ip);
@@ -2974,6 +3012,7 @@ Deno.serve(async (req: Request) => {
       for (const r of results) {
         normalizedSources[r.source] = r.data;
       }
+      const sourceStatus = buildSourceStatus(results);
 
       const detectionSources: string[] = [];
       if (enrichment.isTor) detectionSources.push("Tor Exit List");
@@ -2990,6 +3029,7 @@ Deno.serve(async (req: Request) => {
         maxThreatScore: maxScore,
         isMalicious: hasMaliciousHit || maxScore > 50,
         sources: normalizedSources,
+        sourceStatus,
         detectionSources,
         detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
         vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
@@ -3007,19 +3047,30 @@ Deno.serve(async (req: Request) => {
           // (same as domain/hash) so server-side consumers (ioc-verdict) can
           // load the evidence.
           results: aggregated,
-          threat_score: aggregated.overallThreatScore,
+          // Divergence fix: the column and graph used to persist the legacy
+          // averaged/boosted score, so a PBL-only Spamhaus hit wrote
+          // threat_score 60 / verdict 'malicious' while the calibrated engine
+          // correctly scored it near zero. The calibrated result is now the
+          // persisted truth; the legacy value stays inside the result JSON as
+          // overallThreatScore for compatibility.
+          threat_score: aggregated.scoring.calibrated,
           sources_checked: results.map(r => r.source),
           user_id: ctx.userId,
           context: ctx.cacheContext,
         });
 
         savePDNSEdges(pdnsRecords).catch(e => console.error("ip savePDNSEdges:", e));
+        // Calibrated score + verdict drive the graph. saveIPScanGraph derives
+        // its verdict as isMalicious→'malicious', score>=40→'suspicious', else
+        // 'no_known_threat' — feeding it (calibrated, verdict==='malicious')
+        // maps the calibrated bands onto that vocabulary exactly
+        // (>=70 malicious, 40-69 suspicious, low/no_signal → no_known_threat).
         await saveIPScanGraph(
           ctx,
           ip,
           enrichment,
-          aggregated.overallThreatScore,
-          aggregated.isMalicious,
+          aggregated.scoring.calibrated,
+          aggregated.scoring.verdict === "malicious",
           aggregated.detectionConfidence,
           results.map(r => r.source),
           aggregated.checkedAt,
@@ -3139,7 +3190,10 @@ Deno.serve(async (req: Request) => {
       // can group/correlate them later without re-parsing the original list.
       const batchId = crypto.randomUUID();
 
-      const bulkResults = await Promise.allSettled(limitedIps.map(async (ip) => {
+      // Pool of 5 concurrent IPs (was Promise.allSettled over all 20 at once,
+      // i.e. ~360 simultaneous upstream fetches plus DoH fan-outs). Results
+      // stay 1:1 with the input order.
+      const bulkResults = await mapWithConcurrency(limitedIps, 5, async (ip) => {
         const sourcePromises: Promise<ThreatResult>[] = [];
 
         // Same source set as the single-IP /ip route, so a bulk result matches
@@ -3197,6 +3251,7 @@ Deno.serve(async (req: Request) => {
         // opened directly by IPResult without re-querying any sources.
         const normalizedSources: Record<string, any> = {};
         for (const r of ipResults) normalizedSources[r.source] = r.data;
+        const sourceStatus = buildSourceStatus(ipResults);
         const checkedAt = new Date().toISOString();
         const artifact = {
           ip,
@@ -3209,6 +3264,7 @@ Deno.serve(async (req: Request) => {
           // aggregate shape IPResult.tsx reads from (`result.sources`), even
           // though the IPLookupResult type declares this as `results`.
           sources: normalizedSources,
+          sourceStatus,
           checkedAt,
           tier: ctx.tier,
           // What bulk actually queried — the gap between this and the full /ip
@@ -3222,7 +3278,10 @@ Deno.serve(async (req: Request) => {
           const { data: inserted, error: insertError } = await serviceClient.from("ip_lookups").insert({
             ip_address: ip,
             results: artifact,
-            threat_score: legacyScore,
+            // Divergence fix: persist the calibrated score, not legacyScore —
+            // legacy inflates PBL-only/VPN/proxy signals. Legacy stays in the
+            // artifact JSON as overallThreatScore for compatibility.
+            threat_score: scoring.calibrated,
             sources_checked: ipResults.map(r => r.source),
             user_id: ctx.userId,
             context: ctx.cacheContext,
@@ -3235,12 +3294,15 @@ Deno.serve(async (req: Request) => {
           // graph edges at all until each IP is individually deep-enriched —
           // the planned batch correlation graph needs every IP represented,
           // not just the ones an analyst happened to click into.
+          // Calibrated score + verdict drive the graph (same mapping as /ip:
+          // verdict==='malicious' → 'malicious', calibrated>=40 → 'suspicious',
+          // else 'no_known_threat').
           await saveIPScanGraph(
             ctx,
             ip,
             enrichment,
-            legacyScore,
-            artifact.isMalicious,
+            scoring.calibrated,
+            scoring.verdict === "malicious",
             enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
             ipResults.map(r => r.source),
             checkedAt,
@@ -3275,7 +3337,7 @@ Deno.serve(async (req: Request) => {
           artifactId,
           batchId,
         };
-      }));
+      });
 
       const results = bulkResults
         .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
@@ -3401,6 +3463,7 @@ Deno.serve(async (req: Request) => {
 
       const normalizedSources: Record<string, any> = {};
       for (const r of results) normalizedSources[r.source] = r.data;
+      const sourceStatus = buildSourceStatus(results);
 
       // Preserve the original bulk-scan snapshot rather than silently
       // overwriting it — a forensic record should show what the batch scan
@@ -3418,6 +3481,7 @@ Deno.serve(async (req: Request) => {
         maxThreatScore: maxScore,
         isMalicious: hasMaliciousHit || maxScore > 50,
         sources: normalizedSources,
+        sourceStatus,
         detectionSources: [],
         detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
         vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
@@ -3432,18 +3496,21 @@ Deno.serve(async (req: Request) => {
       if (canPersist) {
         const { error: updateError } = await serviceClient.from("ip_lookups").update({
           results: aggregated,
-          threat_score: aggregated.overallThreatScore,
+          // Divergence fix: calibrated score is the persisted truth (legacy
+          // stays in the JSON as overallThreatScore) — see /ip handler.
+          threat_score: aggregated.scoring.calibrated,
           sources_checked: results.map(r => r.source),
         }).eq("id", id);
         if (updateError) console.error("deep-enrich update:", updateError);
 
         savePDNSEdges(pdnsRecords).catch(e => console.error("deep-enrich savePDNSEdges:", e));
+        // Calibrated score + verdict drive the graph (same mapping as /ip).
         await saveIPScanGraph(
           ctx,
           ip,
           enrichment,
-          aggregated.overallThreatScore,
-          aggregated.isMalicious,
+          aggregated.scoring.calibrated,
+          aggregated.scoring.verdict === "malicious",
           aggregated.detectionConfidence,
           results.map(r => r.source),
           aggregated.checkedAt,
