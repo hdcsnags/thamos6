@@ -731,7 +731,7 @@ export function DesktopTerminal() {
   const getTextColor = (type: OutputLine['type'], customColor?: string) => {
     if (customColor) return customColor;
     switch (type) {
-      case 'command': return '#a5d8ff';
+      case 'command': return palette.blue;
       case 'success': return palette.green;
       case 'error': return palette.rose;
       case 'agent': return palette.cyan;

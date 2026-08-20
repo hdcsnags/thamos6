@@ -11,14 +11,16 @@ import { useGitHub } from '../../contexts/GitHubContext';
 
 type View = 'connect' | 'repos' | 'files' | 'file';
 
+// Fully aliased onto the shared operator-workstation palette (tokens.ts).
+// Keys kept stable so call sites below stay untouched.
 const P = {
-  void: '#060610',
-  surface: '#0a0e1a',
-  surfaceLight: '#0f1424',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
+  void: palette.void,
+  surface: palette.elevated,
+  surfaceLight: palette.float,
+  border: palette.borderSubtle,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
   teal: palette.teal,
   cyan: palette.cyan,
   green: palette.green,

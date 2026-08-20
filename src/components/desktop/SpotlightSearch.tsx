@@ -137,29 +137,43 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
   }, [results, selectedIndex, onClose]);
 
   return (
-    <div 
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] backdrop-blur-md transition-all animate-in fade-in duration-300"
-      style={{ backgroundColor: 'rgba(5, 5, 8, 0.4)' }}
+    <div
+      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] transition-all animate-in fade-in duration-300"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
-      <div 
-        className="w-full max-w-2xl bg-slate-900/90 border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300"
-        style={{ backdropFilter: 'blur(32px)', boxShadow: '0 0 80px rgba(0,0,0,0.5), 0 0 40px rgba(6, 182, 212, 0.1)' }}
+      <div
+        className="w-full max-w-2xl rounded-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300"
+        style={{
+          backgroundColor: palette.elevated,
+          border: `1px solid ${palette.borderDefault}`,
+          boxShadow: '0 24px 80px rgba(0,0,0,0.68)',
+          fontFamily: typography.ui,
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Search Header */}
-        <div className="flex items-center gap-4 px-6 py-5 border-b border-white/5">
-          <Search className="w-6 h-6 text-cyan-500" />
-          <input 
+        <div className="flex items-center gap-4 px-6 py-5" style={{ borderBottom: `1px solid ${palette.borderSubtle}` }}>
+          <Search className="w-6 h-6" style={{ color: palette.textTertiary }} />
+          <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={e => { setQuery(e.target.value); setSelectedIndex(0); }}
             placeholder="Search Thamos, scan IOCs, or run commands..."
-            className="flex-1 bg-transparent text-xl text-white placeholder-slate-500 focus:outline-none font-light"
+            className="flex-1 bg-transparent text-xl focus:outline-none font-light"
+            style={{ color: palette.textPrimary, fontFamily: typography.ui }}
           />
-          <div className="flex items-center gap-1.5 opacity-40">
-             <kbd className="px-2 py-1 rounded bg-slate-800 border border-white/10 text-[10px] text-slate-400 font-mono">ESC</kbd>
+          <div className="flex items-center gap-1.5">
+             <kbd
+               className="px-2 py-1 rounded text-[10px]"
+               style={{
+                 backgroundColor: palette.float,
+                 border: `1px solid ${palette.borderSubtle}`,
+                 color: palette.textDisabled,
+                 fontFamily: typography.mono,
+               }}
+             >ESC</kbd>
           </div>
         </div>
 
@@ -167,11 +181,11 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
         <div className="max-h-[60vh] overflow-y-auto py-2 custom-scrollbar">
           {results.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <div className="inline-flex p-3 rounded-full bg-slate-800/50 mb-3">
-                <Zap className="w-6 h-6 text-slate-600" />
+              <div className="inline-flex p-3 rounded-full mb-3" style={{ backgroundColor: palette.float }}>
+                <Zap className="w-6 h-6" style={{ color: palette.textDisabled }} />
               </div>
-              <p className="text-slate-400 font-medium">No results found for "{query}"</p>
-              <p className="text-slate-600 text-xs mt-1">Try searching for an app, IP, or domain</p>
+              <p className="font-medium" style={{ color: palette.textSecondary }}>No results found for "{query}"</p>
+              <p className="text-xs mt-1" style={{ color: palette.textTertiary }}>Try searching for an app, IP, or domain</p>
             </div>
           ) : (
             results.map((result, i) => {
@@ -181,11 +195,19 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
                   key={`${result.type}-${i}`}
                   onClick={() => handleSelect(result)}
                   onMouseEnter={() => setSelectedIndex(i)}
-                  className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-all ${
-                    isActive ? 'bg-cyan-500/10 border-l-4 border-cyan-500' : 'bg-transparent border-l-4 border-transparent hover:bg-white/5'
-                  }`}
+                  className="w-full flex items-center gap-4 px-6 py-4 text-left transition-all"
+                  style={{
+                    backgroundColor: isActive ? palette.surface : 'transparent',
+                    borderLeft: `4px solid ${isActive ? palette.accent : 'transparent'}`,
+                  }}
                 >
-                  <div className={`p-2.5 rounded-xl ${isActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-400'}`}>
+                  <div
+                    className="p-2.5 rounded-xl"
+                    style={{
+                      backgroundColor: isActive ? `${palette.accent}20` : palette.float,
+                      color: isActive ? palette.accent : palette.textTertiary,
+                    }}
+                  >
                     {result.type === 'app' && <span className="leading-none"><result.data.icon size={20} /></span>}
                     {result.type === 'command' && <result.data.icon className="w-5 h-5" />}
                     {result.type === 'history' && <Clock className="w-5 h-5" />}
@@ -193,24 +215,27 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                       <span className={`font-semibold ${isActive ? 'text-white' : 'text-slate-200'}`}>
+                       <span className="font-semibold" style={{ color: isActive ? palette.textPrimary : palette.textSecondary }}>
                         {result.type === 'app' && result.data.name}
                         {result.type === 'command' && result.data.label}
                         {result.type === 'history' && result.data.value}
                         {result.type === 'agent' && result.data.name}
                       </span>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 px-1.5 py-0.5 rounded bg-slate-800/50">
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: palette.float, color: palette.textDisabled }}
+                      >
                         {result.type}
                       </span>
                     </div>
-                    <p className={`text-xs truncate ${isActive ? 'text-cyan-400/70' : 'text-slate-500'}`}>
+                    <p className="text-xs truncate" style={{ color: isActive ? palette.textSecondary : palette.textTertiary }}>
                       {result.type === 'app' && result.data.description}
                       {result.type === 'command' && 'System command'}
                       {result.type === 'history' && `Past ${result.data.type.toUpperCase()} scan • ${new Date(result.data.timestamp).toLocaleDateString()}`}
                       {result.type === 'agent' && result.data.description}
                     </p>
                   </div>
-                  {isActive && <ArrowRight className="w-4 h-4 text-cyan-500 animate-pulse" />}
+                  {isActive && <ArrowRight className="w-4 h-4" style={{ color: palette.accent }} />}
                 </button>
               );
             })
@@ -218,13 +243,20 @@ export function SpotlightSearch({ onClose }: SpotlightSearchProps) {
         </div>
 
         {/* Footer Hints */}
-        <div className="px-6 py-3 border-t border-white/5 bg-slate-950/50 flex items-center justify-between">
-           <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-              <div className="flex items-center gap-1.5"><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/5">↑↓</kbd> Navigate</div>
-              <div className="flex items-center gap-1.5"><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/5">↵</kbd> Select</div>
+        <div
+          className="px-6 py-3 flex items-center justify-between"
+          style={{ borderTop: `1px solid ${palette.borderSubtle}`, backgroundColor: palette.base }}
+        >
+           <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider" style={{ color: palette.textTertiary }}>
+              <div className="flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 rounded" style={{ backgroundColor: palette.float, border: `1px solid ${palette.borderSubtle}`, color: palette.textDisabled }}>↑↓</kbd> Navigate
+              </div>
+              <div className="flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 rounded" style={{ backgroundColor: palette.float, border: `1px solid ${palette.borderSubtle}`, color: palette.textDisabled }}>↵</kbd> Select
+              </div>
            </div>
-           <div className="flex items-center gap-2 text-[10px] text-cyan-500/50 font-mono">
-              <Command className="w-3 h-3" /> THAMOS_SPOTLIGHT_V1.0
+           <div className="flex items-center gap-2 text-[10px]" style={{ color: palette.textDisabled, fontFamily: typography.mono }}>
+              <Command className="w-3 h-3" /> THAMOS SPOTLIGHT
            </div>
         </div>
       </div>

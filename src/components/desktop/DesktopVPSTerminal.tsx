@@ -238,7 +238,7 @@ export function DesktopVPSTerminal() {
 
   if (!user) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ backgroundColor: '#060610', color: palette.textTertiary }}>
+      <div className="h-full flex items-center justify-center" style={{ backgroundColor: palette.void, color: palette.textTertiary }}>
         <span style={{ fontSize: '12px', fontFamily: typography.mono }}>Sign in to access VPS Terminal</span>
       </div>
     );
@@ -246,14 +246,14 @@ export function DesktopVPSTerminal() {
 
   if (loadingConfig) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ backgroundColor: '#060610' }}>
+      <div className="h-full flex items-center justify-center" style={{ backgroundColor: palette.void }}>
         <span style={{ fontSize: '12px', fontFamily: typography.mono, color: palette.textDisabled }}>Loading...</span>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#060610' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: palette.void }}>
       <div
         className="flex items-center justify-between px-3 py-1.5 shrink-0"
         style={{
@@ -354,7 +354,7 @@ export function DesktopVPSTerminal() {
         <div ref={termRef} className="absolute inset-0" style={{ padding: '4px' }} onClick={() => terminalRef.current?.focus()} />
 
         {connState === 'disconnected' && !hasAttempted && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: '#060610ee', zIndex: 10 }}>
+          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: `${palette.void}ee`, zIndex: 10 }}>
             <div className="w-80 space-y-4" style={{ fontFamily: typography.mono }}>
               <div className="text-center">
                 <div className="text-lg mb-1" style={{ color: palette.cyan }}>VPS Terminal</div>

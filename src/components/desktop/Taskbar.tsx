@@ -206,11 +206,14 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                         >
                           <w.icon size={12} />
                           <span className="flex-1 text-left truncate max-w-[140px]">{w.title}</span>
-                          <button
+                          {/* span, not <button>: nesting a button inside the row button is invalid HTML */}
+                          <span
+                            role="button"
+                            aria-label={`Close ${w.title}`}
                             onClick={(e) => { e.stopPropagation(); desktop.closeWindow(w.id); }}
-                            className="opacity-0 hover:opacity-100 text-xs"
+                            className="opacity-0 hover:opacity-100 text-xs cursor-pointer"
                             style={{ color: palette.rose }}
-                          >×</button>
+                          >×</span>
                         </button>
                       ))}
                     </div>
@@ -290,7 +293,6 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
                   className="w-2 h-2 rounded-full transition-all"
                   style={{
                     backgroundColor: agent.online ? agent.color : palette.textDisabled,
-                    boxShadow: agent.online ? `0 0 6px ${agent.color}60` : 'none',
                   }}
                 />
                 <span
@@ -328,7 +330,7 @@ export function Taskbar({ onOpenLauncher }: TaskbarProps) {
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold"
-                  style={{ backgroundColor: palette.rose, color: '#fff' }}
+                  style={{ backgroundColor: palette.rose, color: palette.textPrimary }}
                 >
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>

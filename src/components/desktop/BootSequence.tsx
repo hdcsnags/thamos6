@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { palette, typography } from '../../design-system/tokens';
 
 interface BootSequenceProps {
   onComplete: () => void;
@@ -11,9 +12,10 @@ interface BootMessage {
 }
 
 const BOOT_MESSAGES: BootMessage[] = [
-  { text: 'ThamOS X Kernel v7.0.0 loading...', delay: 120, status: 'info' },
-  { text: 'CPU: 16 cores @ 5.2 GHz — verified', status: 'ok' },
-  { text: 'Memory: 64 GB DDR5 — allocated', status: 'ok' },
+  { text: 'ThamOS T6 shell loading...', delay: 120, status: 'info' },
+  { text: 'Design tokens — loaded', status: 'ok' },
+  { text: 'App registry — mounted', status: 'ok' },
+  { text: 'Session state — restored', status: 'ok' },
   { text: 'Initializing threat intelligence mesh...', delay: 200, status: 'info' },
   { text: 'VirusTotal engine linked', status: 'ok' },
   { text: 'AbuseIPDB engine linked', status: 'ok' },
@@ -39,10 +41,10 @@ const BOOT_MESSAGES: BootMessage[] = [
 ];
 
 const statusColors: Record<string, string> = {
-  ok: '#00ff9d',
-  ready: '#00d9ff',
-  warn: '#fbbf24',
-  info: '#8a8fa8',
+  ok: palette.green,
+  ready: palette.cyan,
+  warn: palette.amber,
+  info: palette.textSecondary,
 };
 
 export function BootSequence({ onComplete }: BootSequenceProps) {
@@ -95,29 +97,21 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
     <div
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center"
       style={{
-        backgroundColor: '#050508',
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        backgroundColor: palette.void,
+        fontFamily: typography.mono,
         fontSize: '12px',
         transition: 'opacity 500ms ease-out',
         opacity: fading ? 0 : 1,
       }}
     >
-      {/* Scanline overlay */}
-      <div
-        className="fixed inset-0 pointer-events-none z-[101]"
-        style={{
-          background: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 2px)',
-        }}
-      />
-
       <div className="w-full max-w-3xl px-8">
         {/* Logo */}
         <div className="mb-6">
-          <div style={{ color: '#00d9ff', fontSize: '22px', fontWeight: 700, letterSpacing: '-0.03em' }}>
-            ThamOS<span style={{ color: '#00ff9d' }}>X</span>
+          <div style={{ color: palette.textPrimary, fontSize: '22px', fontWeight: 700, letterSpacing: '-0.03em' }}>
+            ThamOS <span style={{ color: palette.accent }}>T6</span>
           </div>
-          <div style={{ color: '#3a3f55', fontSize: '11px', marginTop: '2px' }}>
-            Threat Analysis & Monitoring Operating System — v7.0.0
+          <div style={{ color: palette.textTertiary, fontSize: '11px', marginTop: '2px' }}>
+            Threat Analysis & Monitoring Operating System — v6
           </div>
         </div>
 
@@ -133,7 +127,7 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
               className="flex items-start gap-2"
               style={{ animation: 'bootFadeIn 0.15s ease-out' }}
             >
-              <span style={{ color: '#2a2f45', fontSize: '10px', minWidth: '22px' }}>
+              <span style={{ color: palette.textDisabled, fontSize: '10px', minWidth: '22px' }}>
                 {String(idx).padStart(2, '0')}
               </span>
               {msg.status && (
@@ -141,7 +135,7 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
                   {msg.status === 'ok' ? '\u2713' : msg.status === 'ready' ? '\u25CF' : msg.status === 'warn' ? '\u25B2' : '\u203A'}
                 </span>
               )}
-              <span style={{ color: msg.status === 'ready' ? '#00d9ff' : msg.status === 'warn' ? '#fbbf24' : '#00ff9d' }}>
+              <span style={{ color: msg.status === 'ready' ? palette.cyan : msg.status === 'warn' ? palette.amber : palette.textSecondary }}>
                 {msg.text}
               </span>
             </div>
@@ -149,7 +143,7 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
           {/* Blinking cursor */}
           {!fading && (
             <div style={{ animation: 'bootBlink 1s step-end infinite' }}>
-              <span style={{ color: '#00ff9d' }}>{'\u2588'}</span>
+              <span style={{ color: palette.textSecondary }}>{'\u2588'}</span>
             </div>
           )}
         </div>
@@ -157,17 +151,16 @@ export function BootSequence({ onComplete }: BootSequenceProps) {
         {/* Progress */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span style={{ color: '#64748b', fontSize: '11px' }}>BOOT PROGRESS</span>
-            <span style={{ color: '#00d9ff', fontSize: '11px' }}>{Math.floor(progress)}%</span>
+            <span style={{ color: palette.textTertiary, fontSize: '11px' }}>BOOT PROGRESS</span>
+            <span style={{ color: palette.accent, fontSize: '11px' }}>{Math.floor(progress)}%</span>
           </div>
-          <div className="h-[3px] rounded-full overflow-hidden" style={{ backgroundColor: '#1a1f35' }}>
+          <div className="h-[3px] rounded-full overflow-hidden" style={{ backgroundColor: palette.surface }}>
             <div
               className="h-full rounded-full"
               style={{
                 width: `${progress}%`,
-                background: 'linear-gradient(90deg, #00ff9d 0%, #00d9ff 60%, #00b4d8 100%)',
+                backgroundColor: palette.accent,
                 transition: 'width 150ms ease-out',
-                boxShadow: '0 0 8px rgba(0, 217, 255, 0.3)',
               }}
             />
           </div>

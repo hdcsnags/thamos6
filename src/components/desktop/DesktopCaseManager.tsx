@@ -2,21 +2,24 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useDesktop } from '../../contexts/DesktopContext';
 import { detectIOCType } from '../../lib/iocDetection';
+import { palette } from '../../design-system/tokens';
 
+// Aliased onto the shared operator-workstation palette (tokens.ts). Keys kept
+// stable so call sites below stay untouched.
 const P = {
-  void: '#060610',
-  surface: '#0a0e1a',
-  surfaceLight: '#0f1424',
-  border: '#1a1f35',
-  dim: '#3a3f55',
-  text: '#8a8fa8',
-  textLight: '#c8cde0',
-  cyan: '#00d9ff',
-  green: '#00ff9d',
-  amber: '#fbbf24',
-  pink: '#ff0080',
-  orange: '#ff6b35',
-  blue: '#00b4d8',
+  void: palette.void,
+  surface: palette.elevated,
+  surfaceLight: palette.float,
+  border: palette.borderSubtle,
+  dim: palette.textTertiary,
+  text: palette.textSecondary,
+  textLight: palette.textPrimary,
+  cyan: palette.cyan,
+  green: palette.green,
+  amber: palette.amber,
+  pink: palette.rose,
+  orange: palette.orange,
+  blue: palette.blue,
 };
 
 interface CaseNote {
