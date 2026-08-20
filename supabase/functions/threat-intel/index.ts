@@ -1461,7 +1461,19 @@ async function checkSpamhaus(ctx: TierContext, ip: string): Promise<ThreatResult
         if (response.ok) {
           const data = await response.json();
           if (data?.Answer && data.Answer.length > 0) {
-            return { zone, name, description, listed: true, returnCodes: data.Answer.map((a: any) => a.data) };
+            const codes: string[] = data.Answer.map((a: any) => String(a.data));
+            // Spamhaus answers in 127.255.255.0/24 are ERROR codes, not listings
+            // (.252 = query via public/open resolver blocked, .254 = query
+            // misrouted, .255 = excessive queries). If Spamhaus ever rate-limits
+            // Cloudflare DoH, every IP would otherwise flip to "listed".
+            const realListings = codes.filter((c) => c.startsWith("127.") && !c.startsWith("127.255.255."));
+            const errorCodes = codes.filter((c) => c.startsWith("127.255.255."));
+            if (realListings.length > 0) {
+              return { zone, name, description, listed: true, returnCodes: realListings };
+            }
+            if (errorCodes.length > 0) {
+              console.warn(`Spamhaus ${zone} returned error codes (resolver blocked?): ${errorCodes.join(", ")}`);
+            }
           }
         }
         return null;

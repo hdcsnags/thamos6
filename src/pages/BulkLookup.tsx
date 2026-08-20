@@ -99,6 +99,16 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
     }
   }, [loading, results]);
 
+  // RFC-4180 quoting + spreadsheet-formula-injection guard: ISP names like
+  // "Amazon.com, Inc." must not shift columns, and a hostile rDNS/ISP string
+  // starting with =/+/-/@ must not execute when the CSV is opened in Excel.
+  const csvField = (v: unknown): string => {
+    let s = String(v ?? 'N/A');
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
   const handleExportCSV = () => {
     if (results.length === 0) return;
 
@@ -121,7 +131,7 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
       r.spamhausLists?.join('; ') ?? 'N/A'
     ]);
 
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csv = [headers.join(','), ...rows.map(r => r.map(csvField).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
