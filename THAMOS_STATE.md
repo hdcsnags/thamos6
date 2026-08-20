@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer: real-sample gap closure — body-URL recipient binding, nested .eml recursion, standalone-image QR)
+> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer: Sender Intelligence panel + export actions — UX pass, partial)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -53,7 +53,7 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 > - **Rendered "Decoded Email Payload"** — an inline, styled HTML rendering of the email body/thread (not just raw text), including nested reply-chain formatting.
 > - **Export actions** — Routing Path, Raw Headers, JSON Export, Print Report buttons on the results view.
 > - **Anti-pattern to avoid:** that tool submits the full recipient-bearing sample to VirusTotal for scanning. Do **not** replicate — conflicts with our privacy boundary (no external submission of recipient-bearing content). Any equivalent capability we build must keep such lookups IP/domain-only and never transmit raw email bytes or recipient PII to third-party services.
-> - **Status:** not scoped, not prioritized, not started. Needs product-priority decision (which items, if any) before implementation.
+> - **Status:** Sender geo/ASN card, dual-source threat-intel widget, and Export actions (JSON/print) **shipped 2026-08-20d** — see Sprint Log. Reverse-DNS/PTR + 4-list blacklist rollup and rendered "Decoded Email Payload" thread view remain backlog, not started.
 
 > **Historical audit:** the grades and issue descriptions below capture the 2026-05-04 baseline. Later sprint entries and the current-direction section above supersede completed or changed claims.
 
@@ -226,6 +226,18 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-20d — Email Analyzer: Sender Intelligence panel + export actions (UX pass, partial)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Partial pickup of the 2026-08-20 EmailScanner reference-tool UI/UX backlog (see UI/UX Audit Findings above). Implemented the two lowest-risk, highest-value items that needed zero new backend calls; left the PTR/blacklist-rollup panel and rendered-thread body view as backlog pending scoping.
+
+**Shipped (`src/pages/EmailAnalyzer.tsx` only — no edge function changes, no deploy needed):**
+1. **Sender Intelligence panel** in the Headers tab: for the message's Origin IP, shows geolocation (city/country), hosting provider/ISP, ASN, detection confidence, AbuseIPDB confidence % + report count, VirusTotal detection ratio + community reputation, and a Spamhaus listed/clean rollup. Entirely reuses whatever `ENRICH ALL` already fetched via the existing `enrichMap` (keyed by IOC value) — makes no new network calls, and if the analyst hasn't run `ENRICH ALL` yet it shows a one-line prompt instead of an empty/broken panel.
+2. **Export actions**: added "Download JSON" (full result + enrichment + verdict as a downloadable `.json`, filename derived from the subject) and "Print Report" (`window.print()`) buttons next to the existing copy-to-clipboard "Export" button in the workbench toolbar.
+
+**Explicitly not built this pass (still backlog):** PTR/reverse-DNS + 4-list blacklist rollup (would need a new `threat-intel` source/endpoint — no PTR check exists in the backend today), rendered "Decoded Email Payload" inline thread view (the raw-text/HTML preview already exists via `EmailWorkbenchPreview`; a dedicated per-message thread-splitting view is a larger, separate piece of work).
+
+**Verification:** `npx tsc --noEmit` clean, `npm run build` clean (same pre-existing >500kB chunk-size warning as prior sprints, no new errors). No sample data or real emails were used for this UI-only change; no edge functions changed, so nothing was (re)deployed.
 
 ### Sprint 2026-08-20c — Email Analyzer: real-sample gap closure (body-URL binding, nested .eml, standalone-image QR)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)

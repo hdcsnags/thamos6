@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save, Plus, X } from 'lucide-react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save, Plus, X, Printer } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
 import type { AppId } from '../contexts/DesktopContext';
@@ -195,6 +195,28 @@ interface ThreatIntelEnrichment extends Record<string, unknown> {
   maxThreatScore?: number;
   isMalicious?: boolean;
   suspicious?: boolean;
+}
+
+/** Shape of the threat-intel /ip aggregate as returned by enrichIP() — used
+ * only by the Sender Intelligence panel (Headers tab), which reuses whatever
+ * ENRICH ALL already fetched for the origin IP rather than making a new call. */
+interface IpThreatIntel extends ThreatIntelEnrichment {
+  enrichment?: {
+    country?: string;
+    countryCode?: string;
+    city?: string;
+    isp?: string;
+    org?: string;
+    asn?: string;
+    spamhausListed?: boolean;
+    spamhausLists?: string[];
+  };
+  detectionConfidence?: string;
+  sources?: {
+    abuseipdb?: { data?: { abuseConfidenceScore?: number; totalReports?: number } };
+    virustotal?: { data?: { attributes?: { reputation?: number; last_analysis_stats?: Record<string, number> } } };
+    rdap?: Record<string, unknown>;
+  };
 }
 
 interface EnrichIOCItem {
@@ -1203,6 +1225,31 @@ export default function EmailAnalyzer() {
                 >
                   {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Export</>}
                 </button>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify({ ...result, enrichResult, verdict }, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const safeName = (result.headers.subject || 'email-analysis').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 60);
+                    a.href = url;
+                    a.download = `${safeName || 'email-analysis'}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                  style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                  title="Download the full analysis (headers, IOCs, threat-intel, verdict) as a JSON file"
+                >
+                  <FileText className="w-3 h-3" /> Download JSON
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
+                  style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                  title="Print or save this workbench view as a PDF report"
+                >
+                  <Printer className="w-3 h-3" /> Print Report
+                </button>
               </div>
             </div>
             {workbenchError && (
@@ -1264,6 +1311,63 @@ export default function EmailAnalyzer() {
                     <code className="text-xs break-all" style={{ color: P.textLight }}>{value || 'N/A'}</code>
                   </div>
                 ))}
+                {/* Sender Intelligence — geo/ASN/ISP + AbuseIPDB/VirusTotal reputation
+                    + Spamhaus blacklist status for the origin IP. Reuses whatever
+                    ENRICH ALL already fetched (enrichMap); makes no new backend calls
+                    and never sends the raw email/recipient anywhere. */}
+                {result.originIP && (() => {
+                  const ti = enrichMap.get(result.originIP) as IpThreatIntel | undefined;
+                  if (!ti) {
+                    return (
+                      <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+                        <span className="text-[10px] font-bold tracking-wider" style={{ color: P.dim }}>SENDER INTELLIGENCE</span>
+                        <p className="text-[10px] mt-1" style={{ color: P.dim }}>Run ENRICH ALL (IOCs tab) to look up the origin IP's geolocation, reputation, and blacklist status.</p>
+                      </div>
+                    );
+                  }
+                  const geo = ti.enrichment;
+                  const abuse = ti.sources?.abuseipdb?.data;
+                  const vt = ti.sources?.virustotal?.data?.attributes;
+                  const vtStats = vt?.last_analysis_stats;
+                  const vtMalicious = vtStats?.malicious ?? 0;
+                  const vtTotal = vtStats ? Object.values(vtStats).reduce((a, b) => a + b, 0) : null;
+                  const spamhausListed = geo?.spamhausListed === true;
+                  return (
+                    <div className="p-3 rounded space-y-3" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold tracking-wider" style={{ color: P.textLight }}>SENDER INTELLIGENCE</span>
+                        <code className="text-[10px]" style={{ color: P.dim }}>{result.originIP}</code>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                        <div><span style={{ color: P.dim }}>Location: </span><span style={{ color: P.textLight }}>{[geo?.city, geo?.country || geo?.countryCode].filter(Boolean).join(', ') || 'Unknown'}</span></div>
+                        <div><span style={{ color: P.dim }}>Provider: </span><span style={{ color: P.textLight }}>{geo?.isp || geo?.org || 'Unknown'}</span></div>
+                        <div><span style={{ color: P.dim }}>ASN: </span><span style={{ color: P.textLight }}>{geo?.asn || 'Unknown'}</span></div>
+                        <div><span style={{ color: P.dim }}>Confidence: </span><span style={{ color: P.textLight }}>{ti.detectionConfidence || 'low'}</span></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-2 rounded text-center" style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}` }}>
+                          <div className="text-[9px]" style={{ color: P.dim }}>ABUSEIPDB</div>
+                          <div className="text-sm font-bold tabular-nums" style={{ color: abuse?.abuseConfidenceScore ? (abuse.abuseConfidenceScore >= 50 ? P.rose : abuse.abuseConfidenceScore > 0 ? P.amber : P.green) : P.dim }}>
+                            {abuse?.abuseConfidenceScore !== undefined ? `${abuse.abuseConfidenceScore}%` : 'N/A'}
+                          </div>
+                          <div className="text-[9px]" style={{ color: P.dim }}>{abuse?.totalReports ?? 0} reports</div>
+                        </div>
+                        <div className="p-2 rounded text-center" style={{ backgroundColor: P.surfaceLight, border: `1px solid ${P.border}` }}>
+                          <div className="text-[9px]" style={{ color: P.dim }}>VIRUSTOTAL</div>
+                          <div className="text-sm font-bold tabular-nums" style={{ color: vtMalicious > 0 ? P.rose : vtTotal !== null ? P.green : P.dim }}>
+                            {vtTotal !== null ? `${vtMalicious} / ${vtTotal}` : 'N/A'}
+                          </div>
+                          <div className="text-[9px]" style={{ color: P.dim }}>{vt?.reputation !== undefined ? `rep ${vt.reputation}` : 'detections'}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 px-2 py-1.5 rounded text-[10px]" style={{ backgroundColor: spamhausListed ? `${P.rose}10` : `${P.green}10`, border: `1px solid ${(spamhausListed ? P.rose : P.green)}30`, color: spamhausListed ? P.rose : P.green }}>
+                        {spamhausListed
+                          ? `⚠ Spamhaus: listed (${(geo?.spamhausLists ?? []).join(', ') || 'zone unspecified'})`
+                          : '✓ Spamhaus: not listed on any checked zone'}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
