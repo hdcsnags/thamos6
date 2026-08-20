@@ -46,6 +46,15 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 
 ## UI/UX Audit Findings
 
+> **2026-08-20 reference-tool audit (backlog, not yet scoped/built):** Sonnet reviewed a third-party tool, "EmailScanner," by uploading a real sample from `C:\Thamos\emails` (`b6b69e65-...`) and captured a 20-step scrolling walkthrough (`C:\Thamos\thamos8-solson-2026-08-20.html`). Gaps identified in our Email Analyzer relative to that tool:
+> - **Sender geo/ASN card** — city/country (with flag icon), hosting provider, usage type (e.g. CDN), ASN, hostname, rendered as a compact info panel alongside the header fields.
+> - **Dual-source threat-intel widget** — AbuseIPDB confidence % and VirusTotal community reputation/detection-ratio shown side by side for the sending IP.
+> - **Reverse-DNS/PTR + blacklist status panel** — explicit PTR-record check plus a 4-list blacklist rollup (Spamhaus ZEN, Barracuda, SORBS, SpamCop) with an overall clean/listed verdict.
+> - **Rendered "Decoded Email Payload"** — an inline, styled HTML rendering of the email body/thread (not just raw text), including nested reply-chain formatting.
+> - **Export actions** — Routing Path, Raw Headers, JSON Export, Print Report buttons on the results view.
+> - **Anti-pattern to avoid:** that tool submits the full recipient-bearing sample to VirusTotal for scanning. Do **not** replicate — conflicts with our privacy boundary (no external submission of recipient-bearing content). Any equivalent capability we build must keep such lookups IP/domain-only and never transmit raw email bytes or recipient PII to third-party services.
+> - **Status:** not scoped, not prioritized, not started. Needs product-priority decision (which items, if any) before implementation.
+
 > **Historical audit:** the grades and issue descriptions below capture the 2026-05-04 baseline. Later sprint entries and the current-direction section above supersede completed or changed claims.
 
 > **Audited by:** Kimi Code CLI, 2026-05-04
