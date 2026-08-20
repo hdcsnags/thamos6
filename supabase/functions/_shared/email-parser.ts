@@ -997,6 +997,14 @@ export async function analyzeAttachmentArtifacts(
   const attParts = parsed.parts.filter(isAttachmentPart);
   const seenFinal = new Set(parsed.urls.map((u) => u.final));
 
+  // Say exactly what matched: an exact-recipient hit is a far stronger claim
+  // than "some tenant-domain address appeared in the URL" — the indicator text
+  // must not upgrade a medium-confidence tenant-domain match into "exact identity".
+  const bindingIdentityPhrase = (b: RecipientBinding): string =>
+    b.matchesMessageRecipient
+      ? "the recipient's exact identity"
+      : "a tenant-domain address (not the recipient's own — weaker signal)";
+
   // Body/header URLs are already in parsed.urls (built synchronously inside
   // parseEmail(), which doesn't have `recipients` available). Bind them here,
   // after wrapper unwrapping (analyzeUrl() already ran), same as attachment-
@@ -1009,7 +1017,7 @@ export async function analyzeAttachmentArtifacts(
       let pathname = "";
       try { pathname = new URL(u.final).pathname; } catch { /* ignore */ }
       parsed.suspiciousIndicators.push(
-        `Targeted identity phishing: link in the message resolves to ${u.finalHost}${pathname} embedding the recipient's exact identity in the URL ${binding.location} (${binding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
+        `Targeted identity phishing: link in the message resolves to ${u.finalHost}${pathname} embedding ${bindingIdentityPhrase(binding)} in the URL ${binding.location} (${binding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
       );
     }
   }
@@ -1066,7 +1074,7 @@ export async function analyzeAttachmentArtifacts(
         let pathname = "";
         try { pathname = new URL(intel.final).pathname; } catch { /* ignore */ }
         parsed.suspiciousIndicators.push(
-          `Targeted identity phishing: ${originDesc} resolves to ${intel.finalHost}${pathname} embedding the recipient's exact identity in the URL ${intel.recipientBinding.location} (${intel.recipientBinding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
+          `Targeted identity phishing: ${originDesc} resolves to ${intel.finalHost}${pathname} embedding ${bindingIdentityPhrase(intel.recipientBinding)} in the URL ${intel.recipientBinding.location} (${intel.recipientBinding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
         );
       } else {
         parsed.suspiciousIndicators.push(

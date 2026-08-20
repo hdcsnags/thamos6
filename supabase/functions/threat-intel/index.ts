@@ -1529,7 +1529,10 @@ async function checkURLScan(ctx: TierContext, url: string, apiKey: string): Prom
   const cached = await getCachedResponse(ctx, "urlscan_result", url);
   if (cached) return { source: "urlscan", data: cached };
   try {
-    const submitResponse = await fetchWithTimeout("https://urlscan.io/api/v1/scan/", { method: "POST", headers: { "API-Key": apiKey, "Content-Type": "application/json" }, body: JSON.stringify({ url, visibility: "public" }) });
+    // "unlisted": scan runs and the analyst gets the report/screenshot, but the
+    // result is NOT indexed into urlscan's public search — defense in depth for
+    // any PII-bearing URL the recipient-binding detector didn't catch.
+    const submitResponse = await fetchWithTimeout("https://urlscan.io/api/v1/scan/", { method: "POST", headers: { "API-Key": apiKey, "Content-Type": "application/json" }, body: JSON.stringify({ url, visibility: "unlisted" }) });
     if (!submitResponse.ok) throw new Error(`HTTP ${submitResponse.status}`);
     const submitData = await submitResponse.json();
     return { source: "urlscan", data: { submitted: true, pending: true, uuid: submitData.uuid, resultUrl: submitData.result } };

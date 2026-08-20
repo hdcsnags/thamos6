@@ -138,22 +138,85 @@ async function enrichEmail(email: string): Promise<any> {
   }
 }
 
+interface WithheldUrl {
+  url: string;
+  host: string;
+  reason: string;
+}
+
 interface IOCTargets {
   urls: string[];
   domains: string[];
   ips: string[];
   emails: string[];
   idnDomains: string[];
+  /** URLs embedding recipient identity — never sent to external URL scanners;
+   *  their host is enriched via /domain instead. */
+  withheldUrls: WithheldUrl[];
+}
+
+/** PII boundary check for the legacy paste path (the parsed path uses the
+ *  parser's own recipientBinding): does this URL embed one of the recipient
+ *  addresses in plain, percent-encoded, base64, or base64url form? */
+function urlEmbedsAddress(url: string, addrs: string[]): boolean {
+  const lower = url.toLowerCase();
+  for (const addr of addrs) {
+    if (!addr) continue;
+    if (lower.includes(addr) || lower.includes(encodeURIComponent(addr))) return true;
+    try {
+      const b64 = btoa(addr).replace(/=+$/, "");
+      const b64url = b64.replace(/\+/g, "-").replace(/\//g, "_");
+      if (url.includes(b64) || url.includes(b64url)) return true;
+    } catch { /* non-ASCII address — plain/percent checks above still apply */ }
+  }
+  return false;
+}
+
+/** Addresses in To/Cc lines of pasted raw headers (legacy path only). */
+function recipientsFromRawHeaders(rawHeaders: string): string[] {
+  const out = new Set<string>();
+  for (const m of rawHeaders.matchAll(/^(?:to|cc)\s*:(.*)$/gim)) {
+    for (const e of extractEmails(m[1])) out.add(e.toLowerCase());
+  }
+  return [...out];
 }
 
 /** Legacy paste mode: regex over raw text (headers + body as pasted). */
 function targetsFromText(rawHeaders: string, emailBody: string): IOCTargets {
   const fullText = rawHeaders + "\n" + emailBody;
-  const urls = extractURLs(fullText).slice(0, 10);
-  const domains = [...new Set(urls.map(domainFromURL).filter(Boolean))].slice(0, 10);
+  const recipients = recipientsFromRawHeaders(rawHeaders);
+  const withheldUrls: WithheldUrl[] = [];
+  const urls: string[] = [];
+  for (const u of extractURLs(fullText)) {
+    if (urlEmbedsAddress(u, recipients)) {
+      withheldUrls.push({
+        url: u,
+        host: domainFromURL(u),
+        reason: "URL embeds a recipient address — withheld from external URL scanners; domain enriched instead",
+      });
+    } else {
+      urls.push(u);
+    }
+  }
+  // Withheld hosts go first so the domain cap can't starve them out.
+  const domains = [
+    ...new Set([
+      ...withheldUrls.map((w) => w.host).filter(Boolean),
+      ...urls.map(domainFromURL).filter(Boolean),
+    ]),
+  ].slice(0, 10);
   const ips = extractIPs(fullText).slice(0, 5);
-  const emails = extractEmails(fullText).slice(0, 10);
-  return { urls, domains, ips, emails, idnDomains: domains.filter(checkIDN) };
+  const emails = extractEmails(fullText)
+    .filter((e) => !recipients.includes(e.toLowerCase()))
+    .slice(0, 10);
+  return {
+    urls: urls.slice(0, 10),
+    domains,
+    ips,
+    emails,
+    idnDomains: domains.filter(checkIDN),
+    withheldUrls: withheldUrls.slice(0, 10),
+  };
 }
 
 /**
@@ -164,6 +227,7 @@ function targetsFromText(rawHeaders: string, emailBody: string): IOCTargets {
  */
 function targetsFromParsed(parsed: ParsedEmail): IOCTargets {
   const urls: string[] = [];
+  const withheldUrls: WithheldUrl[] = [];
   const seen = new Set<string>();
   for (const u of parsed.urls) {
     const target = u.final;
@@ -171,17 +235,56 @@ function targetsFromParsed(parsed: ParsedEmail): IOCTargets {
     if (!host || !host.includes(".") || isWrapperHost(host)) continue;
     if (seen.has(target)) continue;
     seen.add(target);
-    urls.push(target);
+    // PII boundary: a URL the parser flagged as embedding recipient identity
+    // (exact address OR any tenant-domain address) must never reach external
+    // URL scanners — urlscan/VT submissions are publicly visible. The host
+    // still gets full /domain enrichment below.
+    if (u.recipientBinding?.detected) {
+      withheldUrls.push({
+        url: target,
+        host,
+        reason: u.recipientBinding.matchesMessageRecipient
+          ? "URL embeds the recipient's address — withheld from external URL scanners; domain enriched instead"
+          : "URL embeds a tenant-domain address — withheld from external URL scanners; domain enriched instead",
+      });
+    } else {
+      urls.push(target);
+    }
   }
-  const domains = parsed.domains.filter((d) => d.includes(".")).slice(0, 10);
+  // Withheld hosts go first so the 10-domain cap can't starve them out.
+  const domains = [
+    ...new Set([
+      ...withheldUrls.map((w) => w.host),
+      ...parsed.domains.filter((d) => d.includes(".")),
+    ]),
+  ].slice(0, 10);
   const msgIdLocal = parsed.messageId.replace(/[<>]/g, "").toLowerCase();
-  const emails = parsed.emails.filter((e) => e !== msgIdLocal).slice(0, 10);
+  // PII boundary: only sender-side addresses (From/Reply-To/Return-Path/Sender)
+  // go to emailrep.io — recipients and bystander body addresses stay inside.
+  const senderSide = new Set(
+    extractEmails(
+      `${parsed.from} ${parsed.replyTo} ${parsed.returnPath} ${parsed.headers["sender"] ?? ""}`,
+    ).map((e) => e.toLowerCase()),
+  );
+  const recipients = new Set(extractRecipients(parsed));
+  const emails = parsed.emails.filter(
+    (e) => e !== msgIdLocal && senderSide.has(e.toLowerCase()) && !recipients.has(e.toLowerCase()),
+  ).slice(0, 10);
+  // The origin IP anchors the Sender Intelligence panel — pin it first so the
+  // 5-IP cap can never starve it out behind relay-chain IPs.
+  const ips = [
+    ...new Set([
+      ...(parsed.originIP ? [parsed.originIP] : []),
+      ...parsed.ips,
+    ]),
+  ].slice(0, 5);
   return {
     urls: urls.slice(0, 10),
     domains,
-    ips: parsed.ips.slice(0, 5),
+    ips,
     emails,
     idnDomains: domains.filter(checkIDN),
+    withheldUrls: withheldUrls.slice(0, 10),
   };
 }
 
@@ -200,7 +303,16 @@ async function runEnrichment(targets: IOCTargets, auth: string) {
 
   return {
     iocs: {
-      urls: targets.urls.map((v, i) => ({ value: v, enrichment: urlResults[i] })),
+      urls: [
+        ...targets.urls.map((v, i) => ({ value: v, enrichment: urlResults[i] })),
+        // Withheld URLs appear in the IOC list with an explicit marker instead
+        // of silently vanishing — the analyst sees WHY there's no urlscan/VT
+        // data and where the domain-level evidence lives.
+        ...targets.withheldUrls.map((w) => ({
+          value: w.url,
+          enrichment: { piiWithheld: true, reason: w.reason, enrichedDomainInstead: w.host },
+        })),
+      ],
       domains: targets.domains.map((v, i) => ({
         value: v,
         enrichment: domainResults[i],
@@ -212,11 +324,12 @@ async function runEnrichment(targets: IOCTargets, auth: string) {
     summary: {
       totalScore,
       isMalicious,
-      urlCount: targets.urls.length,
+      urlCount: targets.urls.length + targets.withheldUrls.length,
       domainCount: targets.domains.length,
       ipCount: targets.ips.length,
       emailCount: targets.emails.length,
       idnDomains: targets.idnDomains,
+      withheldUrlCount: targets.withheldUrls.length,
     },
   };
 }
