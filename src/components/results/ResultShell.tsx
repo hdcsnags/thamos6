@@ -108,7 +108,9 @@ export function ResultShell<T extends string>({
       {variant === 'sidebar' && nav}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {variant === 'tabs' && nav}
-        <div className="flex-1 overflow-y-auto">
+        {/* @container: result pages use container-query variants (@xl:, @3xl:, @5xl:)
+            so grids reflow with the window content area, not the browser viewport. */}
+        <div className="flex-1 overflow-y-auto @container">
           <div className="p-6">
             {/* Header */}
             <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">

@@ -68,6 +68,12 @@ export interface IPLookupResult {
   maxThreatScore: number;
   isMalicious: boolean;
   results: Record<string, ThreatResult>;
+  /**
+   * Per-provider fetch outcome, keyed the same way as the raw `sources` map
+   * the edge functions return. Absent on artifacts stored before the backend
+   * started persisting it — consumers must treat missing entries as unknown.
+   */
+  sourceStatus?: Record<string, { ok: boolean; error?: string }>;
   scoring?: CalibratedScoring;
   checkedAt: string;
   /** Present when this result was read from a stored artifact instead of a live scan (e.g. Bulk Lookup drill-down). */

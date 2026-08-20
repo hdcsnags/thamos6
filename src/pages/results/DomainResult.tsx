@@ -134,7 +134,7 @@ export default function DomainResult({ domain, onScan }: DomainResultProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto relative z-10">
+      <div className="flex-1 overflow-y-auto relative z-10 @container">
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -197,7 +197,7 @@ function OverviewSection({ result, whoisData, vtData, copySummary, copyJson, cop
           {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />} COPY JSON
         </button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
           <div className="flex items-center gap-2 mb-4"><Globe className="w-5 h-5 text-cyan-400" /><h3 className="text-lg font-bold text-white uppercase tracking-wider">REGISTRAR</h3></div>
           <div className="space-y-2">
@@ -240,7 +240,7 @@ function OverviewSection({ result, whoisData, vtData, copySummary, copyJson, cop
       {whoisData?.nameservers && whoisData.nameservers.length > 0 && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
           <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">NAMESERVERS</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-2">
             {whoisData.nameservers.map((ns: string, idx: number) => (
               <div key={idx} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50"><span className="text-sm font-medium text-cyan-400 font-mono">{ns}</span></div>
             ))}
@@ -255,7 +255,7 @@ function WhoisSection({ whoisData, proMode }: any) {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2"><Globe className="w-6 h-6 text-cyan-400" />WHOIS INFORMATION</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Domain</div><div className="text-lg font-medium text-white">{whoisData?.domain || 'Unknown'}</div></div>
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Registrar</div><div className="text-lg font-medium text-white">{whoisData?.registrar || 'Unknown'}</div></div>
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Registration Date</div><div className="text-base font-medium text-white">{whoisData?.registrationDate ? new Date(whoisData.registrationDate).toLocaleDateString() : 'Unknown'}</div></div>
@@ -312,7 +312,7 @@ function SecuritySection({ vtData, whoisData, proMode }: any) {
       {vtData?.last_https_certificate && (
         <div className="p-6 rounded-xl" style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
           <h3 className="text-lg font-bold text-emerald-400 mb-4 uppercase tracking-wider flex items-center gap-2"><Lock className="w-5 h-5" />SSL/TLS CERTIFICATE</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
             <div><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Subject</div><div className="text-base font-medium text-white">{vtData.last_https_certificate.subject?.CN || 'Unknown'}</div></div>
             <div><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Issuer</div><div className="text-base font-medium text-white">{vtData.last_https_certificate.issuer?.CN || 'Unknown'}</div></div>
             <div><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Valid From</div><div className="text-base font-medium text-white">{vtData.last_https_certificate.validity?.not_before || 'Unknown'}</div></div>

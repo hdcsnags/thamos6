@@ -14,6 +14,9 @@ const MIN_WIDTH = 400;
 const MIN_HEIGHT = 300;
 const SNAP_THRESHOLD = 20;
 const TITLE_BAR_HEIGHT = 38;
+/** Taskbar height in px — must match Taskbar.tsx's `h-12` (48px). Shared so
+ * maximize/snap (here) and keyboard tiling (DesktopLayout) agree exactly. */
+export const TASKBAR_HEIGHT = 48;
 
 export function DesktopWindow({ id, children }: DesktopWindowProps) {
   const desktop = useDesktop();
@@ -62,7 +65,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
         const rawY = e.clientY - dragStart.y;
 
         const viewportWidth = globalThis.window.innerWidth;
-        const viewportHeight = globalThis.window.innerHeight - 48;
+        const viewportHeight = globalThis.window.innerHeight - TASKBAR_HEIGHT;
 
         // Keep at least 120 px of the window on-screen horizontally and the
         // full title bar on-screen vertically so the window is never lost.
@@ -114,7 +117,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
     const handleMouseUp = (e: globalThis.MouseEvent) => {
       if (isDragging && snapPreview) {
         const viewportWidth = globalThis.window.innerWidth;
-        const viewportHeight = globalThis.window.innerHeight - 48;
+        const viewportHeight = globalThis.window.innerHeight - TASKBAR_HEIGHT;
 
         if (e.clientX < SNAP_THRESHOLD && e.clientY < SNAP_THRESHOLD) {
           desktop.updateWindowPosition(id, { x: 0, y: 0 });
@@ -230,7 +233,7 @@ export function DesktopWindow({ id, children }: DesktopWindowProps) {
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   const style: React.CSSProperties = win.maximized
-    ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: 'calc(100vh - 48px)', zIndex: win.zIndex }
+    ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: `calc(100vh - ${TASKBAR_HEIGHT}px)`, zIndex: win.zIndex }
     : { position: 'fixed', top: win.position.y, left: win.position.x, width: win.size.width, height: win.size.height, zIndex: win.zIndex };
 
   // Linux-workstation chrome: depth comes from neutral shadow and structure,

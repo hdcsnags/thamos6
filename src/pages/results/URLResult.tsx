@@ -183,7 +183,7 @@ export default function URLResult({ url }: URLResultProps) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto relative z-10">
+      <div className="flex-1 overflow-y-auto relative z-10 @container">
         {/* Desktop Horizontal Menu */}
         {theme === 'desktop' && (
           <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
@@ -263,7 +263,7 @@ function OverviewSection({ result, vtData, urlscanData, detonation, detonationSt
           {copiedJson ? <Check className="w-4 h-4 text-green-400" /> : <FileJson className="w-4 h-4" />} COPY JSON
         </button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
           <div className="flex items-center gap-2 mb-4"><Globe className="w-5 h-5 text-cyan-400" /><h3 className="text-lg font-bold text-white uppercase tracking-wider">PAGE INFO</h3></div>
           <div className="space-y-2">
@@ -373,7 +373,7 @@ function DetonationSection({ detonation, state, urlscanDetails, urlscanError }: 
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @5xl:grid-cols-2 gap-4">
         {/* Screenshot */}
         {detonation.screenshotUrl && (
           <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
@@ -420,7 +420,7 @@ function DetonationSection({ detonation, state, urlscanDetails, urlscanError }: 
       )}
 
       {/* Link domains + counts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @5xl:grid-cols-2 gap-4">
         {(detonation.linkDomains?.length ?? 0) > 0 && (
           <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
             <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Outgoing Link Domains ({detonation.linkDomains!.length})</div>
@@ -453,7 +453,7 @@ function AnalysisSection({ vtData, urlscanData, proMode }: any) {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-white uppercase tracking-wider flex items-center gap-2"><Code className="w-6 h-6 text-cyan-400" />URL ANALYSIS</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Final URL</div><div className="text-sm font-medium text-white break-all">{vtData?.last_final_url || 'Unknown'}</div></div>
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">HTTP Response Code</div><div className={`text-lg font-medium ${vtData?.last_http_response_code === 200 ? 'text-emerald-400' : 'text-amber-400'}`}>{vtData?.last_http_response_code || 'Unknown'}</div></div>
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}><div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Page Title</div><div className="text-base font-medium text-white">{vtData?.title || 'Unknown'}</div></div>

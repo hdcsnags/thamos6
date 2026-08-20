@@ -100,13 +100,13 @@ export default function EmailResult({ email }: EmailResultProps) {
   };
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto relative">
+    <div ref={containerRef} className="flex-1 overflow-y-auto relative @container">
       <div className="fixed inset-0 pointer-events-none z-0 opacity-20">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent animate-pulse"
              style={{ backgroundSize: '100% 4px', animation: 'scanline 8s linear infinite' }} />
       </div>
 
-      <div className="p-8 relative z-10 max-w-4xl mx-auto">
+      <div className="p-8 relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-8 gap-4">
           <div className="min-w-0">
@@ -145,7 +145,7 @@ export default function EmailResult({ email }: EmailResultProps) {
         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-cyan-400" /> Sender-domain authentication
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 @xl:grid-cols-3 gap-4 mb-6">
           <AuthChip label="MX" state={result.has_valid_mx} />
           <AuthChip label="SPF" state={result.has_spf} />
           <AuthChip label="DMARC" state={result.has_dmarc} />
@@ -153,7 +153,7 @@ export default function EmailResult({ email }: EmailResultProps) {
 
         {/* Address signals */}
         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Address signals</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 @xl:grid-cols-3 gap-4 mb-6">
           <StatCard icon={Trash2} label="Disposable" value={result.is_disposable == null ? 'Unknown' : result.is_disposable ? 'YES' : 'No'} danger={result.is_disposable === true} />
           <StatCard icon={Users} label="Free Provider" value={result.is_free_provider == null ? 'Unknown' : result.is_free_provider ? 'Yes' : 'No'} />
           <StatCard icon={ShieldAlert} label="Breaches" value={result.breach_count != null ? String(result.breach_count) : (result.is_breached ? 'Yes' : 'None')} danger={result.is_breached} />

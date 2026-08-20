@@ -145,7 +145,7 @@ export default function HashResult({ hash }: HashResultProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto relative z-10">
+      <div className="flex-1 overflow-y-auto relative z-10 @container">
         <div className="p-8">
           {/* Header with Pro Toggle */}
           <div className="flex items-center justify-between mb-8">
@@ -248,7 +248,7 @@ function OverviewSection({ result, vtData, malwareBazaarData, copySummary, copyJ
       </div>
 
       {/* Key Indicators */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         {/* File Type */}
         <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
           <div className="flex items-center gap-2 mb-4">
@@ -373,7 +373,7 @@ function FileInfoSection({ vtData, proMode }: any) {
         FILE INFORMATION
       </h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
         <div className="p-4 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
           <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">MD5</div>
           <div className="text-sm font-medium text-white font-mono break-all">{vtData?.md5 || 'Unknown'}</div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDesktop, type AppId } from '../../contexts/DesktopContext';
-import { DesktopWindow } from './DesktopWindow';
+import { DesktopWindow, TASKBAR_HEIGHT } from './DesktopWindow';
 import { Taskbar } from './Taskbar';
 import { BootSequence } from './BootSequence';
 import { AppLauncher } from './AppLauncher';
@@ -130,7 +130,7 @@ function DesktopContent() {
     if (!win) return;
 
     const vw = window.innerWidth;
-    const vh = window.innerHeight - 44; // taskbar height
+    const vh = window.innerHeight - TASKBAR_HEIGHT;
 
     if (direction === 'up') {
       if (win.maximized) return;

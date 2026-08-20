@@ -283,7 +283,7 @@ export default function IPResult({ ip, onScan, artifactId }: IPResultProps) {
         )}
 
         {activeMenu === 'sources' && (
-          <SourcesSection sources={sources} />
+          <SourcesSection sources={sources} sourceStatus={result.sourceStatus} />
         )}
       </ResultShell>
     </div>
@@ -324,7 +324,7 @@ function OverviewSection({ enrichment, scoring, spamhausData, abuseIPDBData, vir
 
       <VerdictStrip scoring={scoring} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="grid grid-cols-1 @5xl:grid-cols-2 gap-4 items-start">
         <div className="space-y-4 min-w-0">
           <ContextCard enrichment={enrichment} teamCymruData={teamCymruData} proMode={proMode} />
           <ScoreDriversCard scoring={scoring} onOpenVerdict={onOpenVerdict} />
@@ -566,7 +566,7 @@ function VirusTotalCard({ virusTotalData }: { virusTotalData: any }) {
   return (
     <ResultCard>
       <SectionHeader icon={<Shield className="w-4 h-4" />} title="VirusTotal" />
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3 mt-4">
         <StatCell label="Malicious" value={vtStats.malicious || 0} tone={vtStats.malicious ? 'danger' : 'neutral'} />
         <StatCell label="Suspicious" value={vtStats.suspicious || 0} tone={vtStats.suspicious ? 'warn' : 'neutral'} />
         <StatCell label="Clean" value={vtStats.harmless || 0} tone={vtStats.harmless ? 'good' : 'neutral'} />
@@ -687,7 +687,7 @@ function ThreatsSection({ spamhausData, alienVaultData, virusTotalData, proMode 
       {vtStats && (
         <ResultCard>
           <SectionHeader title="VirusTotal analysis" />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3 mt-4">
             <StatCell label="Malicious" value={vtStats.malicious || 0} tone={vtStats.malicious ? 'danger' : 'neutral'} />
             <StatCell label="Suspicious" value={vtStats.suspicious || 0} tone={vtStats.suspicious ? 'warn' : 'neutral'} />
             <StatCell label="Clean" value={vtStats.harmless || 0} tone={vtStats.harmless ? 'good' : 'neutral'} />
@@ -779,7 +779,7 @@ function VPNSection({ enrichment, sources, proxyCheckEntry }: {
     <div className="space-y-4">
       <SectionHeader icon={<Wifi className="w-4 h-4" />} title="VPN / proxy analysis" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 @xl:grid-cols-2 @5xl:grid-cols-4 gap-3">
         <MetricCard
           label="VPN status"
           value={enrichment.isVPN ? 'VPN detected' : 'No VPN'}
@@ -832,7 +832,7 @@ function VPNSection({ enrichment, sources, proxyCheckEntry }: {
       {operator && (operator.name || operator.url) && (
         <ResultCard>
           <SectionHeader title={`Operator${operator.name ? ` — ${operator.name}` : ''} (ProxyCheck)`} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-1 @xl:grid-cols-2 gap-4 mt-4">
             {operator.anonymity && (
               <div>
                 <div className="text-[11px] mb-1" style={{ color: palette.textTertiary }}>Anonymity level</div>
@@ -888,7 +888,11 @@ function VPNSection({ enrichment, sources, proxyCheckEntry }: {
 
 /* -------------------------------- Sources -------------------------------- */
 
-function SourcesSection({ sources }: { sources: Record<string, any> }) {
+function SourcesSection({ sources, sourceStatus }: {
+  sources: Record<string, any>;
+  /** Per-provider fetch outcome persisted by the backend; absent on older stored artifacts. */
+  sourceStatus?: Record<string, { ok: boolean; error?: string }>;
+}) {
   // Open everything by default — analysts close what they don't need.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set(Object.keys(sources)));
   const sourceKeys = Object.keys(sources);
@@ -912,14 +916,26 @@ function SourcesSection({ sources }: { sources: Record<string, any> }) {
       <div className="space-y-2">
         {sourceKeys.map((sourceKey) => {
           const sourceData = sources[sourceKey];
-          const hasError = !!sourceData?.error;
+          // Prefer the backend's honest per-provider status when persisted;
+          // fall back to the legacy inline-error shape for older artifacts.
+          const status = sourceStatus?.[sourceKey];
+          const hasError = status ? status.ok === false : !!sourceData?.error;
+          const errorText = status ? status.error : sourceData?.error;
           const isExpanded = expandedKeys.has(sourceKey);
           return (
-            <div key={sourceKey} className="rounded-lg overflow-hidden" style={{ background: palette.base, border: `1px solid ${palette.borderDefault}` }}>
+            <div
+              key={sourceKey}
+              className="rounded-lg overflow-hidden"
+              style={{
+                background: hasError ? `${palette.rose}0d` : palette.base,
+                border: `1px solid ${hasError ? `${palette.rose}40` : palette.borderDefault}`,
+              }}
+            >
               <button
                 onClick={() => toggle(sourceKey)}
                 className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:brightness-110"
                 style={{ background: 'transparent' }}
+                title={hasError && errorText ? errorText : undefined}
               >
                 <span className="flex items-center gap-2 min-w-0">
                   {isExpanded
@@ -933,8 +949,8 @@ function SourcesSection({ sources }: { sources: Record<string, any> }) {
               </button>
               {isExpanded && (
                 <div className="px-4 pb-4">
-                  {hasError && (
-                    <div className="text-xs mb-2" style={{ color: palette.rose, fontFamily: typography.ui }}>{sourceData.error}</div>
+                  {hasError && errorText && (
+                    <div className="text-xs mb-2" style={{ color: palette.rose, fontFamily: typography.ui }}>{errorText}</div>
                   )}
                   <pre
                     className="text-xs overflow-auto max-h-72 rounded-md p-3"

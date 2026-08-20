@@ -159,7 +159,7 @@ export default function CVEResult({ cve }: CVEResultProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto relative z-10">
+      <div className="flex-1 overflow-y-auto relative z-10 @container">
         <div className="p-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -227,7 +227,7 @@ export default function CVEResult({ cve }: CVEResultProps) {
               </div>
 
               {/* Quick facts grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-4">
                 <StatCard icon={Gauge} label="CVSS v3" value={result.cvss_v3_score != null ? String(result.cvss_v3_score) : '—'} sub={sev.label} />
                 <StatCard icon={Activity} label="EPSS" value={epssPct != null ? `${epssPct.toFixed(1)}%` : '—'} sub={epssPercentile != null ? `top ${(100 - epssPercentile).toFixed(0)}%` : 'exploit prob.'} />
                 <StatCard icon={Flame} label="In KEV" value={result.is_kev ? 'YES' : 'No'} sub={result.is_kev ? 'exploited' : 'not listed'} danger={result.is_kev} />
