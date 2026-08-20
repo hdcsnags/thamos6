@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save, Plus, X, Printer } from 'lucide-react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, Paperclip, Save, Plus, X, Printer, Link2, QrCode, Globe, ChevronDown, ChevronUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
 import type { AppId } from '../contexts/DesktopContext';
 import { supabase } from '../lib/supabase';
+import { lookupIP } from '../lib/threatIntel';
 import { palette, typography } from '../design-system/tokens';
 
 // Map the local names this file uses onto the shared design-system tokens so the
@@ -89,6 +90,11 @@ interface UrlSource {
   attachmentSha256?: string;
   containerPart?: string;
   imageIndex?: number;
+  /** outermost-first chain of nested .eml attachment filenames this URL was
+   *  recovered from (message/rfc822 recursion) — provenance the analyst must
+   *  see, since a nested URL is NOT visible anywhere in the top-level message */
+  nestedFrom?: string[];
+  page?: number;
 }
 
 interface RecipientBinding {
@@ -212,11 +218,21 @@ interface IpThreatIntel extends ThreatIntelEnrichment {
     spamhausLists?: string[];
   };
   detectionConfidence?: string;
+  scoring?: { calibrated?: number; verdict?: string };
   sources?: {
     abuseipdb?: { data?: { abuseConfidenceScore?: number; totalReports?: number } };
     virustotal?: { data?: { attributes?: { reputation?: number; last_analysis_stats?: Record<string, number> } } };
     rdap?: Record<string, unknown>;
   };
+}
+
+/** Enrichment marker for a URL that was withheld from external URL scanners
+ *  because it embeds recipient/tenant identity (the server enriches the
+ *  domain instead — see analyze-email targetsFromParsed). */
+interface PiiWithheldEnrichment extends ThreatIntelEnrichment {
+  piiWithheld?: boolean;
+  reason?: string;
+  enrichedDomainInstead?: string;
 }
 
 interface EnrichIOCItem {
@@ -254,7 +270,7 @@ interface EmailVerdict {
   analyst_next_steps: string[];
 }
 
-type Tab = 'headers' | 'auth' | 'defender' | 'hops' | 'iocs' | 'attach' | 'body' | 'thamos' | 'raw';
+type Tab = 'message' | 'links' | 'headers' | 'auth' | 'defender' | 'hops' | 'iocs' | 'attach' | 'thamos' | 'raw';
 
 interface ServerParsedEmail {
   from?: string;
@@ -303,6 +319,13 @@ interface EmailSession {
   activeTab: Tab;
   savedWorkbench: boolean;
   addedAt: number;
+  /** auto-fetched /ip aggregate for the origin IP (triage strip + Sender
+   *  Intelligence) — internal T6 call, runs without ENRICH ALL */
+  originIpIntel?: IpThreatIntel | null;
+  originIpStatus?: 'loading' | 'ready' | 'error' | null;
+  /** paste-mode inputs, snapshotted so re-enrich works after the textareas change */
+  pasteHeaders?: string;
+  pasteBody?: string;
 }
 
 const genSessionId = () =>
@@ -401,7 +424,7 @@ function extractDomain(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
-function EmailWorkbenchPreview({ result }: { result: AnalysisResult }) {
+function EmailWorkbenchPreview({ result, view }: { result: AnalysisResult; view: 'rendered' | 'text' }) {
   const sanitizedHtml = useMemo(
     () => sanitizeEmailHtml(result.bodyHtmlPreview ?? ''),
     [result.bodyHtmlPreview]
@@ -409,104 +432,76 @@ function EmailWorkbenchPreview({ result }: { result: AnalysisResult }) {
   const sender = result.headers.from || 'Unknown sender';
   const subject = result.headers.subject || '(no subject)';
   const attachmentCount = result.attachments?.length ?? 0;
-  const urlCount = result.urls?.length ?? result.extractedIOCs.filter((ioc) => ioc.type === 'url').length;
+  const showRendered = view === 'rendered' && Boolean(sanitizedHtml);
 
   return (
-    <div className="h-full min-h-0 flex flex-col" style={{ backgroundColor: P.surface }}>
-      <div className="px-4 py-3 shrink-0" style={{ borderBottom: `1px solid ${P.border}`, backgroundColor: P.surface }}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] tracking-[0.22em] font-bold" style={{ color: P.cyan }}>SAFE MESSAGE PREVIEW</div>
-            <div className="text-xs truncate mt-1" style={{ color: P.textLight }}>{subject}</div>
+    <div className="rounded-xl overflow-hidden shadow-2xl" style={{ backgroundColor: P.mailBg, border: `1px solid ${P.mailBorder}`, fontFamily: typography.ui }}>
+      <div className="px-4 py-3" style={{ backgroundColor: P.mailChrome, borderBottom: `1px solid ${P.mailBorder}` }}>
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: P.mailAvatarBg, color: P.mailAvatarText }}>
+            {sender.replace(/["<>]/g, '').trim().slice(0, 1).toUpperCase() || '?'}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {attachmentCount > 0 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber, border: `1px solid ${P.amber}30` }}>
-                {attachmentCount} ATT
-              </span>
-            )}
-            {urlCount > 0 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.cyan}15`, color: P.cyan, border: `1px solid ${P.cyan}30` }}>
-                {urlCount} URL
-              </span>
-            )}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold leading-snug" style={{ color: P.mailText }}>{subject}</h2>
+            <p className="text-xs mt-1 break-all" style={{ color: P.mailMuted }}>From: {sender}</p>
+            <p className="text-xs break-all" style={{ color: P.mailMuted }}>To: {result.headers.to || 'Unknown recipient'}</p>
           </div>
+          <span className="text-xs shrink-0" style={{ color: P.mailMuted }}>{result.headers.date || ''}</span>
         </div>
-        <p className="text-[10px] mt-2" style={{ color: P.dim }}>
-          Active content, remote loads, forms, and live links are stripped before rendering.
-        </p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-4">
-        <div className="rounded-xl overflow-hidden shadow-2xl" style={{ backgroundColor: P.mailBg, border: `1px solid ${P.mailBorder}`, fontFamily: typography.ui }}>
-          <div className="px-4 py-3" style={{ backgroundColor: P.mailChrome, borderBottom: `1px solid ${P.mailBorder}` }}>
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: P.mailAvatarBg, color: P.mailAvatarText }}>
-                {sender.replace(/["<>]/g, '').trim().slice(0, 1).toUpperCase() || '?'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-base font-semibold leading-snug" style={{ color: P.mailText }}>{subject}</h2>
-                <p className="text-xs mt-1 break-all" style={{ color: P.mailMuted }}>From: {sender}</p>
-                <p className="text-xs break-all" style={{ color: P.mailMuted }}>To: {result.headers.to || 'Unknown recipient'}</p>
-              </div>
-              <span className="text-xs shrink-0" style={{ color: P.mailMuted }}>{result.headers.date || ''}</span>
-            </div>
-          </div>
-
-          {attachmentCount > 0 && (
-            <div className="px-4 py-2 flex flex-wrap gap-2" style={{ backgroundColor: P.mailBg, borderBottom: `1px solid ${P.mailBorder}` }}>
-              {result.attachments!.map((att, i) => (
-                <span key={`${att.filename}-${i}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: P.mailChip, color: P.mailText }}>
-                  <Paperclip className="w-3 h-3" />
-                  {att.filename}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="px-5 py-5 min-h-[320px]" style={{ color: P.mailText }}>
-            {sanitizedHtml ? (
-              <>
-                <style>{`
-                  .thamos-email-preview {
-                    color: ${P.mailText};
-                    font: 14px/1.55 ${typography.ui};
-                    overflow-wrap: anywhere;
-                  }
-                  .thamos-email-preview * {
-                    max-width: 100%;
-                  }
-                  .thamos-email-preview table {
-                    border-collapse: collapse;
-                  }
-                  .thamos-email-preview a.thamos-disabled-link {
-                    color: ${P.mailLink};
-                    text-decoration: underline;
-                    cursor: not-allowed;
-                  }
-                  .thamos-email-preview a.thamos-disabled-link::after {
-                    content: " [link disabled]";
-                    color: ${P.mailDanger};
-                    font-size: 11px;
-                    font-weight: 700;
-                  }
-                  .thamos-email-preview img.thamos-blocked-image {
-                    display: inline-block;
-                    min-width: 120px;
-                    min-height: 32px;
-                    border: 1px dashed ${P.mailMuted};
-                    background: ${P.mailChrome};
-                  }
-                `}</style>
-                <div className="thamos-email-preview" dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
-              </>
-            ) : (
-              <pre className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.mailText, fontFamily: typography.ui }}>
-                {result.bodyText || 'No decoded body preview available. Use the evidence tabs for headers, IOCs, and verdict details.'}
-              </pre>
-            )}
-          </div>
+      {attachmentCount > 0 && (
+        <div className="px-4 py-2 flex flex-wrap gap-2" style={{ backgroundColor: P.mailBg, borderBottom: `1px solid ${P.mailBorder}` }}>
+          {result.attachments!.map((att, i) => (
+            <span key={`${att.filename}-${i}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: P.mailChip, color: P.mailText }}>
+              <Paperclip className="w-3 h-3" />
+              {att.filename}
+            </span>
+          ))}
         </div>
+      )}
+
+      <div className="px-5 py-5 min-h-[320px]" style={{ color: P.mailText }}>
+        {showRendered ? (
+          <>
+            <style>{`
+              .thamos-email-preview {
+                color: ${P.mailText};
+                font: 14px/1.55 ${typography.ui};
+                overflow-wrap: anywhere;
+              }
+              .thamos-email-preview * {
+                max-width: 100%;
+              }
+              .thamos-email-preview table {
+                border-collapse: collapse;
+              }
+              .thamos-email-preview a.thamos-disabled-link {
+                color: ${P.mailLink};
+                text-decoration: underline;
+                cursor: not-allowed;
+              }
+              .thamos-email-preview a.thamos-disabled-link::after {
+                content: " [link disabled]";
+                color: ${P.mailDanger};
+                font-size: 11px;
+                font-weight: 700;
+              }
+              .thamos-email-preview img.thamos-blocked-image {
+                display: inline-block;
+                min-width: 120px;
+                min-height: 32px;
+                border: 1px dashed ${P.mailMuted};
+                background: ${P.mailChrome};
+              }
+            `}</style>
+            <div className="thamos-email-preview" dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+          </>
+        ) : (
+          <pre className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.mailText, fontFamily: typography.ui }}>
+            {result.bodyText || 'No decoded body preview available. Use the evidence tabs for headers, IOCs, and verdict details.'}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -519,15 +514,14 @@ export default function EmailAnalyzer() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('headers');
+  const [copyError, setCopyError] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('message');
   const [enrichResult, setEnrichResult] = useState<EnrichResult | null>(null);
-  const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [rawEmail, setRawEmail] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [verdict, setVerdict] = useState<EmailVerdict | null>(null);
-  const [verdictLoading, setVerdictLoading] = useState(false);
   const [verdictError, setVerdictError] = useState<string | null>(null);
   const [verdictProvider, setVerdictProvider] = useState<VerdictProvider>('anthropic');
   const [savingWorkbench, setSavingWorkbench] = useState(false);
@@ -535,7 +529,35 @@ export default function EmailAnalyzer() {
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<EmailSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [originIpIntel, setOriginIpIntel] = useState<IpThreatIntel | null>(null);
+  const [originIpStatus, setOriginIpStatus] = useState<EmailSession['originIpStatus']>(null);
+  // Per-session busy sets: an enrich/verdict running for session A must show a
+  // spinner ONLY on A, and must never clobber whichever session is on screen
+  // when it resolves. Every async resolver below (a) writes its result into
+  // `sessions` by captured id — the source of truth — and (b) touches the flat
+  // mirror state only when its session is still the active one (checked via
+  // ref, because the closure's activeSessionId is stale by resolve time).
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+  const [verdictIds, setVerdictIds] = useState<Set<string>>(new Set());
+  const [messageView, setMessageView] = useState<'rendered' | 'text'>('rendered');
+  const [flagsOpen, setFlagsOpen] = useState(false);
+  const activeSessionIdRef = useRef<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const setActive = (id: string | null) => {
+    activeSessionIdRef.current = id;
+    setActiveSessionId(id);
+  };
+  const isActive = (id: string) => activeSessionIdRef.current === id;
+  const addTo = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
+    setter(prev => new Set(prev).add(id));
+  const removeFrom = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
+    setter(prev => { const next = new Set(prev); next.delete(id); return next; });
+  const patchSession = (id: string, patch: Partial<EmailSession>) =>
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)));
+
+  const enrichLoading = activeSessionId !== null && enrichingIds.has(activeSessionId);
+  const verdictLoading = activeSessionId !== null && verdictIds.has(activeSessionId);
 
   const enrichMap = useMemo(() => {
     const m = new Map<string, ThreatIntelEnrichment>();
@@ -667,6 +689,7 @@ export default function EmailAnalyzer() {
       suspiciousIndicators: indicators,
       extractedIOCs: iocs,
       rawHeaders: headers,
+      bodyText: bodyInput,
     };
   };
 
@@ -728,6 +751,8 @@ export default function EmailAnalyzer() {
 
   // Builds a session snapshot from the CURRENT flat state — call before
   // switching away from / closing the active session so its work isn't lost.
+  // Async results (enrich/verdict/origin-IP) are ALSO written straight into
+  // the session by their resolvers, so this only reconciles UI-local fields.
   const persistActiveSession = () => {
     if (!activeSessionId) return;
     setSessions(prev => prev.map(s => {
@@ -736,36 +761,14 @@ export default function EmailAnalyzer() {
       // preserve whatever status the load already settled into (error/loading)
       // instead of clobbering a failed parse with a false "ready".
       const status: EmailSession['status'] = result ? 'ready' : s.status;
-      return { ...s, status, rawEmail, result, enrichResult, verdict, verdictProvider, activeTab, savedWorkbench };
+      return {
+        ...s, status, rawEmail, result, enrichResult, verdict, verdictProvider,
+        activeTab, savedWorkbench, originIpIntel, originIpStatus,
+      };
     }));
   };
 
-  const switchSession = (id: string) => {
-    if (id === activeSessionId) return;
-    persistActiveSession();
-    const target = sessions.find(s => s.id === id);
-    if (!target) return;
-    setActiveSessionId(id);
-    setResult(target.result);
-    setRawEmail(target.rawEmail);
-    setEnrichResult(target.enrichResult);
-    setVerdict(target.verdict);
-    setVerdictProvider(target.verdictProvider);
-    setActiveTab(target.activeTab);
-    setSavedWorkbench(target.savedWorkbench);
-    setEnrichError(null);
-    setVerdictError(null);
-    setWorkbenchError(null);
-    setUploadError(null);
-    setCopied(false);
-  };
-
-  // Deactivates the current session (back to the drop/paste view) without
-  // deleting it from the drawer — it stays selectable, like closing a
-  // message in a mail client.
-  const closeActiveSession = () => {
-    persistActiveSession();
-    setActiveSessionId(null);
+  const clearFlatState = () => {
     setResult(null);
     setRawEmail(null);
     setVerdict(null);
@@ -775,21 +778,70 @@ export default function EmailAnalyzer() {
     setWorkbenchError(null);
     setSavedWorkbench(false);
     setUploadError(null);
+    setOriginIpIntel(null);
+    setOriginIpStatus(null);
+    setFlagsOpen(false);
+  };
+
+  const switchSession = (id: string) => {
+    if (id === activeSessionId) return;
+    persistActiveSession();
+    const target = sessions.find(s => s.id === id);
+    if (!target) return;
+    setActive(id);
+    setResult(target.result);
+    setRawEmail(target.rawEmail);
+    setEnrichResult(target.enrichResult);
+    setVerdict(target.verdict);
+    setVerdictProvider(target.verdictProvider);
+    setActiveTab(target.activeTab);
+    setSavedWorkbench(target.savedWorkbench);
+    setOriginIpIntel(target.originIpIntel ?? null);
+    setOriginIpStatus(target.originIpStatus ?? null);
+    setEnrichError(null);
+    setVerdictError(null);
+    setWorkbenchError(null);
+    setUploadError(null);
+    setCopied(false);
+    setCopyError(false);
+    setFlagsOpen(false);
+    setMessageView('rendered');
+  };
+
+  // Deactivates the current session (back to the drop/paste view) without
+  // deleting it from the drawer — it stays selectable, like closing a
+  // message in a mail client.
+  const closeActiveSession = () => {
+    persistActiveSession();
+    setActive(null);
+    clearFlatState();
   };
 
   const removeSession = (id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id));
     if (id === activeSessionId) {
-      setActiveSessionId(null);
-      setResult(null);
-      setRawEmail(null);
-      setVerdict(null);
-      setEnrichResult(null);
-      setEnrichError(null);
-      setVerdictError(null);
-      setWorkbenchError(null);
-      setSavedWorkbench(false);
-      setUploadError(null);
+      setActive(null);
+      clearFlatState();
+    }
+  };
+
+  /** Auto-enrich the origin IP through T6's own /ip pipeline the moment a
+   *  parse lands — the triage strip and Sender Intelligence panel get geo +
+   *  calibrated score without waiting for ENRICH ALL. Internal call only;
+   *  no email content or recipient identity leaves the pipeline. */
+  const autoEnrichOriginIp = async (sessionId: string, ip: string) => {
+    patchSession(sessionId, { originIpStatus: 'loading' });
+    if (isActive(sessionId)) setOriginIpStatus('loading');
+    try {
+      const intel = (await lookupIP(ip)) as unknown as IpThreatIntel;
+      patchSession(sessionId, { originIpIntel: intel, originIpStatus: 'ready' });
+      if (isActive(sessionId)) {
+        setOriginIpIntel(intel);
+        setOriginIpStatus('ready');
+      }
+    } catch {
+      patchSession(sessionId, { originIpStatus: 'error' });
+      if (isActive(sessionId)) setOriginIpStatus('error');
     }
   };
 
@@ -804,17 +856,11 @@ export default function EmailAnalyzer() {
     setSessions(prev => [...prev, {
       id, filename: file.name, status: 'loading',
       rawEmail: null, result: null, enrichResult: null, verdict: null,
-      verdictProvider, activeTab: 'headers', savedWorkbench: false, addedAt: Date.now(),
+      verdictProvider, activeTab: 'message', savedWorkbench: false, addedAt: Date.now(),
     }]);
-    setActiveSessionId(id);
-    setResult(null);
-    setRawEmail(null);
-    setEnrichResult(null);
-    setEnrichError(null);
-    setVerdict(null);
-    setVerdictError(null);
-    setWorkbenchError(null);
-    setSavedWorkbench(false);
+    setActive(id);
+    clearFlatState();
+    setActiveTab('message');
     setLoading(true);
     try {
       const text = await file.text();
@@ -829,17 +875,19 @@ export default function EmailAnalyzer() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       const mapped = { ...mapServerParsed(data.parsed), senderAuth: data.senderAuth ?? null };
-      const nextTab: Tab = data.parsed?.defender?.present ? 'defender' : 'headers';
-      setRawEmail(text);
-      setResult(mapped);
-      setActiveTab(nextTab);
-      setSessions(prev => prev.map(s => s.id === id
-        ? { ...s, status: 'ready', rawEmail: text, result: mapped, activeTab: nextTab }
-        : s));
+      patchSession(id, { status: 'ready', rawEmail: text, result: mapped, activeTab: 'message' });
+      // Flat mirror only if this session is still on screen — the analyst may
+      // have switched to another email while this one was parsing.
+      if (isActive(id)) {
+        setRawEmail(text);
+        setResult(mapped);
+        setActiveTab('message');
+      }
+      if (mapped.originIP) void autoEnrichOriginIp(id, mapped.originIP);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setUploadError(msg);
-      setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'error', errorMessage: msg } : s));
+      patchSession(id, { status: 'error', errorMessage: msg });
+      if (isActive(id)) setUploadError(msg);
     } finally {
       setLoading(false);
     }
@@ -858,38 +906,46 @@ export default function EmailAnalyzer() {
     if (!rawInput.trim()) return;
     persistActiveSession();
     const id = genSessionId();
+    const pasteHeaders = rawInput;
+    const pasteBody = bodyInput;
     setSessions(prev => [...prev, {
       id, filename: 'Pasted email', status: 'loading',
       rawEmail: null, result: null, enrichResult: null, verdict: null,
-      verdictProvider, activeTab: 'headers', savedWorkbench: false, addedAt: Date.now(),
+      verdictProvider, activeTab: 'message', savedWorkbench: false, addedAt: Date.now(),
+      pasteHeaders, pasteBody,
     }]);
-    setActiveSessionId(id);
+    setActive(id);
+    clearFlatState();
+    setActiveTab('message');
     setLoading(true);
-    setEnrichResult(null);
-    setEnrichError(null);
-    setRawEmail(null);
-    setVerdict(null);
-    setVerdictError(null);
-    setWorkbenchError(null);
     setTimeout(() => {
       const parsed = parseAnalysis();
-      setResult(parsed);
-      setActiveTab('headers');
+      const nextTab: Tab = parsed.bodyText?.trim() ? 'message' : 'headers';
+      patchSession(id, {
+        status: 'ready', result: parsed, activeTab: nextTab,
+        filename: parsed.headers.subject?.trim() || 'Pasted email',
+      });
+      if (isActive(id)) {
+        setResult(parsed);
+        setActiveTab(nextTab);
+      }
       setLoading(false);
-      setSessions(prev => prev.map(s => s.id === id
-        ? { ...s, status: 'ready', result: parsed, filename: parsed.headers.subject?.trim() || 'Pasted email', activeTab: 'headers' }
-        : s));
+      if (parsed.originIP) void autoEnrichOriginIp(id, parsed.originIP);
     }, 300);
   };
 
   const handleEnrich = async () => {
-    if (!result || enrichLoading) return;
-    setEnrichLoading(true);
+    const sid = activeSessionIdRef.current;
+    if (!result || !sid || enrichingIds.has(sid)) return;
+    const sess = sessions.find(s => s.id === sid);
+    addTo(setEnrichingIds, sid);
     setEnrichError(null);
     try {
+      // Paste sessions enrich from their snapshotted inputs, never from
+      // whatever happens to be sitting in the textareas right now.
       const body = rawEmail
         ? { rawEmail, enrich: true }
-        : { headers: rawInput, emailBody: bodyInput };
+        : { headers: sess?.pasteHeaders ?? rawInput, emailBody: sess?.pasteBody ?? bodyInput };
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-email`,
         { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body) }
@@ -898,17 +954,22 @@ export default function EmailAnalyzer() {
       if (!res.ok) throw new Error(data?.error || `Server error: ${res.status}`);
       const nextEnrichment = rawEmail ? data.enrichment : data;
       if (!nextEnrichment) throw new Error('No enrichment payload returned');
-      setEnrichResult(nextEnrichment as EnrichResult);
+      patchSession(sid, { enrichResult: nextEnrichment as EnrichResult });
+      if (isActive(sid)) setEnrichResult(nextEnrichment as EnrichResult);
     } catch (e) {
-      setEnrichError(e instanceof Error ? e.message : String(e));
+      if (isActive(sid)) setEnrichError(e instanceof Error ? e.message : String(e));
     } finally {
-      setEnrichLoading(false);
+      removeFrom(setEnrichingIds, sid);
     }
   };
 
   const runThamosVerdict = async () => {
-    if (!rawEmail || verdictLoading) return;
-    setVerdictLoading(true);
+    const sid = activeSessionIdRef.current;
+    if (!rawEmail || !sid || verdictIds.has(sid)) return;
+    const capturedRawEmail = rawEmail;
+    const capturedEnrichment = enrichResult;
+    const capturedProvider = verdictProvider;
+    addTo(setVerdictIds, sid);
     setVerdictError(null);
     try {
       const res = await fetch(
@@ -917,22 +978,23 @@ export default function EmailAnalyzer() {
           method: 'POST',
           headers: await authHeaders(),
           body: JSON.stringify({
-            raw_email: rawEmail,
+            raw_email: capturedRawEmail,
             // send the full per-IOC enrichment (the function truncates it), not
             // just the summary — otherwise the verdict ignores the TI we gathered
-            enrichment: enrichResult ?? null,
-            provider: verdictProvider,
-            model: VERDICT_MODELS[verdictProvider],
+            enrichment: capturedEnrichment ?? null,
+            provider: capturedProvider,
+            model: VERDICT_MODELS[capturedProvider],
           }),
         }
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `Server error: ${res.status}`);
-      setVerdict(data.verdict as EmailVerdict);
+      patchSession(sid, { verdict: data.verdict as EmailVerdict });
+      if (isActive(sid)) setVerdict(data.verdict as EmailVerdict);
     } catch (e) {
-      setVerdictError(e instanceof Error ? e.message : String(e));
+      if (isActive(sid)) setVerdictError(e instanceof Error ? e.message : String(e));
     } finally {
-      setVerdictLoading(false);
+      removeFrom(setVerdictIds, sid);
     }
   };
 
@@ -981,14 +1043,29 @@ export default function EmailAnalyzer() {
     UNCERTAIN: P.amber,
   };
 
+  // --- triage-strip derived data (all from state already in hand) ---
+  const urlIntels: UrlIntel[] = result?.urls ?? [];
+  const urlIocFallbackCount = result?.extractedIOCs.filter(i => i.type === 'url').length ?? 0;
+  const linkCount = urlIntels.length || urlIocFallbackCount;
+  const qrCount = urlIntels.filter(u => u.source?.kind === 'attachment-qr').length;
+  const docLinkCount = urlIntels.filter(u => u.source?.kind === 'attachment-link').length;
+  const bindingCount = urlIntels.filter(u => u.recipientBinding?.detected).length;
+  const attachHighCount = result?.attachments?.filter(a => a.risk === 'high').length ?? 0;
+  const ipIntel: IpThreatIntel | undefined = result?.originIP
+    ? ((enrichMap.get(result.originIP) as IpThreatIntel | undefined) ?? originIpIntel ?? undefined)
+    : undefined;
+  const ipScore = ipIntel?.scoring?.calibrated ?? ipIntel?.overallThreatScore ?? null;
+  const ipGeo = ipIntel?.enrichment;
+
   const TABS: { id: Tab; label: string; icon: LucideIcon; show: boolean }[] = [
-    { id: 'headers', label: 'Headers', icon: Mail, show: true },
+    { id: 'message', label: 'Message', icon: Mail, show: true },
+    { id: 'links', label: `Links${linkCount ? ` (${linkCount})` : ''}`, icon: Link2, show: true },
+    { id: 'headers', label: 'Headers', icon: FileText, show: true },
     { id: 'auth', label: 'Auth', icon: CheckCircle, show: true },
     { id: 'defender', label: 'Defender', icon: Shield, show: Boolean(result?.serverParsed) },
     { id: 'hops', label: 'Hops', icon: GitBranch, show: true },
     { id: 'iocs', label: `IOCs${result ? ` (${result.extractedIOCs.length})` : ''}`, icon: List, show: true },
     { id: 'attach', label: `Attachments${result?.attachments?.length ? ` (${result.attachments.length})` : ''}`, icon: Paperclip, show: Boolean(result?.serverParsed && result?.attachments?.length) },
-    { id: 'body', label: 'Body', icon: FileWarning, show: Boolean(result?.serverParsed) },
     { id: 'thamos', label: 'THAMOS', icon: Sparkles, show: Boolean(result?.serverParsed) },
     { id: 'raw', label: 'Raw', icon: FileText, show: true },
   ];
@@ -1041,6 +1118,7 @@ export default function EmailAnalyzer() {
                 : s.status === 'loading'
                   ? P.amber
                   : (s.verdict?.verdict ? (VERDICT_COLOR[s.verdict.verdict] ?? P.green) : P.green);
+              const busy = s.status === 'loading' || enrichingIds.has(s.id) || verdictIds.has(s.id);
               return (
                 <div
                   key={s.id}
@@ -1055,7 +1133,7 @@ export default function EmailAnalyzer() {
                   }}
                 >
                   <div className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ backgroundColor: dotColor }} />
+                    <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0${busy ? ' animate-pulse' : ''}`} style={{ backgroundColor: dotColor }} />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs truncate" style={{ color: isActive ? P.textLight : P.text }}>{subject}</p>
                       {sender && <p className="text-[10px] truncate mt-0.5" style={{ color: P.dim }}>{sender}</p>}
@@ -1080,7 +1158,7 @@ export default function EmailAnalyzer() {
         <input
           ref={fileRef}
           type="file"
-          accept=".eml,.txt,.msg,message/rfc822,text/plain"
+          accept=".eml,.txt,message/rfc822,text/plain"
           multiple
           className="hidden"
           onChange={(e) => { const files = e.target.files; if (files && files.length) loadFiles(files); e.target.value = ''; }}
@@ -1216,14 +1294,16 @@ export default function EmailAnalyzer() {
                 )}
                 <button
                   onClick={async () => {
-                    await navigator.clipboard.writeText(JSON.stringify({ ...result, verdict }, null, 2)).catch(() => {});
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
+                    const ok = await navigator.clipboard.writeText(JSON.stringify({ ...result, verdict }, null, 2))
+                      .then(() => true).catch(() => false);
+                    setCopied(ok);
+                    setCopyError(!ok);
+                    setTimeout(() => { setCopied(false); setCopyError(false); }, 2500);
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 text-xs rounded transition-all"
-                  style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                  style={{ color: copyError ? P.rose : P.dim, border: `1px solid ${copyError ? `${P.rose}40` : P.border}` }}
                 >
-                  {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Export</>}
+                  {copied ? <><Check className="w-3 h-3" /> Copied</> : copyError ? <><X className="w-3 h-3" /> Copy failed</> : <><Copy className="w-3 h-3" /> Export</>}
                 </button>
                 <button
                   onClick={() => {
@@ -1259,41 +1339,275 @@ export default function EmailAnalyzer() {
             )}
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-[minmax(360px,46%)_minmax(0,1fr)] overflow-hidden">
-            <div className="min-h-0 border-r" style={{ borderColor: P.border }}>
-              <EmailWorkbenchPreview result={result} />
-            </div>
-
-            <div className="min-h-0 flex flex-col overflow-hidden">
-              <div className="flex items-center px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
-                {TABS.filter(t => t.show).map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveTab(t.id)}
-                    className="flex items-center gap-1.5 px-3 py-2.5 text-xs transition-all border-b-2 whitespace-nowrap"
-                    style={{
-                      borderBottomColor: activeTab === t.id ? P.cyan : 'transparent',
-                      color: activeTab === t.id ? P.cyan : P.dim,
-                    }}
-                  >
-                    <t.icon className="w-3 h-3" />
-                    {t.label}
+          {/* TRIAGE STRIP — the up-front read: verdict, auth, sender IP with
+              T6 score (auto-fetched), links/QR, attachments, flags. Every chip
+              is a pivot; the analyst never has to hunt tabs for the basics. */}
+          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 shrink-0" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
+            {(() => {
+              const vc = verdict ? (VERDICT_COLOR[verdict.verdict] ?? P.amber) : null;
+              const scl = result.defender?.scl ? parseInt(result.defender.scl, 10) : null;
+              const sclColor = scl === null ? P.dim : scl >= 9 ? P.rose : scl >= 5 ? P.amber : P.green;
+              return verdict ? (
+                <button onClick={() => setActiveTab('thamos')} className="text-[10px] px-2 py-1 rounded font-bold" style={{ backgroundColor: `${vc}15`, color: vc!, border: `1px solid ${vc}40` }}>
+                  {verdict.verdict}
+                </button>
+              ) : scl !== null && !Number.isNaN(scl) ? (
+                <button onClick={() => setActiveTab('defender')} className="text-[10px] px-2 py-1 rounded font-bold" style={{ backgroundColor: `${sclColor}15`, color: sclColor, border: `1px solid ${sclColor}40` }} title="Microsoft spam confidence level — ask THAMOS for a grounded verdict">
+                  SCL {scl}
+                </button>
+              ) : (
+                <button onClick={() => setActiveTab('thamos')} className="text-[10px] px-2 py-1 rounded font-bold" style={{ color: P.dim, border: `1px solid ${P.border}` }} title="No verdict yet — ask THAMOS">
+                  UNSCORED
+                </button>
+              );
+            })()}
+            <span className="flex items-center gap-1">
+              {(['spf', 'dkim', 'dmarc'] as const).map(k => {
+                const st = result.authentication[k].status;
+                const c = st === 'pass' ? P.green : st === 'fail' ? P.rose : st === 'none' ? P.dim : P.amber;
+                return (
+                  <button key={k} onClick={() => setActiveTab('auth')} className="text-[9px] px-1.5 py-1 rounded font-bold" style={{ backgroundColor: `${c}12`, color: c, border: `1px solid ${c}30` }} title={result.authentication[k].details}>
+                    {k.toUpperCase()} {st === 'pass' ? '✓' : st === 'fail' ? '✗' : '·'}
                   </button>
-                ))}
-              </div>
+                );
+              })}
+            </span>
+            {result.originIP && (
+              <button
+                onClick={() => openWindow({ appId: 'ip-result', title: `IP: ${result.originIP}`, data: { value: result.originIP } })}
+                className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded"
+                style={{ color: P.textLight, border: `1px solid ${P.border}`, backgroundColor: P.surfaceLight }}
+                title="Origin IP — open the full T6 reputation report"
+              >
+                <Globe className="w-3 h-3" style={{ color: P.cyan }} />
+                <code>{result.originIP}</code>
+                {ipGeo && <span style={{ color: P.dim }}>{[ipGeo.city, ipGeo.countryCode || ipGeo.country].filter(Boolean).join(', ')}</span>}
+                {ipScore !== null ? (
+                  <span className="font-bold tabular-nums px-1 rounded" style={{ color: ipScore >= 70 ? P.rose : ipScore >= 40 ? P.amber : P.green, backgroundColor: `${ipScore >= 70 ? P.rose : ipScore >= 40 ? P.amber : P.green}12` }}>
+                    {ipScore}
+                  </span>
+                ) : originIpStatus === 'loading' ? (
+                  <span className="animate-pulse" style={{ color: P.dim }}>score…</span>
+                ) : originIpStatus === 'error' ? (
+                  <span style={{ color: P.amber }} title="Automatic IP lookup failed — ENRICH ALL retries it">?</span>
+                ) : null}
+                <span style={{ color: P.dim }}>→</span>
+              </button>
+            )}
+            {linkCount > 0 && (
+              <button onClick={() => setActiveTab('links')} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded" style={{ color: qrCount || docLinkCount ? P.amber : P.text, border: `1px solid ${qrCount || docLinkCount ? `${P.amber}40` : P.border}` }}>
+                <Link2 className="w-3 h-3" />
+                {linkCount} link{linkCount !== 1 ? 's' : ''}
+                {qrCount > 0 && <span className="flex items-center gap-0.5"><QrCode className="w-3 h-3" /> {qrCount} QR</span>}
+                {docLinkCount > 0 && <span>· {docLinkCount} in docs</span>}
+              </button>
+            )}
+            {(result.attachments?.length ?? 0) > 0 && (
+              <button onClick={() => setActiveTab('attach')} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded" style={{ color: attachHighCount ? P.rose : P.text, border: `1px solid ${attachHighCount ? `${P.rose}40` : P.border}` }}>
+                <Paperclip className="w-3 h-3" />
+                {result.attachments!.length} attach{attachHighCount > 0 ? ` · ${attachHighCount} HIGH` : ''}
+              </button>
+            )}
+            {bindingCount > 0 && (
+              <button onClick={() => setActiveTab('links')} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded font-bold" style={{ backgroundColor: `${P.rose}15`, color: P.rose, border: `1px solid ${P.rose}40` }} title="A link embeds recipient/tenant identity — the targeted-phishing tell">
+                <AlertTriangle className="w-3 h-3" /> IDENTITY BINDING
+              </button>
+            )}
+            {result.suspiciousIndicators.length > 0 && (
+              <button onClick={() => setFlagsOpen(o => !o)} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded" style={{ backgroundColor: `${P.rose}10`, color: P.rose, border: `1px solid ${P.rose}30` }}>
+                <AlertTriangle className="w-3 h-3" />
+                {result.suspiciousIndicators.length} flag{result.suspiciousIndicators.length !== 1 ? 's' : ''}
+                {flagsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            )}
+          </div>
+          {flagsOpen && result.suspiciousIndicators.length > 0 && (
+            <div className="px-4 py-2.5 shrink-0 max-h-40 overflow-y-auto space-y-1" style={{ backgroundColor: `${P.rose}08`, borderBottom: `1px solid ${P.rose}30` }}>
+              {result.suspiciousIndicators.map((ind, i) => (
+                <p key={i} className="text-xs leading-relaxed" style={{ color: P.rose }}>• {ind}</p>
+              ))}
+            </div>
+          )}
 
-              {result.suspiciousIndicators.length > 0 && (
-                <div className="flex items-start gap-3 px-4 py-2.5 shrink-0 max-h-32 overflow-y-auto" style={{ backgroundColor: `${P.rose}10`, borderBottom: `1px solid ${P.rose}30` }}>
-                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: P.rose }} />
-                  <div className="space-y-0.5">
-                    {result.suspiciousIndicators.map((ind, i) => (
-                      <p key={i} className="text-xs" style={{ color: P.rose }}>{ind}</p>
+          <div className="flex items-center px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
+            {TABS.filter(t => t.show).map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-xs transition-all border-b-2 whitespace-nowrap"
+                style={{
+                  borderBottomColor: activeTab === t.id ? P.cyan : 'transparent',
+                  color: activeTab === t.id ? P.cyan : P.dim,
+                }}
+              >
+                <t.icon className="w-3 h-3" />
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
+            {activeTab === 'message' && (
+              <div className="max-w-3xl mx-auto space-y-3">
+                {(result.bodyFindings?.length ?? 0) > 0 && (
+                  <div className="space-y-1.5">
+                    {result.bodyFindings!.map((f, i) => (
+                      <div key={i} className="flex items-start gap-2 p-2.5 rounded" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}30` }}>
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: P.rose }} />
+                        <p className="text-xs leading-relaxed" style={{ color: P.rose }}>{f}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px]" style={{ color: P.dim }}>
+                    Active content, remote loads, forms, and live links are stripped before rendering.
+                  </p>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {(['rendered', 'text'] as const).map(v => (
+                      <button
+                        key={v}
+                        onClick={() => setMessageView(v)}
+                        className="text-[10px] px-2 py-0.5 rounded transition-all"
+                        style={{
+                          backgroundColor: messageView === v ? `${P.cyan}15` : 'transparent',
+                          border: `1px solid ${messageView === v ? `${P.cyan}40` : P.border}`,
+                          color: messageView === v ? P.cyan : P.dim,
+                        }}
+                      >
+                        {v === 'rendered' ? 'Rendered' : 'Decoded text'}
+                      </button>
                     ))}
                   </div>
                 </div>
-              )}
+                <EmailWorkbenchPreview result={result} view={messageView} />
+              </div>
+            )}
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4">
+            {activeTab === 'links' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px]" style={{ color: P.dim }}>
+                    Every URL in the message — body, QR codes, document links, nested emails — unwrapped and bound to provenance.
+                  </span>
+                  <button
+                    onClick={handleEnrich}
+                    disabled={enrichLoading}
+                    className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded transition-all shrink-0"
+                    style={{
+                      backgroundColor: enrichResult ? `${P.green}15` : `${P.cyan}15`,
+                      border: `1px solid ${enrichResult ? `${P.green}40` : `${P.cyan}40`}`,
+                      color: enrichResult ? P.green : P.cyan,
+                      opacity: enrichLoading ? 0.5 : 1,
+                    }}
+                  >
+                    <Zap className="w-3 h-3" />
+                    {enrichLoading ? 'ENRICHING...' : enrichResult ? 'RE-ENRICH' : 'ENRICH ALL'}
+                  </button>
+                </div>
+                {enrichError && (
+                  <div className="p-3 rounded text-xs" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}30`, color: P.rose }}>
+                    Enrichment failed: {enrichError}
+                  </div>
+                )}
+                {urlIntels.length === 0 && (
+                  result.extractedIOCs.some(i => i.type === 'url') ? (
+                    result.extractedIOCs.filter(i => i.type === 'url').map((ioc, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2 rounded group" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
+                        <code className="text-xs break-all min-w-0" style={{ color: P.textLight }}>{ioc.value}</code>
+                        <button onClick={() => handleScanIOC(ioc)} className="text-[10px] px-2 py-0.5 rounded shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-all" style={{ backgroundColor: `${P.pink}15`, color: P.pink, border: `1px solid ${P.pink}30` }}>
+                          SCAN →
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-10">
+                      <Link2 className="w-6 h-6 mx-auto mb-2" style={{ color: P.dim }} />
+                      <p className="text-xs" style={{ color: P.dim }}>No links found in this message</p>
+                    </div>
+                  )
+                )}
+                {urlIntels.map((u, i) => {
+                  const enrich = enrichMap.get(u.final) as PiiWithheldEnrichment | undefined;
+                  const score: number | null = enrich && !enrich.piiWithheld ? (enrich.overallThreatScore ?? enrich.maxThreatScore ?? null) : null;
+                  const malicious = enrich?.isMalicious === true;
+                  const binding = u.recipientBinding;
+                  const bound = binding?.detected === true;
+                  const borderColor = bound ? `${P.rose}50` : malicious ? `${P.rose}40` : P.border;
+                  return (
+                    <div key={i} className="p-3 rounded space-y-1.5" style={{ backgroundColor: P.surface, border: `1px solid ${borderColor}` }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {u.source?.kind === 'attachment-qr' ? (
+                          <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber, border: `1px solid ${P.amber}30` }}>
+                            <QrCode className="w-3 h-3" /> QR CODE
+                          </span>
+                        ) : u.source?.kind === 'attachment-link' ? (
+                          <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber, border: `1px solid ${P.amber}30` }}>
+                            <Paperclip className="w-3 h-3" /> DOC LINK
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.dim}15`, color: P.dim }}>BODY</span>
+                        )}
+                        {(u.source?.nestedFrom?.length ?? 0) > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber, border: `1px solid ${P.amber}30` }} title="Recovered from a nested/forwarded email — not visible in the top-level message">
+                            NESTED: {u.source!.nestedFrom!.join(' → ')}
+                          </span>
+                        )}
+                        {u.wrapper && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ color: P.dim, border: `1px solid ${P.border}` }}>{u.wrapper} unwrapped</span>
+                        )}
+                        <code className="text-xs font-bold" style={{ color: P.textLight }}>{u.finalHost}</code>
+                        <span className="flex items-center gap-1.5 ml-auto shrink-0">
+                          {malicious && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.rose}15`, color: P.rose }}>MALICIOUS</span>
+                          )}
+                          {score !== null && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tabular-nums" style={{ backgroundColor: `${score >= 70 ? P.rose : score >= 40 ? P.amber : P.dim}15`, color: score >= 70 ? P.rose : score >= 40 ? P.amber : P.dim }}>{score}</span>
+                          )}
+                          {enrich?.piiWithheld && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.pink}15`, color: P.pink, border: `1px solid ${P.pink}30` }} title={enrich.reason}>PII — NOT SUBMITTED</span>
+                          )}
+                          <button
+                            onClick={() => openWindow({ appId: 'url-result', title: `URL: ${u.finalHost}`, data: { value: u.final } })}
+                            className="text-[10px] px-2 py-0.5 rounded transition-all"
+                            style={{ backgroundColor: `${P.pink}15`, color: P.pink, border: `1px solid ${P.pink}30` }}
+                            title="Full URL report — detonation screenshot lives in its Detonation tab"
+                          >
+                            SCAN →
+                          </button>
+                        </span>
+                      </div>
+                      <code className="text-[11px] break-all block" style={{ color: P.text }}>
+                        {u.final.length > 220 ? u.final.slice(0, 220) + '…' : u.final}
+                      </code>
+                      {bound && (
+                        <p className="text-xs" style={{ color: P.rose }}>
+                          ⚠ URL {binding!.location} contains {binding!.matchesMessageRecipient
+                            ? <>the recipient's exact address (<code style={{ color: P.textLight }}>{binding!.matchedValue}</code>, {binding!.encoding})</>
+                            : <>a tenant-domain address — not this recipient's own, weaker signal (<code style={{ color: P.textLight }}>{binding!.matchedValue}</code>, {binding!.encoding})</>}
+                          {' '}· confidence {binding!.confidence} — targeted identity-phishing tell, consistent with credential-harvesting/AITM. Not proof of a specific named kit.
+                        </p>
+                      )}
+                      {enrich?.piiWithheld && (
+                        <p className="text-[10px]" style={{ color: P.dim }}>
+                          Withheld from urlscan/VirusTotal to keep the embedded identity off public scan indexes — its domain <code style={{ color: P.text }}>{enrich.enrichedDomainInstead}</code> was enriched instead.
+                        </p>
+                      )}
+                      {u.source?.kind === 'attachment-qr' && (
+                        <p className="text-[10px]" style={{ color: P.dim }}>
+                          Decoded from <code style={{ color: P.text }}>{u.source.attachmentFilename}</code>{u.source.containerPart ? ` (${u.source.containerPart})` : ''} — QR payloads bypass body/link reputation checks.
+                        </p>
+                      )}
+                      {u.decodedArtifacts.map((a, j) => (
+                        <p key={j} className="text-[10px]" style={{ color: P.text }}>
+                          base64 <code style={{ color: P.dim }}>{a.token.length > 30 ? a.token.slice(0, 30) + '…' : a.token}</code> → <code style={{ color: P.rose }}>{a.decoded}</code> <span style={{ color: P.dim }}>({a.kind})</span>
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {activeTab === 'headers' && (
               <div className="space-y-3">
                 {[
@@ -1316,12 +1630,18 @@ export default function EmailAnalyzer() {
                     ENRICH ALL already fetched (enrichMap); makes no new backend calls
                     and never sends the raw email/recipient anywhere. */}
                 {result.originIP && (() => {
-                  const ti = enrichMap.get(result.originIP) as IpThreatIntel | undefined;
+                  const ti = ipIntel;
                   if (!ti) {
                     return (
                       <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
                         <span className="text-[10px] font-bold tracking-wider" style={{ color: P.dim }}>SENDER INTELLIGENCE</span>
-                        <p className="text-[10px] mt-1" style={{ color: P.dim }}>Run ENRICH ALL (IOCs tab) to look up the origin IP's geolocation, reputation, and blacklist status.</p>
+                        <p className="text-[10px] mt-1" style={{ color: P.dim }}>
+                          {originIpStatus === 'loading'
+                            ? 'Looking up the origin IP through T6 (geolocation, reputation, blacklists)…'
+                            : originIpStatus === 'error'
+                              ? 'Automatic origin-IP lookup failed — run ENRICH ALL (Links tab) to retry.'
+                              : 'Run ENRICH ALL (Links tab) to look up the origin IP’s geolocation, reputation, and blacklist status.'}
+                        </p>
                       </div>
                     );
                   }
@@ -1483,64 +1803,12 @@ export default function EmailAnalyzer() {
 
             {activeTab === 'iocs' && (
               <div className="space-y-2">
-                {/* Recipient identity binding — the AITM/quishing tell: a recovered
-                    URL that embeds the message recipient's own address */}
-                {result.urls && result.urls.some(u => u.recipientBinding?.detected) && (
-                  <div className="p-3 rounded mb-3 space-y-2" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}40` }}>
-                    <span className="text-[10px] font-bold tracking-wider" style={{ color: P.rose }}>⚠ RECIPIENT IDENTITY BINDING — TARGETED PHISHING</span>
-                    {result.urls.filter(u => u.recipientBinding?.detected).map((u, i) => (
-                      <div key={i} className="text-xs space-y-0.5">
-                        <p style={{ color: P.text }}>
-                          <code style={{ color: P.rose }}>{u.finalHost}</code> URL {u.recipientBinding!.location} contains the recipient's exact address
-                          {' '}(<code style={{ color: P.textLight }}>{u.recipientBinding!.matchedValue}</code>, {u.recipientBinding!.encoding})
-                        </p>
-                        <p style={{ color: P.dim }}>
-                          Confidence: {u.recipientBinding!.confidence} — targeted identity-phishing, likely credential-harvesting/AITM infrastructure. Not proof of a specific named kit.
-                        </p>
-                        {u.source?.kind === 'attachment-qr' && (
-                          <p style={{ color: P.dim }}>
-                            Source: QR code decoded from <code style={{ color: P.textLight }}>{u.source.attachmentFilename}</code>
-                            {u.source.containerPart ? ` (${u.source.containerPart})` : ''} — not visible as text anywhere in the message.
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                {(bindingCount > 0 || qrCount > 0 || docLinkCount > 0) && (
+                  <p className="text-[10px]" style={{ color: P.dim }}>
+                    URL provenance (QR codes, document links, nested emails, identity binding) lives in the{' '}
+                    <button onClick={() => setActiveTab('links')} className="underline" style={{ color: P.cyan }}>Links tab</button>.
+                  </p>
                 )}
-
-                {/* Non-binding QR-recovered URLs still get a lightweight provenance note */}
-                {result.urls && result.urls.some(u => u.source?.kind === 'attachment-qr' && !u.recipientBinding?.detected) && (
-                  <div className="p-3 rounded mb-3 space-y-1" style={{ backgroundColor: `${P.amber}08`, border: `1px solid ${P.amber}30` }}>
-                    <span className="text-[10px] font-bold tracking-wider" style={{ color: P.amber }}>QR CODE RECOVERED FROM ATTACHMENT</span>
-                    {result.urls.filter(u => u.source?.kind === 'attachment-qr' && !u.recipientBinding?.detected).map((u, i) => (
-                      <p key={i} className="text-xs" style={{ color: P.text }}>
-                        <code style={{ color: P.textLight }}>{u.finalHost}</code> decoded from <code style={{ color: P.dim }}>{u.source?.attachmentFilename}</code> — verify before treating as safe.
-                      </p>
-                    ))}
-                  </div>
-                )}
-
-                {/* URL unwrap / decode intelligence (server-parsed only) */}
-                {result.urls && result.urls.some(u => u.wrapper || u.decodedArtifacts.length > 0) && (
-                  <div className="p-3 rounded mb-3 space-y-2" style={{ backgroundColor: `${P.amber}08`, border: `1px solid ${P.amber}30` }}>
-                    <span className="text-[10px] font-bold tracking-wider" style={{ color: P.amber }}>URL DECODE CHAINS</span>
-                    {result.urls.filter(u => u.wrapper || u.decodedArtifacts.length > 0).map((u, i) => (
-                      <div key={i} className="text-xs space-y-0.5">
-                        {u.wrapper && (
-                          <p style={{ color: P.text }}>
-                            <span style={{ color: P.amber }}>{u.wrapper}</span> wrapper → real destination: <code style={{ color: P.textLight }}>{u.finalHost}</code>
-                          </p>
-                        )}
-                        {u.decodedArtifacts.map((a, j) => (
-                          <p key={j} style={{ color: P.text }}>
-                            base64 <code style={{ color: P.dim }}>{a.token.length > 30 ? a.token.slice(0, 30) + '…' : a.token}</code> → <code style={{ color: P.rose }}>{a.decoded}</code> <span style={{ color: P.dim }}>({a.kind})</span>
-                          </p>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
                 {result.extractedIOCs.length > 0 && (
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px]" style={{ color: P.dim }}>
@@ -1625,6 +1893,11 @@ export default function EmailAnalyzer() {
                         {!malicious && suspicious && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.amber}15`, color: P.amber }}>
                             SUSPICIOUS
+                          </span>
+                        )}
+                        {(enrich as PiiWithheldEnrichment | undefined)?.piiWithheld && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: `${P.pink}15`, color: P.pink }} title={(enrich as PiiWithheldEnrichment).reason}>
+                            PII — NOT SUBMITTED
                           </span>
                         )}
                         {score !== null && (
@@ -1719,27 +1992,6 @@ export default function EmailAnalyzer() {
                     })}
                   </>
                 )}
-              </div>
-            )}
-
-            {activeTab === 'body' && (
-              <div className="space-y-3">
-                {(result.bodyFindings?.length ?? 0) > 0 && (
-                  <div className="space-y-2">
-                    {result.bodyFindings!.map((f, i) => (
-                      <div key={i} className="flex items-start gap-2 p-3 rounded" style={{ backgroundColor: `${P.rose}10`, border: `1px solid ${P.rose}30` }}>
-                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: P.rose }} />
-                        <p className="text-xs leading-relaxed" style={{ color: P.rose }}>{f}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="p-3 rounded" style={{ backgroundColor: P.surface, border: `1px solid ${P.border}` }}>
-                  <span className="text-[10px] tracking-wider" style={{ color: P.dim }}>DECODED BODY TEXT (MIME + base64 decoded, HTML stripped)</span>
-                  <pre className="text-xs mt-2 whitespace-pre-wrap break-words leading-relaxed" style={{ color: P.text, fontFamily: typography.mono }}>
-                    {result.bodyText || '(empty body)'}
-                  </pre>
-                </div>
               </div>
             )}
 
@@ -1881,8 +2133,6 @@ export default function EmailAnalyzer() {
                 {JSON.stringify(result.rawHeaders, null, 2)}
               </pre>
             )}
-              </div>
-            </div>
           </div>
         </div>
       )}

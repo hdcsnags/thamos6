@@ -128,7 +128,9 @@ export const appRegistry: Record<string, AppDefinition> = {
     category: 'tools',
     keywords: ['files', 'github', 'repository', 'code'],
     defaultSize: { width: 900, height: 600 },
-    showOnDesktop: true,
+    // Off the desktop (still in the launcher/spotlight) — desktop icons are
+    // reserved for the analyst workflow surfaces; Email Analyzer took its slot.
+    showOnDesktop: false,
   },
   editor: {
     id: 'editor',
