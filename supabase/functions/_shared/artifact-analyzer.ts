@@ -528,6 +528,63 @@ async function analyzePdfAttachment(
 }
 
 /**
+ * Directly-attached PNG/JPEG images aren't wrapped in a document container —
+ * route them through the same bounded pixel-decode + QR reader used for
+ * OOXML/PDF embedded media, so a quishing QR mailed as a bare image
+ * attachment (not embedded in a PDF/DOCX) isn't silently skipped as
+ * `unsupported`. Reuses the existing pixel-ceiling/time-budget limits.
+ */
+function analyzeImageAttachment(
+  bytes: Uint8Array,
+  metadata: { filename: string; contentType: string; recipients: string[] },
+): AttachmentAnalysis {
+  const detectedType: AttachmentAnalysis["detectedType"] = "image";
+  const findings: ArtifactFinding[] = [];
+  const artifacts: RecoveredArtifact[] = [];
+
+  if (bytes.length > MAX_SINGLE_ENTRY) {
+    return {
+      status: "limit-reached",
+      detectedType,
+      findings: [{ severity: "info", category: "Coverage", detail: `"${metadata.filename}" exceeds the single-image size safety ceiling — not scanned for QR.` }],
+      artifacts: [],
+    };
+  }
+
+  const pixels = decodeImagePixels(bytes);
+  if (!pixels) {
+    return {
+      status: "partial",
+      detectedType,
+      findings: [{ severity: "low", category: "Image", detail: `"${metadata.filename}" could not be decoded (corrupt, unsupported subformat, or exceeds the pixel ceiling) — not scanned for QR.` }],
+      artifacts: [],
+    };
+  }
+
+  let code: { data: string } | null = null;
+  try {
+    code = jsQR(pixels.data, pixels.width, pixels.height);
+  } catch { /* not a QR — treated as "no QR found" */ }
+
+  if (code?.data) {
+    const qrText = code.data.trim();
+    const isUrl = /^https?:\/\//i.test(qrText);
+    findings.push({
+      severity: "critical",
+      category: "QR Code",
+      detail: `QR code decoded from directly-attached image "${metadata.filename}"${isUrl ? ` → ${defang(qrText)}` : " (non-URL payload)"}.`,
+    });
+    if (isUrl) {
+      artifacts.push({ kind: "qr-url", value: qrText, defangedValue: defang(qrText), sourcePart: metadata.filename, imageIndex: 0 });
+    }
+  } else {
+    findings.push({ severity: "info", category: "QR Code", detail: `"${metadata.filename}" scanned — no QR code detected.` });
+  }
+
+  return { status: "complete", detectedType, findings, artifacts };
+}
+
+/**
  * Dispatches to the type-specific analyzer. OLE (legacy .doc/.xls) is not
  * yet implemented and returns `unsupported`.
  */
@@ -538,6 +595,7 @@ export async function analyzeAttachment(
   const detectedType = detectContainerType(bytes);
   if (detectedType === "ooxml") return analyzeOoxmlAttachment(bytes, metadata);
   if (detectedType === "pdf") return analyzePdfAttachment(bytes, metadata);
+  if (detectedType === "image") return analyzeImageAttachment(bytes, metadata);
   return { status: "unsupported", detectedType, findings: [], artifacts: [] };
 }
 

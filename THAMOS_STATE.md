@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer: Outlook-style multi-email drawer)
+> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer: real-sample gap closure — body-URL recipient binding, nested .eml recursion, standalone-image QR)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,33 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-20c — Email Analyzer: real-sample gap closure (body-URL binding, nested .eml, standalone-image QR)
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Sol ran the live pipeline against real phishing/benign samples at `C:\Thamos\emails` (outside the repo — real DSBN mailbox captures) and found three concrete detection gaps, handed off as a brief. Fixed all three in one sprint. Real-sample harness at `C:\Thamos\SoFaSo\_scratch_verify\real-eml-test` (unmodified production logic, `npm:` specifiers rewritten to bare names) was used for before/after regression proof — no synthetic fixtures needed since real captures with known-correct baseline behavior already existed.
+
+**Shipped (`_shared/email-parser.ts`, `_shared/artifact-analyzer.ts`):**
+1. **Body/header URL recipient binding.** `analyzeRecipientBinding()` previously only ran on attachment-recovered (QR/link) URLs because `parseEmail()` builds `parsed.urls` for body/header links before `recipients` is known (recipients come from `extractRecipients(parsed)`, called after). `analyzeAttachmentArtifacts()` now binds every URL in `parsed.urls` that doesn't already have a `recipientBinding` (i.e. the body/header ones) right after wrapper unwrapping, before the attachment loop — pushing the same "Targeted identity phishing" suspicious-indicator format already used for attachment-sourced hits. No frontend change needed: `EmailAnalyzer.tsx`'s recipient-binding UI section already iterates `result.urls` generically by `recipientBinding.detected`, not by `source.kind`.
+2. **Recursive message/rfc822 analysis.** `buildPart()` treated all `message/*` parts as text-only (bytes left `null`), so an attached/forwarded `.eml` was neither hashed nor recursed into — the actual phishing payload in one real sample (`56e2773d…`) was entirely inside a nested `nbznD.eml`. `buildPart()` now also re-encodes the decoded text as bytes specifically for `message/rfc822` (scoped narrowly — other `message/*` subtypes are untouched). `analyzeAttachmentArtifacts()` gained a bounded recursion path: on a `message/rfc822` attachment it calls `parseEmail()` on the decoded nested text, extracts the nested message's OWN To/Cc recipients (not the parent's), recursively calls itself on the nested `ParsedEmail` (so a nested email's own attachments — including further nesting — get the same treatment), then merges the nested message's recovered URLs/domains/ips/emails/suspicious-indicators into the parent. Every merged URL is tagged with new `UrlSource.nestedFrom: string[]` (outermost-first nested-attachment-filename chain) so provenance is explicit and never confused with a top-level body/attachment hit. Bounded by `MAX_NESTED_DEPTH` (3), `MAX_NESTED_MESSAGES` (5, shared budget across the whole recursive tree via a mutable counter object), and `MAX_NESTED_TOTAL_BYTES` (15MB cumulative) — hitting a limit pushes an explicit "NOT recursively analyzed — safety limit reached" indicator (a stated coverage gap, never a silent drop). Nested-message high-risk attachments are also surfaced into the parent's indicators.
+3. **Standalone image QR.** `detectContainerType()` already classified bare PNG/JPEG attachments as `"image"`, but `analyzeAttachment()`'s dispatcher had no case for it and fell through to `unsupported`. Added `analyzeImageAttachment()` (artifact-analyzer.ts) reusing the existing `decodeImagePixels()` + `jsQR` pipeline and the same single-entry size ceiling as the OOXML/PDF paths, wired into the dispatcher.
+
+**Verified against real samples in `C:\Thamos\emails` (7 files, full before/after diff — not just the sprint's target samples):**
+- `f473d29f…` ("worksecure" sample): body URL `nbsd.smartcover.org.uk/…/am9zaHVhLmNvbm5vckBkc2JuLm9yZw==` now correctly flags `recipientBinding.detected=true` (path, base64, decodes to the real recipient `joshua.connor@dsbn.org`) — previously silent.
+- `56e2773d…`: nested `nbznD.eml` is now hashed (was `sha256: null`), recursed, and its embedded Google-redirect URL to `electroniccrafts.com` (fragment-encoded base64 → `jennifer.poirier@dsbn.org`, the real recipient) is recovered with `recipientBinding.detected=true` and `source.nestedFrom=["nbznD.eml"]`.
+- `Message2n.eml`'s 2 standalone PNG signature-badge images and `1f5966c8…`'s 14 standalone JPEG/PNG signature/logo images (real benign negative controls) all now report `status: complete, detectedType: image` with "no QR code detected" — zero false positives introduced.
+- `277fd402…` (HPHISH/SCL9 payroll PDF, 4 embedded images) and `Message2n.eml`'s `MERIT CONTRACTORS.pdf` (Indexed-colour image correctly still reported as `unsupported`, link finding to `cc.loginfra.com`) — byte-for-byte unchanged from baseline; confirmed via full `Compare-Object` diff of the harness's before/after output covering all 7 files, not just visual spot-check.
+- `Message1.eml`/`Message1n.eml` (identical benign pair) — unchanged.
+- Full diff between before/after harness runs contains ONLY the three expected classes of change (new image-QR findings, the nested-message sha256/URL/recipientBinding, and the new body-URL recipientBinding lines) — no unexpected deltas anywhere in the 7-sample set.
+- `npx tsc --noEmit` and `npm run build` clean.
+- `supabase functions deploy analyze-email` and `supabase functions deploy email-verdict` both succeeded (confirms the recursive/typed logic compiles and bundles under the real Deno runtime, not just Node with rewritten specifiers). `read-email` and `store-email` also import `_shared/email-parser.ts` but don't call `analyzeAttachmentArtifacts()`, so they're unaffected by this sprint's behavior change and were left at their currently-deployed version (not redeployed) per "deploy only affected functions."
+
+**Security/privacy boundary respected:** no recovered URL was followed/detonated; nothing was submitted to URLScan/VirusTotal; Phase B's PII privacy gate remains deferred (unchanged, still a known gap — see Phase C entry below); raw email/attachment bytes and recipient PII stayed local to the harness process, never persisted or transported externally.
+
+**Known gaps / deferred (unchanged unless noted):**
+- Phase B (URLScan/VT PII privacy gate) — still not built, still low-priority-deferred per prior sprint.
+- PDF page rasterization/OCR, Indexed/JPX/CCITT PDF images, OLE attachments — still deferred (Phase C entry below).
+- Nested-message recursion is bounded (depth 3 / 5 messages / 15MB) — a nested chain beyond that reports the limit explicitly rather than silently skipping, but is a real, intentional coverage boundary.
+- Standalone-image QR reuses the existing single-entry size ceiling and pixel/format limits (PNG/JPEG only) — same real gaps as the OOXML/PDF paths (no GIF/BMP/WEBP/TIFF decode).
 
 ### Sprint 2026-08-20b — Email Analyzer: Outlook-style multi-email drawer
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)

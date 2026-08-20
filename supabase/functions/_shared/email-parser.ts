@@ -50,6 +50,14 @@ export interface UrlSource {
   containerPart?: string;
   page?: number;
   imageIndex?: number;
+  /** Set when this URL was recovered from inside a nested message/rfc822
+   *  attachment rather than directly in this message. Outermost-first list
+   *  of the nested-message filenames traversed to reach it, e.g. a URL found
+   *  in the body of an .eml attached inside another .eml is
+   *  `["outer-attachment-name.eml"]`. `kind`/`containerPart` still describe
+   *  where the URL sat WITHIN that nested message (body vs. its own
+   *  attachment-link/qr). */
+  nestedFrom?: string[];
 }
 
 /** Evidence that a URL's path/query/fragment embeds the message recipient's
@@ -307,21 +315,30 @@ function buildPart(
   body: string
 ): MimePart {
   const charset = getHeaderParam(contentType, "charset") ?? "utf-8";
+  const ctLower = contentType.split(";")[0].trim().toLowerCase();
   const isText = /^(text\/|message\/)/i.test(contentType.trim());
   const filename =
     getHeaderParam(disposition, "filename") ?? getHeaderParam(contentType, "name");
+  const decodedText = isText ? decodePartBody(body, encoding, charset) : null;
   // Decode binary attachment bytes once (base64) so we can hash them later.
   let bytes: Uint8Array | null = null;
   if (!isText && encoding.trim().toLowerCase() === "base64") {
     bytes = b64ToBytes(body);
+  } else if (ctLower === "message/rfc822" && decodedText) {
+    // A forwarded/attached email is treated as "text" above (message/* falls
+    // under the isText regex), which left bytes null and made it invisible
+    // to hashing and recursive analysis. Re-encode the decoded raw message
+    // text as bytes so fillAttachmentHashes() and analyzeAttachmentArtifacts()
+    // can treat it like any other attachment.
+    bytes = new TextEncoder().encode(decodedText);
   }
   return {
-    contentType: contentType.split(";")[0].trim().toLowerCase(),
+    contentType: ctLower,
     charset,
     encoding: encoding.trim().toLowerCase(),
     disposition: disposition.split(";")[0].trim().toLowerCase(),
     filename,
-    text: isText ? decodePartBody(body, encoding, charset) : null,
+    text: decodedText,
     bytes,
     sizeBytes: bytes ? bytes.length : body.length,
   };
@@ -932,31 +949,82 @@ export function extractRecipients(parsed: ParsedEmail): string[] {
   return [...new Set((raw.match(HEADER_EMAIL_RE) ?? []).map((e) => e.toLowerCase()))];
 }
 
+// Bounds for recursive message/rfc822 (forwarded/attached email) analysis —
+// same defense-in-depth reasoning as the ZIP/PDF limits in artifact-analyzer.ts:
+// an attacker-supplied nested message is itself untrusted input, and nesting
+// depth/count/size all need independent ceilings so a deeply/wide nested or
+// oversized chain can't blow the Edge Function's time/memory budget.
+const MAX_NESTED_DEPTH = 3;
+const MAX_NESTED_MESSAGES = 5;
+const MAX_NESTED_TOTAL_BYTES = 15 * 1024 * 1024; // 15MB cumulative, across the whole nested tree
+
+/** Shared, mutable across the whole recursive call tree (not per-call, unlike depth). */
+interface NestedBudget {
+  count: number;
+  bytes: number;
+}
+
 /**
  * Recover URLs hidden inside attachments (Phase A: OOXML → embedded media →
- * QR code) and wire them into the same URL-analysis/IOC pipeline as
- * body/header URLs, so IOC enrichment, the pivot graph, and email-verdict all
- * see them without special-casing. MUST run BEFORE fillAttachmentHashes(),
- * which clears the transient attachment bytes this function needs.
+ * QR code; standalone images) and wire them into the same URL-analysis/IOC
+ * pipeline as body/header URLs, so IOC enrichment, the pivot graph, and
+ * email-verdict all see them without special-casing. MUST run BEFORE
+ * fillAttachmentHashes(), which clears the transient attachment bytes this
+ * function needs.
  *
- * `recipients` should be every address the message was actually sent to
- * (To + Cc) — used only to detect victim-identity binding in recovered URLs;
- * never persisted or sent anywhere external from here.
+ * Also runs victim-identity-binding analysis on ordinary body/header URLs
+ * (previously only attachment-recovered URLs got this check), and recurses
+ * into attached message/rfc822 (forwarded/attached .eml) parts, bounded by
+ * MAX_NESTED_DEPTH/MAX_NESTED_MESSAGES/MAX_NESTED_TOTAL_BYTES, merging the
+ * nested message's own recovered URLs/domains/ips/emails/indicators into the
+ * parent with explicit nested-message provenance (UrlIntel.source.nestedFrom).
+ *
+ * `recipients` should be every address THIS message (not necessarily the
+ * top-level one — nested calls pass the nested message's own To/Cc) was
+ * actually sent to — used only to detect victim-identity binding in
+ * recovered URLs; never persisted or sent anywhere external from here.
  *
  * Note: att.sha256 is still null while this runs (fillAttachmentHashes hasn't
  * executed yet) — recovered UrlIntel.source.attachmentSha256 is left unset
  * rather than duplicating the digest logic; callers can join back to
  * parsed.attachments[i].sha256 by filename once that call completes.
  */
-export async function analyzeAttachmentArtifacts(parsed: ParsedEmail, recipients: string[]): Promise<void> {
+export async function analyzeAttachmentArtifacts(
+  parsed: ParsedEmail,
+  recipients: string[],
+  ctx: { depth: number; budget: NestedBudget } = { depth: 0, budget: { count: 0, bytes: 0 } },
+): Promise<void> {
   const attParts = parsed.parts.filter(isAttachmentPart);
   const seenFinal = new Set(parsed.urls.map((u) => u.final));
+
+  // Body/header URLs are already in parsed.urls (built synchronously inside
+  // parseEmail(), which doesn't have `recipients` available). Bind them here,
+  // after wrapper unwrapping (analyzeUrl() already ran), same as attachment-
+  // recovered URLs below.
+  for (const u of parsed.urls) {
+    if (u.recipientBinding) continue;
+    const binding = analyzeRecipientBinding(u.final, recipients);
+    u.recipientBinding = binding;
+    if (binding.detected) {
+      let pathname = "";
+      try { pathname = new URL(u.final).pathname; } catch { /* ignore */ }
+      parsed.suspiciousIndicators.push(
+        `Targeted identity phishing: link in the message resolves to ${u.finalHost}${pathname} embedding the recipient's exact identity in the URL ${binding.location} (${binding.encoding}) — consistent with credential-harvesting/AITM infrastructure. This is a static signal, not proof of a specific named kit.`
+      );
+    }
+  }
 
   for (let i = 0; i < parsed.attachments.length; i++) {
     const bytes = attParts[i]?.bytes;
     if (!bytes || bytes.length === 0) continue;
 
     const att = parsed.attachments[i];
+
+    if (att.contentType === "message/rfc822") {
+      await analyzeNestedMessage(parsed, att, bytes, ctx, seenFinal);
+      continue;
+    }
+
     let analysis: AttachmentAnalysis;
     try {
       analysis = await analyzeAttachment(bytes, {
@@ -1005,6 +1073,100 @@ export async function analyzeAttachmentArtifacts(parsed: ParsedEmail, recipients
           `${originDesc[0].toUpperCase()}${originDesc.slice(1)} resolves to ${intel.finalHost || intel.final} — ${isQr ? "QR payloads" : "attachment-embedded links"} bypass normal body/link URL-reputation checks; verify the destination before scanning.`
         );
       }
+    }
+  }
+}
+
+/**
+ * Parse and fully analyze an attached message/rfc822 (a forwarded/attached
+ * .eml) exactly like a top-level message — headers, body URLs (with its OWN
+ * To/Cc recipient binding, not the parent's), attachments (including further
+ * nesting, bounded by the same budget), and recipient binding — then merge
+ * everything it found into the parent message with explicit nested-message
+ * provenance. Bounded by MAX_NESTED_DEPTH/MAX_NESTED_MESSAGES/
+ * MAX_NESTED_TOTAL_BYTES so a deep/wide/oversized nested chain can't blow the
+ * Edge Function's time/memory budget; hitting a limit is recorded as a
+ * coverage gap (not silently dropped) and does not fail the parent analysis.
+ * Raw nested message bytes/text are local to this call only — never
+ * persisted or sent anywhere external.
+ */
+async function analyzeNestedMessage(
+  parent: ParsedEmail,
+  att: AttachmentInfo,
+  bytes: Uint8Array,
+  ctx: { depth: number; budget: NestedBudget },
+  seenFinal: Set<string>,
+): Promise<void> {
+  if (
+    ctx.depth >= MAX_NESTED_DEPTH ||
+    ctx.budget.count >= MAX_NESTED_MESSAGES ||
+    ctx.budget.bytes + bytes.length > MAX_NESTED_TOTAL_BYTES
+  ) {
+    parent.suspiciousIndicators.push(
+      `Nested message "${att.filename}" was NOT recursively analyzed — recursion depth/count/size safety limit reached. This is a coverage gap, not evidence the nested message is benign.`
+    );
+    return;
+  }
+  ctx.budget.count++;
+  ctx.budget.bytes += bytes.length;
+
+  let nestedRawText: string;
+  try {
+    nestedRawText = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch (e) {
+    parent.suspiciousIndicators.push(`Nested message "${att.filename}" could not be decoded as text: ${String(e)}.`);
+    return;
+  }
+
+  let nestedParsed: ParsedEmail;
+  try {
+    nestedParsed = parseEmail(nestedRawText);
+  } catch (e) {
+    parent.suspiciousIndicators.push(`Nested message "${att.filename}" failed to parse as an RFC 5322 message: ${String(e)}.`);
+    return;
+  }
+
+  const nestedRecipients = extractRecipients(nestedParsed);
+  await analyzeAttachmentArtifacts(nestedParsed, nestedRecipients, { depth: ctx.depth + 1, budget: ctx.budget });
+
+  mergeNestedIntoParent(parent, nestedParsed, att.filename, seenFinal);
+}
+
+/**
+ * Fold a fully-analyzed nested message's recovered URLs/domains/ips/emails/
+ * indicators into the parent, tagging every URL with nested-message
+ * provenance (source.nestedFrom) and de-duplicating against the parent's
+ * existing URLs (by final destination, same rule as attachment artifacts).
+ */
+function mergeNestedIntoParent(
+  parent: ParsedEmail,
+  nested: ParsedEmail,
+  nestedFilename: string,
+  seenFinal: Set<string>,
+): void {
+  for (const u of nested.urls) {
+    u.source = u.source
+      ? { ...u.source, nestedFrom: [nestedFilename, ...(u.source.nestedFrom ?? [])] }
+      : { kind: "body", nestedFrom: [nestedFilename] };
+    if (seenFinal.has(u.final)) continue;
+    seenFinal.add(u.final);
+    parent.urls.push(u);
+    if (u.finalHost && u.finalHost.includes(".") && !isWrapperHost(u.finalHost) && !parent.domains.includes(u.finalHost)) {
+      parent.domains.push(u.finalHost);
+    }
+  }
+  for (const d of nested.domains) if (!parent.domains.includes(d)) parent.domains.push(d);
+  for (const ip of nested.ips) if (!parent.ips.includes(ip)) parent.ips.push(ip);
+  for (const e of nested.emails) if (!parent.emails.includes(e)) parent.emails.push(e);
+  for (const s of nested.suspiciousIndicators) {
+    parent.suspiciousIndicators.push(`[nested message "${nestedFilename}"] ${s}`);
+  }
+  // parent.attachments doesn't include the nested message's own attachments —
+  // surface high-risk ones explicitly so a malicious file hidden inside the
+  // forwarded/attached email isn't invisible at the parent level.
+  for (const nestedAtt of nested.attachments) {
+    if (nestedAtt.risk === "high") {
+      parent.suspiciousIndicators.push(`[nested message "${nestedFilename}"] Dangerous attachment "${nestedAtt.filename}" — ${nestedAtt.reasons[0]}`);
     }
   }
 }
