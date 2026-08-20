@@ -1,6 +1,6 @@
 # ThamOS v6 — Project State & Sprint Tracker
 
-> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer Phase C: PDF Structural Extraction)
+> **Last Updated:** 2026-08-20 by GitHub Copilot CLI (Email Analyzer: Outlook-style multi-email drawer)
 > 
 > **Purpose:** This document tracks the current state of ThamOS v6, documents completed work, pending features, known bugs, and UI/UX audit findings. Any agent starting cold on this project should read this file **after** `ARCHITECTURE.md`, `ARCHITECTURE_V2.md`, and `MODULAR_GUIDE.md` to understand what has been done and what remains.
 
@@ -217,6 +217,28 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 ---
 
 ## Sprint Log
+
+### Sprint 2026-08-20b — Email Analyzer: Outlook-style multi-email drawer
+**Agent:** GitHub Copilot CLI (Claude Sonnet 5)
+**Scope:** Last UI polish requested for the Email Analyzer before moving to Desktop Scanner result pages: restyle it as an Outlook Web-style mail client — left "drawer" listing every dropped/pasted .eml (like a mailbox list), right side as a persistent drop target / reading pane. User confirmed (via a quick check-in) this should keep ThamOS's dark operator theme rather than literally reskinning to Microsoft's blue OWA chrome — i.e. borrow the *structure* (message-list + reading pane), not the branding. `C:\Thamos\t1` (PhishBowl)'s `OutlookLayout.tsx` was reviewed as a reference for the real OWA chrome pattern but not reused directly (different product, different visual identity).
+
+**Shipped (`src/pages/EmailAnalyzer.tsx`):**
+- New `EmailSession` model (`id`, `filename`, `status: loading|ready|error`, `errorMessage`, and a full snapshot of the per-email flat state: `rawEmail`, `result`, `enrichResult`, `verdict`, `verdictProvider`, `activeTab`, `savedWorkbench`) plus `sessions`/`activeSessionId` state.
+- `persistActiveSession()`/`switchSession()`/`closeActiveSession()`/`removeSession()` — a "snapshot on switch" pattern that mirrors the active session into the existing flat `useState` variables, so `handleEnrich`/`runThamosVerdict`/save-to-workbench/etc. needed **zero** changes; only the file/paste entry points and the top-level layout changed.
+- `analyzeFile` and the paste-based `handleAnalyze` now push a session into the drawer (with a `loading` placeholder while the fetch/parse is in flight) instead of overwriting one global result. `loadFiles()` supports multi-file drop/browse (sequential, since each load mutates the shared active-session state).
+- Left drawer (fixed width, always visible): mailbox-style rows (subject/sender, colored status dot — green=ready+benign-or-verdict-colored, amber=loading, rose=error), active-row highlight, hover-reveal remove (×), "+" button to browse for more files.
+- Right pane wraps both the intro (drop/paste) view and the workbench (message-preview + evidence tabs) view in one `onDrop`/`onDragOver` target, so a new file can be dropped at any time regardless of which sub-view is showing (not just on first load).
+- "← Back" renamed to "✕ Close" and now only deactivates the current session (`activeSessionId = null`) rather than deleting it — the email stays selectable from the drawer, matching "close a message" behavior in a real mail client. The drawer's own × button is the actual delete.
+
+**Bug caught during verification:** the first version of `persistActiveSession()` unconditionally set the outgoing session's status to `'ready'` when snapshotting on switch — this clobbered a genuinely **failed** parse (status should stay `'error'`) with a false "ready" the moment the analyst loaded a second file. Fixed by only flipping to `'ready'` when `result` is actually non-null, otherwise preserving the session's existing status.
+
+**Verified:**
+- `npx tsc --noEmit` and `npm run build` clean.
+- Since the deployed app requires an authenticated Supabase session (can't be exercised via bare curl/headless load from this sandbox), verification used a throwaway local harness: a temporary `qa.html`/`qa-main.tsx` entry mounting `<DesktopProvider><EmailAnalyzer /></DesktopProvider>` directly (bypassing the sign-in wall), driven by Puppeteer against the Vite dev server with a placeholder `.env.local`. Confirmed: multi-file drop loads sequentially into the drawer; failed fetches (fake Supabase URL) correctly show as red error rows with per-row messages, without leaking a stale global banner after switching away; switching sessions restores cached results instantly (no re-fetch); Close deactivates without deleting; reselecting a closed-but-not-removed session round-trips its full analysis. All harness files (`qa.html`, `qa-main.tsx`, `check-*.cjs`, `.env.local`) were deleted after verification — not part of the repo.
+
+**Known gaps / deferred (unchanged from Phase C):** Phase B privacy gate, PDF page rasterization/OCR, Indexed/JPX/CCITT PDF images, OLE attachments — see Sprint 2026-08-20a below.
+
+---
 
 ### Sprint 2026-08-20a — Email Analyzer Phase C: PDF Structural Extraction (link/JS/OpenAction + QR)
 **Agent:** GitHub Copilot CLI (Claude Sonnet 5)
