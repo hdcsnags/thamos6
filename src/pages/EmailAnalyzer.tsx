@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save } from 'lucide-react';
+import { Mail, AlertTriangle, CheckCircle, XCircle, Copy, Check, GitBranch, FileText, List, Zap, Upload, Shield, Sparkles, FileWarning, Paperclip, Save, Plus, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useDesktop } from '../contexts/DesktopContext';
 import type { AppId } from '../contexts/DesktopContext';
@@ -265,6 +265,29 @@ const VERDICT_MODELS: Record<VerdictProvider, string> = {
 
 const MAX_UPLOAD_MB = 5;
 
+// One entry per .eml/.txt (or pasted) email loaded into the drawer — lets the
+// analyst hold several messages at once and flip between them like a real
+// mailbox instead of the tool only ever remembering one parse at a time.
+interface EmailSession {
+  id: string;
+  filename: string;
+  status: 'loading' | 'ready' | 'error';
+  errorMessage?: string;
+  rawEmail: string | null;
+  result: AnalysisResult | null;
+  enrichResult: EnrichResult | null;
+  verdict: EmailVerdict | null;
+  verdictProvider: VerdictProvider;
+  activeTab: Tab;
+  savedWorkbench: boolean;
+  addedAt: number;
+}
+
+const genSessionId = () =>
+  (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    ? crypto.randomUUID()
+    : `s${Date.now()}${Math.random().toString(36).slice(2)}`;
+
 const BLOCKED_EMAIL_TAGS = [
   'script',
   'style',
@@ -488,6 +511,8 @@ export default function EmailAnalyzer() {
   const [savingWorkbench, setSavingWorkbench] = useState(false);
   const [savedWorkbench, setSavedWorkbench] = useState(false);
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<EmailSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const enrichMap = useMemo(() => {
@@ -679,18 +704,96 @@ export default function EmailAnalyzer() {
     };
   };
 
+  // Builds a session snapshot from the CURRENT flat state — call before
+  // switching away from / closing the active session so its work isn't lost.
+  const persistActiveSession = () => {
+    if (!activeSessionId) return;
+    setSessions(prev => prev.map(s => {
+      if (s.id !== activeSessionId) return s;
+      // Only flip to "ready" once we actually have a parsed result — otherwise
+      // preserve whatever status the load already settled into (error/loading)
+      // instead of clobbering a failed parse with a false "ready".
+      const status: EmailSession['status'] = result ? 'ready' : s.status;
+      return { ...s, status, rawEmail, result, enrichResult, verdict, verdictProvider, activeTab, savedWorkbench };
+    }));
+  };
+
+  const switchSession = (id: string) => {
+    if (id === activeSessionId) return;
+    persistActiveSession();
+    const target = sessions.find(s => s.id === id);
+    if (!target) return;
+    setActiveSessionId(id);
+    setResult(target.result);
+    setRawEmail(target.rawEmail);
+    setEnrichResult(target.enrichResult);
+    setVerdict(target.verdict);
+    setVerdictProvider(target.verdictProvider);
+    setActiveTab(target.activeTab);
+    setSavedWorkbench(target.savedWorkbench);
+    setEnrichError(null);
+    setVerdictError(null);
+    setWorkbenchError(null);
+    setUploadError(null);
+    setCopied(false);
+  };
+
+  // Deactivates the current session (back to the drop/paste view) without
+  // deleting it from the drawer — it stays selectable, like closing a
+  // message in a mail client.
+  const closeActiveSession = () => {
+    persistActiveSession();
+    setActiveSessionId(null);
+    setResult(null);
+    setRawEmail(null);
+    setVerdict(null);
+    setEnrichResult(null);
+    setEnrichError(null);
+    setVerdictError(null);
+    setWorkbenchError(null);
+    setSavedWorkbench(false);
+    setUploadError(null);
+  };
+
+  const removeSession = (id: string) => {
+    setSessions(prev => prev.filter(s => s.id !== id));
+    if (id === activeSessionId) {
+      setActiveSessionId(null);
+      setResult(null);
+      setRawEmail(null);
+      setVerdict(null);
+      setEnrichResult(null);
+      setEnrichError(null);
+      setVerdictError(null);
+      setWorkbenchError(null);
+      setSavedWorkbench(false);
+      setUploadError(null);
+    }
+  };
+
   const analyzeFile = async (file: File) => {
     setUploadError(null);
     if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      setUploadError(`File too large (max ${MAX_UPLOAD_MB}MB)`);
+      setUploadError(`File too large (max ${MAX_UPLOAD_MB}MB): ${file.name}`);
       return;
     }
-    setLoading(true);
+    persistActiveSession();
+    const id = genSessionId();
+    setSessions(prev => [...prev, {
+      id, filename: file.name, status: 'loading',
+      rawEmail: null, result: null, enrichResult: null, verdict: null,
+      verdictProvider, activeTab: 'headers', savedWorkbench: false, addedAt: Date.now(),
+    }]);
+    setActiveSessionId(id);
+    setResult(null);
+    setRawEmail(null);
     setEnrichResult(null);
     setEnrichError(null);
     setVerdict(null);
     setVerdictError(null);
     setWorkbenchError(null);
+    setSavedWorkbench(false);
+    setLoading(true);
     try {
       const text = await file.text();
       const res = await fetch(
@@ -703,18 +806,42 @@ export default function EmailAnalyzer() {
       );
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
+      const mapped = { ...mapServerParsed(data.parsed), senderAuth: data.senderAuth ?? null };
+      const nextTab: Tab = data.parsed?.defender?.present ? 'defender' : 'headers';
       setRawEmail(text);
-      setResult({ ...mapServerParsed(data.parsed), senderAuth: data.senderAuth ?? null });
-      setActiveTab(data.parsed?.defender?.present ? 'defender' : 'headers');
+      setResult(mapped);
+      setActiveTab(nextTab);
+      setSessions(prev => prev.map(s => s.id === id
+        ? { ...s, status: 'ready', rawEmail: text, result: mapped, activeTab: nextTab }
+        : s));
     } catch (e) {
-      setUploadError(String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setUploadError(msg);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'error', errorMessage: msg } : s));
     } finally {
       setLoading(false);
     }
   };
 
+  // Drops/selections can carry more than one .eml at once — load them into
+  // the drawer one at a time (sequential, since each load mutates shared
+  // flat state that mirrors the "currently active" session).
+  const loadFiles = async (files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      await analyzeFile(f);
+    }
+  };
+
   const handleAnalyze = () => {
     if (!rawInput.trim()) return;
+    persistActiveSession();
+    const id = genSessionId();
+    setSessions(prev => [...prev, {
+      id, filename: 'Pasted email', status: 'loading',
+      rawEmail: null, result: null, enrichResult: null, verdict: null,
+      verdictProvider, activeTab: 'headers', savedWorkbench: false, addedAt: Date.now(),
+    }]);
+    setActiveSessionId(id);
     setLoading(true);
     setEnrichResult(null);
     setEnrichError(null);
@@ -723,9 +850,13 @@ export default function EmailAnalyzer() {
     setVerdictError(null);
     setWorkbenchError(null);
     setTimeout(() => {
-      setResult(parseAnalysis());
+      const parsed = parseAnalysis();
+      setResult(parsed);
       setActiveTab('headers');
       setLoading(false);
+      setSessions(prev => prev.map(s => s.id === id
+        ? { ...s, status: 'ready', result: parsed, filename: parsed.headers.subject?.trim() || 'Pasted email', activeTab: 'headers' }
+        : s));
     }, 300);
   };
 
@@ -846,7 +977,102 @@ export default function EmailAnalyzer() {
   const formatBytes = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: P.void, fontFamily: typography.mono }}>
+    <div className="h-full flex" style={{ backgroundColor: P.void, fontFamily: typography.mono }}>
+      {/* Left drawer — every dropped/pasted email lives here, like a mailbox
+          list, so the analyst can hold several messages open at once. */}
+      <div className="w-60 shrink-0 h-full flex flex-col border-r" style={{ backgroundColor: P.surface, borderColor: P.border }}>
+        <div className="px-3 py-2.5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${P.border}` }}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Mail className="w-3.5 h-3.5 shrink-0" style={{ color: P.cyan }} />
+            <span className="text-[10px] font-bold tracking-[0.16em] truncate" style={{ color: P.cyan }}>
+              LOADED{sessions.length ? ` (${sessions.length})` : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="p-1 rounded transition-all shrink-0"
+            style={{ color: P.dim, border: `1px solid ${P.border}` }}
+            title="Load another .eml / .txt"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {sessions.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <p className="text-[11px]" style={{ color: P.text }}>No emails loaded yet</p>
+              <p className="text-[10px] mt-1 leading-relaxed" style={{ color: P.dim }}>
+                Drop a .eml file on the right, or paste headers, to get started.
+              </p>
+            </div>
+          ) : (
+            [...sessions].sort((a, b) => b.addedAt - a.addedAt).map(s => {
+              const isActive = s.id === activeSessionId;
+              const subject = s.status === 'loading'
+                ? 'Parsing…'
+                : s.status === 'error'
+                  ? (s.filename || 'Failed to parse')
+                  : (s.result?.headers.subject || s.filename || '(no subject)');
+              const sender = s.result?.headers.from || '';
+              const dotColor = s.status === 'error'
+                ? P.rose
+                : s.status === 'loading'
+                  ? P.amber
+                  : (s.verdict?.verdict ? (VERDICT_COLOR[s.verdict.verdict] ?? P.green) : P.green);
+              return (
+                <div
+                  key={s.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => switchSession(s.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') switchSession(s.id); }}
+                  className="group px-3 py-2.5 cursor-pointer border-l-2 transition-all"
+                  style={{
+                    borderLeftColor: isActive ? P.cyan : 'transparent',
+                    backgroundColor: isActive ? P.surfaceLight : 'transparent',
+                  }}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ backgroundColor: dotColor }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs truncate" style={{ color: isActive ? P.textLight : P.text }}>{subject}</p>
+                      {sender && <p className="text-[10px] truncate mt-0.5" style={{ color: P.dim }}>{sender}</p>}
+                      {s.status === 'error' && s.errorMessage && (
+                        <p className="text-[10px] truncate mt-0.5" style={{ color: P.rose }}>{s.errorMessage}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeSession(s.id); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded shrink-0"
+                      style={{ color: P.dim }}
+                      title="Remove from drawer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".eml,.txt,.msg,message/rfc822,text/plain"
+          multiple
+          className="hidden"
+          onChange={(e) => { const files = e.target.files; if (files && files.length) loadFiles(files); e.target.value = ''; }}
+        />
+      </div>
+
+      {/* Reading pane — always a drop target, whichever sub-view is showing. */}
+      <div
+        className="flex-1 min-h-0 flex flex-col"
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        style={{ outline: dragOver ? `2px dashed ${P.cyan}` : 'none', outlineOffset: '-2px' }}
+      >
       {!result ? (
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="flex items-center gap-2 mb-2">
@@ -859,9 +1085,6 @@ export default function EmailAnalyzer() {
             role="button"
             tabIndex={0}
             aria-label="Upload .eml or .txt email file"
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) analyzeFile(f); }}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
             onClick={() => fileRef.current?.click()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
             className="rounded p-6 text-center cursor-pointer transition-all"
@@ -870,13 +1093,6 @@ export default function EmailAnalyzer() {
               border: `1px dashed ${dragOver ? P.cyan : P.border}`,
             }}
           >
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".eml,.txt,.msg,message/rfc822,text/plain"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) analyzeFile(f); e.target.value = ''; }}
-            />
             <Upload className="w-5 h-5 mx-auto mb-2" style={{ color: dragOver ? P.cyan : P.dim }} />
             <p className="text-xs" style={{ color: P.textLight }}>
               {loading ? 'PARSING…' : 'Drop a .eml / .txt export here, or click to browse'}
@@ -937,19 +1153,12 @@ export default function EmailAnalyzer() {
           <div className="px-3 py-2 shrink-0" style={{ backgroundColor: P.surface, borderBottom: `1px solid ${P.border}` }}>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => {
-                  setResult(null);
-                  setRawEmail(null);
-                  setVerdict(null);
-                  setEnrichResult(null);
-                  setEnrichError(null);
-                  setWorkbenchError(null);
-                  setSavedWorkbench(false);
-                }}
+                onClick={closeActiveSession}
                 className="text-xs px-2 py-1.5 transition-all rounded"
                 style={{ color: P.dim, border: `1px solid ${P.border}` }}
+                title="Close (keeps this email in the drawer)"
               >
-                ← Back
+                ✕ Close
               </button>
               <div className="min-w-0 flex-1">
                 <div className="text-[10px] tracking-[0.22em] font-bold" style={{ color: P.cyan }}>EMAIL WORKBENCH</div>
@@ -1573,6 +1782,7 @@ export default function EmailAnalyzer() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
