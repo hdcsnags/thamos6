@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Shield, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import AnalysisResults from '../../components/extension/AnalysisResults';
+import { palette, typography } from '../../design-system/tokens';
 
 interface ExtensionResultProps {
   extensionId: string;
+  onScan?: (type: string, value: string) => void;
 }
 
 interface Analysis {
@@ -56,7 +58,7 @@ export default function ExtensionResult({ extensionId }: ExtensionResultProps) {
         // If no recent analysis, trigger a new one
         setAnalyzing(true);
         const extensionUrl = `https://chromewebstore.google.com/detail/${extensionId}`;
-        
+
         const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-extension`;
         const { data: { session } } = await supabase.auth.getSession();
         const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -99,14 +101,14 @@ export default function ExtensionResult({ extensionId }: ExtensionResultProps) {
 
   if (loading || analyzing) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" style={{ fontFamily: typography.ui }}>
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
-            <Loader2 className="w-16 h-16 text-cyan-500 animate-spin mx-auto mb-4" />
-            <p className="text-slate-400 font-medium">
+            <Loader2 className="w-16 h-16 animate-spin mx-auto mb-4" style={{ color: palette.accent }} />
+            <p className="font-medium" style={{ color: palette.textSecondary }}>
               {analyzing ? 'Analyzing extension security...' : 'Loading analysis...'}
             </p>
-            <p className="text-slate-600 text-sm mt-2">
+            <p className="text-sm mt-2" style={{ color: palette.textTertiary }}>
               This may take 30-60 seconds
             </p>
           </div>
@@ -117,14 +119,17 @@ export default function ExtensionResult({ extensionId }: ExtensionResultProps) {
 
   if (error || !analysis) {
     return (
-      <div className="space-y-6">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-8 text-center">
-          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <p className="text-red-400 font-medium text-lg mb-2">
+      <div className="space-y-6" style={{ fontFamily: typography.ui }}>
+        <div
+          className="rounded-xl p-8 text-center"
+          style={{ background: `${palette.rose}1a`, border: `1px solid ${palette.rose}4d` }}
+        >
+          <AlertTriangle className="w-12 h-12 mx-auto mb-3" style={{ color: palette.rose }} />
+          <p className="font-medium text-lg mb-2" style={{ color: palette.rose }}>
             {error || 'Failed to load extension analysis'}
           </p>
-          <p className="text-slate-400 text-sm">
-            Extension ID: {extensionId}
+          <p className="text-sm" style={{ color: palette.textSecondary }}>
+            Extension ID: <span style={{ fontFamily: typography.mono }}>{extensionId}</span>
           </p>
         </div>
       </div>
@@ -132,13 +137,13 @@ export default function ExtensionResult({ extensionId }: ExtensionResultProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ fontFamily: typography.ui }}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Shield className="w-8 h-8 text-cyan-400" />
+        <Shield className="w-8 h-8" style={{ color: palette.textTertiary }} />
         <div>
-          <h1 className="text-3xl font-bold text-white">Extension Security Analysis</h1>
-          <p className="text-slate-400">Analyzed {new Date(analysis.analyzed_at).toLocaleString()}</p>
+          <h1 className="text-3xl font-bold" style={{ color: palette.textPrimary }}>Extension Security Analysis</h1>
+          <p style={{ color: palette.textSecondary }}>Analyzed {new Date(analysis.analyzed_at).toLocaleString()}</p>
         </div>
       </div>
 

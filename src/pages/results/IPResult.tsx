@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
-  AlertTriangle, Shield, Database, MapPin, Server, Wifi,
+  AlertTriangle, Shield, Database, Server, Wifi,
   ExternalLink, Target, GitBranch, Scale, ChevronDown, ChevronRight, ArrowRight, Zap, Loader2,
 } from 'lucide-react';
 import { useTheme } from '../../contexts/themecontext';
