@@ -34,7 +34,19 @@ The architecture docs historically documented only **Tactical** and **Terminal**
 | `desktop` | `src/components/desktop/DesktopLayout.tsx` | `App.tsx` → `<DesktopProvider>` + `<DesktopLayout>` |
 | `mission-control` | Legacy theme value; no dedicated `App.tsx` branch | Use the Desktop overlay instead |
 
-**Desktop is the product direction and the most complete theme.** Fresh local/production sessions still fall back to Tactical in `themecontext.tsx`, so do not confuse intended direction with the current default. If asked to work on "the UI" without specification, assume Desktop unless the user says otherwise.
+**Desktop is the product direction and the most complete theme.** Fresh sessions now default to Desktop in `themecontext.tsx` (stored theme choices are still respected). If asked to work on "the UI" without specification, assume Desktop unless the user says otherwise. Tactical and Terminal are compatibility shells: do not migrate their Tactical-only pages (`IPLookup`, `URLScanner`, `HashLookup`, `DomainIntel`, `Settings`, `Admin`, `History`, `NewsFeed`, `IntelHub`, `CaseNotes`, `Layout`, `terminallayout`, `Terminal*Result`) unless explicitly asked; they still carry Tailwind palette classes and the pre-existing `tsc` errors.
+
+### Result pages use the shared result kit
+
+Every scanner result page (`src/pages/results/*Result.tsx`) renders through `src/components/results/` (`ResultShell`, `ResultCard`, `MetricCard`, `StatCell`, `Pill`, `Callout`, `SignalLight`, `SummaryActions`). `ResultShell` picks `variant="tabs"` in Desktop and `variant="sidebar"` in Tactical, so one page serves both themes. Rules:
+
+- Every result component accepts `onScan?: (type, value) => void` and renders pivot affordances (resolved IPs, detonation domains, cert subdomains, "Full domain report", "Detonate root") only when it is provided. `renderWindowContent` in `desktop/DesktopLayout.tsx` passes a pivot that opens sibling result windows; `DesktopScanner` and `App.tsx` pass their own handlers.
+- Sources tabs must be honest: `Error` (rose), `Key missing` (amber, for 401/403/"not configured"), `Not listed`/`No data` (neutral), `Flagged` (rose), `OK` (green only for a real verified state).
+- No Tailwind palette classes in result pages, scanner components, or Desktop-rendered tools. Verify with the grep in the "Testing" section below.
+
+### Type-check baseline (honest)
+
+`npm run typecheck` is **not** clean. As of 2026-09-04 it reports ~60 pre-existing errors, all in Tactical-only pages and a few Desktop shell files (`DesktopCaseManager`, `ToastNotifications`, `SpotlightSearch`, `IntelHub`, `CaseNotes`, `Layout`, `IPLookup`, …). Earlier sprint notes claiming a zero-error baseline were wrong. The rule is: zero errors in files you touch; do not add new ones. `npm run build` (Vite) does not type-check, so a passing build is not evidence of type safety.
 
 **Mission Control reality:** the working implementation is the window-overview overlay inside `src/components/desktop/DesktopLayout.tsx`, toggled with `Ctrl+Shift+M`. The `mission-control` theme value is legacy/incomplete routing and should not be treated as a separate finished shell.
 
@@ -216,7 +228,12 @@ showContextMenu(e.clientX, e.clientY, [
 3. **Verify context menus:** Right-click on desktop, title bar, taskbar, icons.
 4. **Verify workspace switching:** Ctrl+1-4, pinned windows appear on all desks.
 5. **Verify layout persistence:** Refresh page — windows should restore positions.
-6. **Verify no TypeScript errors:** `npm run build` or `tsc --noEmit`.
+6. **Verify no new TypeScript errors:** `npm run typecheck` — zero errors in the files you touched (see the baseline note above; `npm run build` does not type-check).
+7. **Verify no palette classes crept in** (result pages, scanner components, Desktop tools):
+   ```bash
+   grep -noE "(text|bg|border|from|via|to|ring)-(slate|gray|zinc|cyan|emerald|rose|violet|amber|sky|red|green|blue|purple|yellow|orange|pink|indigo|fuchsia|white|black)(-[0-9]{2,3})?(/[0-9]+)?" src/pages/results/*.tsx src/components/results/*.tsx src/components/scanner/*.tsx src/components/bulk/*.tsx src/components/extension/*.tsx
+   ```
+   Expected output: nothing.
 
 ### Quick Manual Test Script
 

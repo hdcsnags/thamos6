@@ -160,7 +160,7 @@ ThamOS v6 has **four themes/interfaces**, not two as documented in the stale arc
 - [x] **Make desktop icons draggable** (`src/components/desktop/DesktopIcons.tsx`)
 - [x] **Group result windows in the taskbar** (`src/components/desktop/Taskbar.tsx`); broader per-app grouping remains optional
 - [ ] **Add calendar popover on clock click** (`src/components/desktop/DesktopClock.tsx` + `Taskbar.tsx`)
-- [ ] **Build desktop-styled result wrappers** (`DesktopIPResult`, `DesktopURLResult`, etc.)
+- [x] **Desktop-native result pages** — resolved 2026-09-04 via the shared result kit (`src/components/results/`) rather than per-theme wrappers: all eight result pages render `ResultShell` with tabs in Desktop and a sidebar in Tactical.
 - [x] **Reduce expensive/overactive acrylic styling**; active windows use restrained blur and inactive windows use none
 - [ ] **Reconcile remaining architecture docs** with the current Desktop and tenant-hosting direction
 
@@ -219,13 +219,53 @@ Older TopDesk-first and external-companion plans are retained in historical docu
 
 | # | Bug | Location | Severity | Fix Strategy |
 |---|-----|----------|----------|--------------|
-| 1 | Desktop reuses Tactical result pages | `src/components/desktop/DesktopLayout.tsx` | Medium | Build Desktop-native result composition or shared neutral result primitives |
+| 1 | ~~Desktop reuses Tactical result pages~~ — **fixed 2026-09-04** (all result pages on the shared kit; Domain/Hash/CVE no longer render a Tactical sidebar inside Desktop windows) | `src/pages/results/*` | — | Done |
 | 2 | Email parsing discards attachment bytes after hashing, preventing direct PDF handoff | `supabase/functions/_shared/email-parser.ts` | High | Retain encrypted/transient attachment artifacts inside the tenant and pass supported documents to analysis |
 | 3 | Document analysis is raw-byte pattern matching; it lacks proper PDF/OOXML parsing, OCR/QR, redirects, and detonation | `supabase/functions/analyze-doc/index.ts` | High | Replace with tenant-side structural extraction plus isolated browser analysis |
 
 ---
 
 ## Sprint Log
+
+### Sprint 2026-09-04 — Fable: result pages onto the shared kit, cross-window pivots, URL Host tab, Bulk evidence matrix
+**Agent:** Claude Fable 5.1 (Claude Code) — main session + 7 parallel implementation subagents (one per file group)
+**Scope:** User asked for an open design assessment ("have I hit the ceiling with Tactical → Terminal → Desktop?"), then a mandate: fix the token debt, add a Host tab to URL results, make detonation facts clickable, add "Detonate root" on domains, assess Bulk Lookup, and push to main.
+
+**Assessment conclusion (recorded so it is not re-derived):** Desktop is the last shell metaphor worth building. The "ceiling" feeling came from the shell being finished while most window *content* still lived in the Tactical design generation (only IPResult used the result kit; Domain/Hash/CVE rendered a Tactical sidebar inside Desktop windows; ~1,780 Tailwind palette classes across 50 files). The next iteration is content catching up to the shell, then windows that talk to each other (pivots, Send-to-Case, the graph spanning all IOC types) — not a fifth theme. URL and Domain stay separate scan types (page verdict vs. infrastructure), but the URL result now *contains* the host context.
+
+**Shipped:**
+1. **All result pages on `ResultShell`** — URL, Domain, Hash, CVE, Wallet, Email, Extension rewritten (IP was already there). Scanline overlays, text-glow headers, violet PRO MODE buttons and every Tailwind palette class removed from `src/pages/results/`, `src/components/scanner/`, `SourceCard`, `ThreatScore`. Sources tabs are honest everywhere: Error / Key missing / Not listed / Flagged / OK. Pages now surface data the backend already returned but the UI dropped (Domain: passive DNS, VT resolutions, crt.sh subdomains, Tranco, all DNS record types; Hash: Hybrid Analysis, OTX pulses, MalwareBazaar record, VT signature/TrID/YARA/IDS; CVE: KEV name/vendor/required action; Wallet: MistTrack risk detail, BTC totals; Email: raw MX/SPF/DMARC records, HIBP breach list, EmailRep flags).
+2. **URL result: Host tab + clickable detonation facts.** `lookupDomain(hostname)` runs in parallel with the URL scan; Overview gets a Host summary card (registrar, age with <90-day warning, VT domain stats) and a "Feeds and blocklists" card (VT ratio, URLhaus, PhishTank, OpenPhish, Safe Browsing, Tranco — each with an honest pill; 401/403 → "Key missing", never "clean"). Host tab: registration, reputation, resolved IPs (pivot), cert subdomains (pivot), passive DNS. Detonation tab: final page URL/domain/IP are pivot buttons, navigation-chain hops pivot to URL scans, outgoing link domains pivot to domain scans. IP-literal hosts pivot to the IP scanner instead of a domain lookup. Fixed the two pre-existing TS errors in URLResult.
+3. **Domain result: "Detonate root"** header action → opens `https://<domain>/` in the URL scanner (urlscan.io detonation).
+4. **Pivot graph and pivots now work in Desktop result windows.** `renderWindowContent` passes a `pivot` handler to every result page (IP/URL/Domain/Hash/CVE/Wallet/Email); previously only the Scanner app passed `onScan`, so RelatedIOCs' Scan buttons never rendered in windows opened from Terminal, Spotlight, Email Analyzer or Bulk Lookup. `DesktopScanner` and Tactical `App.tsx` pass handlers for all types too.
+5. **Token migration of Desktop-rendered tools:** Scanner landing (Intelligence Feed half), Decoder, Defang/Refang, IOC Extractor (also fixed broken Copy Text/CSV/Defanged exports that threw at runtime, a stale-closure bug in single-mode analysis, and removed a hardcoded "PHASE1-2026-01-15-A" build caption), Extension Scanner + all `components/extension/*` (new `extensionTones.ts`), `VerdictPanel`/`VerdictStrip`/`verdictStyles` (now token objects, sentence-case labels, `low_signal` is neutral not cyan), `ThreatScore` (the conic-gradient gauge was invalid CSS and never rendered), `RawJsonCollapse` (nested `<button>` fixed), `SourceCard` (`false` no longer renders green). Duplicate wallpaper name fixed (`dragon-eye` → "Watcher").
+6. **Bulk Lookup: Evidence tab is real.** New `BulkEvidenceMatrix` (source × IP grid: hit / clear / error / not-run, coverage %, "provider failed for every IP" warning, context providers greyed) replaces the "coming next" placeholder; Batch Report section 6 now states real coverage instead of "n/a"; report grid is container-aware; Correlation map no longer sizes itself with `100vh` inside a window. Backend `/bulk` now returns `sourceStatus` + `sourceHits` per IP (`BulkIPResult` typed).
+7. **Backend (`threat-intel`, NOT yet deployed — see below):** `/url` writes `scan_observations` + a `url → domain|ip hosted_on` edge and persists `__scoring` in `url_lookups.results`; `/urlscan-result` writes `domain resolves_to ip`, `url redirects_to url`, `ip announced_by asn` from the detonation; `checkAlienVaultOTX` gained a `kind` param so `/domain` queries OTX's `/domain/` section (it was hitting `/IPv4/` with a hostname); `vtResolutions` was always `null` in `/ip`, `/ip/deep-enrich` and `/domain` (read `.data` off a normalised entry that has `.details`) — fixed. New migration `20260903000000_ioc_rel_redirects_to.sql` adds `redirects_to` to the edge-type CHECK.
+
+**Verified:** `npm run typecheck` — 0 errors in every changed file (repo total 61, all pre-existing in untouched Tactical/shell files; the true baseline at HEAD was ~100, not 0 as earlier entries claimed). Palette-class grep over all changed files: empty. `npm run build`: clean (pre-existing chunk-size warning). ESLint on changed files: non-`any` problems 47 → ~17 (remaining are pre-existing hook-deps warnings, `wallpapers.ts` empty block, `IOCExtractor` regex escapes); `no-explicit-any` count 166 → 234 because rewritten pages type provider payloads as `any` like the pages they replaced — flagged, not fixed. **Not verified in a browser:** no `.env` in this checkout and the deploy commands were blocked by the auto-mode classifier, so live rendering of the new pages is pending the user's deploy.
+
+**Deploy steps left for the maintainer (production changes, deliberately not run by the agent):**
+```
+supabase functions deploy threat-intel
+supabase db push          # applies 20260903000000_ioc_rel_redirects_to.sql only; all earlier migrations are already applied remotely
+```
+Until deployed: the URL Host tab, pivots and result pages work against the current backend; the Bulk Evidence tab shows an honest "per-source status not returned" callout; URL scans do not yet write to the graph.
+
+**Backend bugs found by the migration (not fixed, verified by reading):**
+- `/hash`: VirusTotal HTTP 404 (hash unknown) is returned as `error: "HTTP 404"`, so an unknown-but-benign file shows a red Error pill instead of "no record" (`index.ts` ~1833).
+- `/wallet`: `checkMisttrack` reads `risk_level`/`is_sanctioned` at the top level but MistTrack nests under `data.data`, so the aggregated `is_sanctioned` flag may never be true from a live response (~2523/2533); rejected checker promises vanish from `sources` with no error entry (~3855).
+- `/email`: a failed DNS lookup collapses to `has_valid_mx: false` (~3927) — the page now lights NO MX only when the DNS source did not error.
+- `/domain`: URLhaus for domains is registered under source key `urlhaus_url` (page reads both).
+- `HashLookupResult.sources` and `HashDetections` in `src/types/index.ts` describe fields the `/hash` route does not emit; `DomainLookupResult` omits `tranco`/`pdns`/`vtResolutions`/`certSubdomains` (pages use local intersection types).
+- `components/extension/AnalysisResults.tsx` creates its own Supabase client instead of importing `lib/supabase`; `FileExplorer` `expandedFolders` initialises with a path (`root`) no node has; bare Edge Add-ons IDs are scanned as Chrome.
+
+**Extension Scanner UX observations (not implemented):** verdict/summary blocks sit above the tab content so the analyst scrolls ~2 screens past the selected tab; Files tab is a fixed 600px box inside a scrolling page (nested scrollbars); findings sort alphabetically by severity string (medium > low > high > critical); expanded IOC enrichment pushes the table down instead of using a drawer; only 3 CRXplorer reasons shown; Behavior tab count disagrees with `behavior_flags.length`.
+
+**Decisions:**
+- URL and Domain remain separate scan types; the URL result embeds host context and pivots rather than merging routes (different questions, different sources, detonation is URL-only).
+- Host lookup runs in parallel with the URL scan (not lazily on tab open) so the Overview can show host age/registrar immediately; cost is one `/domain` call per URL scan.
+- Tactical/Terminal are frozen, not migrated (recommendation recorded in AGENTS.md; retiring them is the maintainer's call).
+- `redirects_to` added via migration rather than reusing an existing edge type, matching the roadmap vocabulary in this file.
 
 ### Sprint 2026-08-20e — Fable: full-stack assessment, PII gate, email-first workbench, platform fixes
 **Agent:** Claude Fable 5 (Claude Code) — main session + 3 parallel implementation subagents, after a 3-reviewer parallel code assessment of Desktop / Email Analyzer / IP-Bulk stacks
