@@ -1,4 +1,7 @@
 import { Shield, Calendar } from 'lucide-react';
+import { palette, typography } from '../../design-system/tokens';
+import { Pill } from '../../components/results';
+import { riskTone } from './extensionTones';
 
 interface Analysis {
   id: string;
@@ -19,19 +22,6 @@ interface Props {
 }
 
 function AnalysisHistory({ analyses, onSelect }: Props) {
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'critical':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default:
-        return 'bg-green-100 text-green-800 border-green-200';
-    }
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -53,40 +43,40 @@ function AnalysisHistory({ analyses, onSelect }: Props) {
   };
 
   return (
-    <div className="divide-y divide-slate-200">
-      {analyses.map((analysis) => (
+    <div style={{ fontFamily: typography.ui }}>
+      {analyses.map((analysis, idx) => (
         <button
           key={analysis.id}
           onClick={() => onSelect(analysis)}
-          className="w-full px-8 py-5 hover:bg-slate-50 transition-colors text-left group"
+          className="w-full px-5 py-3.5 text-left transition-colors hover:brightness-125"
+          style={{
+            background: palette.base,
+            borderTop: idx === 0 ? 'none' : `1px solid ${palette.borderSubtle}`,
+          }}
         >
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-start gap-4 flex-1 min-w-0">
-              <div className="mt-1">
-                <Shield className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition-colors" />
-              </div>
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <Shield className="w-4 h-4 mt-0.5 shrink-0" style={{ color: palette.textTertiary }} />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-1">
-                  <h3 className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h3 className="text-sm font-semibold truncate" style={{ color: palette.textPrimary }}>
                     {analysis.extension_name}
                   </h3>
-                  <span className="text-sm text-slate-500 flex-shrink-0">
+                  <span className="text-xs shrink-0" style={{ color: palette.textTertiary }}>
                     v{analysis.extension_version}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-sm text-slate-500">
-                  <Calendar className="w-4 h-4" />
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: palette.textTertiary }}>
+                  <Calendar className="w-3 h-3" />
                   <span>{formatDate(analysis.analyzed_at)}</span>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4 flex-shrink-0">
-              <div className="text-right">
-                <div className="text-2xl font-bold text-slate-900">{analysis.risk_score}</div>
-                <div className={`mt-1 px-3 py-1 rounded-full text-xs font-bold uppercase border ${getRiskColor(analysis.risk_level)}`}>
-                  {analysis.risk_level}
-                </div>
-              </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="text-lg font-semibold tabular-nums" style={{ color: palette.textPrimary }}>
+                {analysis.risk_score}
+              </span>
+              <Pill label={analysis.risk_level} tone={riskTone(analysis.risk_level)} />
             </div>
           </div>
         </button>

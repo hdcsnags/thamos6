@@ -1,9 +1,16 @@
 import { useState, useCallback } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Search, Globe, Hash, Link, Shield, AlertTriangle, Check,
-  Loader2, ChevronDown, ChevronUp, ExternalLink, Zap, Copy
+  Loader2, ChevronDown, ChevronUp, Zap, Copy
 } from 'lucide-react';
 import { lookupIP, lookupDomain, scanURL, lookupHash } from '../../lib/threatIntel';
+import { palette, typography } from '../../design-system/tokens';
+import { Pill, cardStyle, type Tone } from '../../components/results';
+import {
+  threatTone, threatLabel, toneColor, toneBg, toneBorder, chipStyle,
+  primaryButtonStyle, secondaryButtonStyle, disabledButtonStyle, codeBlockStyle,
+} from './extensionTones';
 
 interface IOC {
   id: string;
@@ -70,15 +77,6 @@ function getTypeIcon(type: string) {
     case 'hash': return Hash;
     default: return Shield;
   }
-}
-
-function getThreatColor(score: number | undefined, isMalicious: boolean | undefined) {
-  if (isMalicious) return 'red';
-  if (score === undefined) return 'slate';
-  if (score >= 75) return 'red';
-  if (score >= 50) return 'orange';
-  if (score >= 25) return 'yellow';
-  return 'green';
 }
 
 function summarizeIPResult(data: any): { summary: string; sources: string[] } {
@@ -180,6 +178,14 @@ function summarizeHashResult(data: any): { summary: string; sources: string[] } 
     sources,
   };
 }
+
+const HEADER_CELL: CSSProperties = {
+  color: palette.textTertiary,
+  fontFamily: typography.ui,
+  fontSize: '11px',
+  fontWeight: 500,
+  letterSpacing: '0.02em',
+};
 
 export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
   const [results, setResults] = useState<Record<string, EnrichmentResult>>({});
@@ -303,10 +309,11 @@ export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
   const enrichedCount = Object.values(results).filter(r => r.status === 'done').length;
   const maliciousCount = Object.values(results).filter(r => r.isMalicious).length;
   const highThreatCount = Object.values(results).filter(r => (r.threatScore ?? 0) >= 50).length;
+  const errorCount = Object.values(results).filter(r => r.status === 'error').length;
 
   if (iocs.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-400">
+      <div className="text-center py-8 text-xs" style={{ color: palette.textTertiary, fontFamily: typography.ui }}>
         No indicators of compromise detected
       </div>
     );
@@ -317,148 +324,135 @@ export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
   );
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="space-y-3" style={{ fontFamily: typography.ui }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {enrichedCount > 0 && (
-            <div className="flex gap-2 text-xs">
-              <span className="px-2 py-1 rounded bg-slate-700 text-slate-300">
-                {enrichedCount}/{scannableIOCs.length} enriched
-              </span>
-              {maliciousCount > 0 && (
-                <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 border border-red-500/30">
-                  {maliciousCount} malicious
-                </span>
-              )}
-              {highThreatCount > 0 && highThreatCount !== maliciousCount && (
-                <span className="px-2 py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                  {highThreatCount} suspicious
-                </span>
-              )}
-            </div>
+            <Pill label={`${enrichedCount}/${scannableIOCs.length} enriched`} tone="neutral" />
           )}
+          {maliciousCount > 0 && <Pill label={`${maliciousCount} malicious`} tone="danger" />}
+          {highThreatCount > 0 && highThreatCount !== maliciousCount && (
+            <Pill label={`${highThreatCount} suspicious`} tone="warn" />
+          )}
+          {errorCount > 0 && <Pill label={`${errorCount} failed`} tone="warn" />}
         </div>
         {scannableIOCs.length > 0 && (
           <button
             onClick={scanAll}
             disabled={scanningAll}
-            className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 border border-cyan-500/30 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors hover:brightness-110 flex items-center gap-1.5"
+            style={scanningAll ? disabledButtonStyle : primaryButtonStyle}
           >
             {scanningAll ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Enriching...
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Enriching…
               </>
             ) : (
               <>
-                <Zap className="w-4 h-4" />
-                Enrich All ({scannableIOCs.length})
+                <Zap className="w-3.5 h-3.5" />
+                Enrich all ({scannableIOCs.length})
               </>
             )}
           </button>
         )}
       </div>
 
-      <div className="border border-slate-700 rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${palette.borderDefault}` }}>
         <table className="w-full">
-          <thead className="bg-slate-800">
+          <thead style={{ background: palette.elevated }}>
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase w-24">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase">Value</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase">Source</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase w-24">Threat</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-300 uppercase w-28">Action</th>
+              <th className="px-4 py-2.5 text-left w-24" style={HEADER_CELL}>Type</th>
+              <th className="px-4 py-2.5 text-left" style={HEADER_CELL}>Value</th>
+              <th className="px-4 py-2.5 text-left" style={HEADER_CELL}>Source</th>
+              <th className="px-4 py-2.5 text-left w-24" style={HEADER_CELL}>Threat</th>
+              <th className="px-4 py-2.5 text-right w-28" style={HEADER_CELL}>Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-700">
-            {iocs.map((ioc) => {
+          <tbody>
+            {iocs.map((ioc, rowIdx) => {
               const Icon = getTypeIcon(ioc.ioc_type);
               const enrichment = results[ioc.id];
               const isExpanded = expandedRows.has(ioc.id);
               const type = classifyIOCType(ioc.ioc_type);
               const isSafe = type === 'domain' && isSafeDomain(ioc.ioc_value);
               const canScan = type !== 'unknown' && !isSafe;
-              const color = enrichment?.status === 'done'
-                ? getThreatColor(enrichment.threatScore, enrichment.isMalicious)
-                : 'slate';
+              const hasSources = (enrichment?.sources?.length ?? 0) > 0;
+              const tone: Tone = enrichment?.status === 'done'
+                ? threatTone(enrichment.threatScore, enrichment.isMalicious, hasSources)
+                : 'neutral';
 
               return (
                 <tr key={ioc.id} className="group">
-                  <td colSpan={5} className="p-0">
+                  <td colSpan={5} className="p-0" style={{ borderTop: rowIdx === 0 ? `1px solid ${palette.borderDefault}` : `1px solid ${palette.borderSubtle}` }}>
                     <div
-                      className={`hover:bg-slate-800/50 transition-colors ${
-                        enrichment?.isMalicious ? 'bg-red-500/5' : ''
-                      }`}
+                      className="transition-colors"
+                      style={{ background: enrichment?.isMalicious ? toneBg('danger', 0.05) : palette.base }}
                     >
-                      <div className="flex items-center px-4 py-3">
-                        <div className="w-24 flex-shrink-0">
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-700 text-slate-300 text-xs rounded font-medium">
+                      <div className="flex items-center px-4 py-2.5">
+                        <div className="w-24 shrink-0">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] rounded" style={chipStyle('neutral')}>
                             <Icon className="w-3 h-3" />
                             {ioc.ioc_type}
                           </span>
                         </div>
                         <div className="flex-1 min-w-0 px-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm text-slate-300 font-mono break-all">
+                            <span className="text-xs break-all" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>
                               {ioc.ioc_value}
                             </span>
                             <button
                               onClick={() => copyValue(ioc.id, ioc.ioc_value)}
-                              className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-slate-700 rounded"
+                              className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded"
+                              style={{ color: copiedId === ioc.id ? palette.green : palette.textTertiary }}
                               title="Copy"
                             >
-                              {copiedId === ioc.id ? (
-                                <Check className="w-3 h-3 text-green-400" />
-                              ) : (
-                                <Copy className="w-3 h-3 text-slate-400" />
-                              )}
+                              {copiedId === ioc.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             </button>
                           </div>
                           {isSafe && (
-                            <span className="text-xs text-slate-500 mt-0.5 block">Known safe infrastructure</span>
+                            <span className="text-[11px] mt-0.5 block" style={{ color: palette.textTertiary }}>Known safe infrastructure</span>
                           )}
                         </div>
-                        <div className="flex-shrink-0 px-4 text-sm text-slate-400 max-w-[140px] truncate" title={ioc.source_file}>
+                        <div
+                          className="shrink-0 px-4 text-xs max-w-[140px] truncate"
+                          style={{ color: palette.textSecondary, fontFamily: typography.mono }}
+                          title={ioc.source_file}
+                        >
                           {ioc.source_file.split('/').pop()}
                         </div>
-                        <div className="w-24 flex-shrink-0">
+                        <div className="w-24 shrink-0">
                           {enrichment?.status === 'done' && (
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-${color}-500/20 text-${color}-400 border border-${color}-500/30`}>
-                              {enrichment.isMalicious ? (
-                                <AlertTriangle className="w-3 h-3" />
-                              ) : (
-                                <Shield className="w-3 h-3" />
-                              )}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold tabular-nums" style={chipStyle(tone)}>
+                              {enrichment.isMalicious ? <AlertTriangle className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
                               {enrichment.threatScore}/100
                             </span>
                           )}
                           {enrichment?.status === 'loading' && (
-                            <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                            <Loader2 className="w-4 h-4 animate-spin" style={{ color: palette.textTertiary }} />
                           )}
                           {enrichment?.status === 'error' && (
-                            <span className="text-xs text-red-400">Failed</span>
+                            <span className="text-[11px]" style={{ color: palette.rose }} title={enrichment.error}>Failed</span>
                           )}
                         </div>
-                        <div className="w-28 flex-shrink-0 flex justify-end gap-1">
+                        <div className="w-28 shrink-0 flex justify-end gap-1">
                           {canScan && (
                             <>
                               {enrichment?.status === 'done' ? (
                                 <button
                                   onClick={() => toggleRow(ioc.id)}
-                                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded transition-colors flex items-center gap-1"
+                                  className="px-2 py-1 text-[11px] rounded-md transition-colors hover:brightness-125 flex items-center gap-1"
+                                  style={secondaryButtonStyle}
                                 >
-                                  {isExpanded ? (
-                                    <ChevronUp className="w-3 h-3" />
-                                  ) : (
-                                    <ChevronDown className="w-3 h-3" />
-                                  )}
+                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                   Details
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => scanIOC(ioc)}
                                   disabled={enrichment?.status === 'loading' || scanningAll}
-                                  className="px-2 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-medium rounded transition-colors flex items-center gap-1 disabled:opacity-50"
+                                  className="px-2 py-1 text-[11px] font-medium rounded-md transition-colors hover:brightness-125 flex items-center gap-1 disabled:opacity-50"
+                                  style={secondaryButtonStyle}
                                 >
                                   <Search className="w-3 h-3" />
                                   Scan
@@ -487,7 +481,7 @@ export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
       </div>
 
       {safeIOCs.length > 0 && (
-        <div className="text-xs text-slate-500 flex items-center gap-1.5">
+        <div className="text-[11px] flex items-center gap-1.5" style={{ color: palette.textTertiary }}>
           <Shield className="w-3 h-3" />
           {safeIOCs.length} IOC{safeIOCs.length > 1 ? 's' : ''} skipped (known safe infrastructure like Google, Mozilla, CDNs)
         </div>
@@ -498,41 +492,47 @@ export default function IOCEnrichment({ iocs }: IOCEnrichmentProps) {
 
 function EnrichmentDetails({ ioc, enrichment }: { ioc: IOC; enrichment: EnrichmentResult }) {
   const type = classifyIOCType(ioc.ioc_type);
-  const color = getThreatColor(enrichment.threatScore, enrichment.isMalicious);
+  const hasSources = (enrichment.sources?.length ?? 0) > 0;
+  const tone = threatTone(enrichment.threatScore, enrichment.isMalicious, hasSources);
+  const toneText = tone === 'neutral' ? palette.textSecondary : toneColor[tone];
   const [showRaw, setShowRaw] = useState(false);
 
   return (
-    <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+    <div className="overflow-hidden" style={cardStyle}>
       <div className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-lg bg-${color}-500/20 border border-${color}-500/30 flex items-center justify-center`}>
-              <span className={`text-lg font-bold text-${color}-400`}>
+            <div
+              className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: toneBg(tone, 0.12), border: `1px solid ${toneBorder(tone)}` }}
+            >
+              <span className="text-base font-semibold tabular-nums" style={{ color: toneText, fontFamily: typography.ui }}>
                 {enrichment.threatScore ?? '?'}
               </span>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className={`text-sm font-semibold text-${color}-400`}>
-                  {enrichment.isMalicious ? 'Malicious' : (enrichment.threatScore ?? 0) >= 50 ? 'Suspicious' : 'Clean'}
+                <span className="text-sm font-semibold" style={{ color: toneText }}>
+                  {threatLabel(enrichment.threatScore, enrichment.isMalicious, hasSources)}
                 </span>
-                <span className="text-xs text-slate-500 uppercase">{type}</span>
+                <span className="text-[11px]" style={{ color: palette.textTertiary }}>{type}</span>
               </div>
-              <p className="text-sm text-slate-300 mt-0.5">{enrichment.summary}</p>
+              <p className="text-xs mt-0.5" style={{ color: palette.textSecondary }}>{enrichment.summary}</p>
             </div>
           </div>
         </div>
 
-        {enrichment.sources && enrichment.sources.length > 0 && (
+        {hasSources ? (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {enrichment.sources.map(source => (
-              <span
-                key={source}
-                className="px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded font-medium"
-              >
+            {enrichment.sources!.map(source => (
+              <span key={source} className="px-2 py-0.5 text-[11px] rounded" style={chipStyle('neutral')}>
                 {formatSourceName(source)}
               </span>
             ))}
+          </div>
+        ) : (
+          <div className="text-[11px] mb-3" style={{ color: palette.textTertiary }}>
+            No source returned data for this indicator — score is not a verified clean result.
           </div>
         )}
 
@@ -543,17 +543,32 @@ function EnrichmentDetails({ ioc, enrichment }: { ioc: IOC; enrichment: Enrichme
 
         <button
           onClick={() => setShowRaw(!showRaw)}
-          className="mt-3 text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+          className="mt-3 text-[11px] transition-colors hover:brightness-125 flex items-center gap-1"
+          style={{ color: palette.textTertiary }}
         >
           {showRaw ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           Raw JSON
         </button>
         {showRaw && (
-          <pre className="mt-2 p-3 bg-slate-900 rounded text-xs text-slate-400 overflow-x-auto max-h-64 overflow-y-auto">
+          <pre className="mt-2 p-3 overflow-auto max-h-64" style={codeBlockStyle}>
             {JSON.stringify(enrichment.details, null, 2)}
           </pre>
         )}
       </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, mono = false, color }: { label: string; value: ReactNode; mono?: boolean; color?: string }) {
+  return (
+    <div className="flex justify-between gap-3 text-xs">
+      <span style={{ color: palette.textTertiary }}>{label}</span>
+      <span
+        className="truncate text-right"
+        style={{ color: color || palette.textPrimary, fontFamily: mono ? typography.mono : typography.ui }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -570,35 +585,15 @@ function IPDetails({ data }: { data: any }) {
   if (e.spamhausListed) flags.push('Spamhaus');
 
   return (
-    <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-      {e.country && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Location</span>
-          <span className="text-white">{[e.city, e.region, e.country].filter(Boolean).join(', ')}</span>
-        </div>
-      )}
-      {e.isp && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">ISP</span>
-          <span className="text-white truncate ml-2">{e.isp}</span>
-        </div>
-      )}
-      {e.org && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Org</span>
-          <span className="text-white truncate ml-2">{e.org}</span>
-        </div>
-      )}
-      {e.asn && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">ASN</span>
-          <span className="text-white font-mono">{e.asn}</span>
-        </div>
-      )}
+    <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-1.5">
+      {e.country && <DetailRow label="Location" value={[e.city, e.region, e.country].filter(Boolean).join(', ')} />}
+      {e.isp && <DetailRow label="ISP" value={e.isp} />}
+      {e.org && <DetailRow label="Org" value={e.org} />}
+      {e.asn && <DetailRow label="ASN" value={e.asn} mono />}
       {flags.length > 0 && (
-        <div className="col-span-2 flex flex-wrap gap-1.5 mt-1">
+        <div className="col-span-full flex flex-wrap gap-1.5 mt-1">
           {flags.map(f => (
-            <span key={f} className="px-2 py-0.5 bg-red-500/15 text-red-300 text-xs rounded border border-red-500/20">
+            <span key={f} className="px-2 py-0.5 text-[11px] rounded" style={chipStyle('warn')}>
               {f}
             </span>
           ))}
@@ -611,38 +606,17 @@ function IPDetails({ data }: { data: any }) {
 function DomainDetails({ data }: { data: any }) {
   const w = data.whois || {};
   return (
-    <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-      {w.registrar && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Registrar</span>
-          <span className="text-white truncate ml-2">{w.registrar}</span>
-        </div>
-      )}
-      {w.registrationDate && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Registered</span>
-          <span className="text-white">{new Date(w.registrationDate).toLocaleDateString()}</span>
-        </div>
-      )}
-      {w.domainAge !== undefined && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Age</span>
-          <span className="text-white">{w.domainAge} days</span>
-        </div>
-      )}
-      {w.nameservers?.length > 0 && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">Nameservers</span>
-          <span className="text-white text-xs font-mono truncate ml-2">{w.nameservers.slice(0, 2).join(', ')}</span>
-        </div>
-      )}
+    <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-1.5">
+      {w.registrar && <DetailRow label="Registrar" value={w.registrar} />}
+      {w.registrationDate && <DetailRow label="Registered" value={new Date(w.registrationDate).toLocaleDateString()} />}
+      {w.domainAge !== undefined && <DetailRow label="Age" value={`${w.domainAge} days`} />}
+      {w.nameservers?.length > 0 && <DetailRow label="Nameservers" value={w.nameservers.slice(0, 2).join(', ')} mono />}
       {data.reputation !== undefined && data.reputation !== null && (
-        <div className="flex justify-between">
-          <span className="text-slate-400">VT Reputation</span>
-          <span className={`font-semibold ${data.reputation < 0 ? 'text-red-400' : 'text-green-400'}`}>
-            {data.reputation}
-          </span>
-        </div>
+        <DetailRow
+          label="VT reputation"
+          value={data.reputation}
+          color={data.reputation < 0 ? palette.rose : palette.green}
+        />
       )}
     </div>
   );
@@ -654,26 +628,26 @@ function HashDetails({ data }: { data: any }) {
   const ha = data.detections?.hybrid_analysis;
 
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-1.5 text-xs">
       {vt && (
         <div className="flex items-center gap-4">
-          <span className="text-slate-400 w-28 flex-shrink-0">VirusTotal</span>
-          <span className={`font-semibold ${vt.malicious > 0 ? 'text-red-400' : 'text-green-400'}`}>
+          <span className="w-28 shrink-0" style={{ color: palette.textTertiary }}>VirusTotal</span>
+          <span className="font-semibold tabular-nums" style={{ color: vt.malicious > 0 ? palette.rose : palette.green }}>
             {vt.malicious}/{vt.total} detections
           </span>
-          {vt.file_type && <span className="text-slate-500 text-xs">{vt.file_type}</span>}
+          {vt.file_type && <span className="text-[11px]" style={{ color: palette.textTertiary }}>{vt.file_type}</span>}
         </div>
       )}
       {mb?.signature && (
         <div className="flex items-center gap-4">
-          <span className="text-slate-400 w-28 flex-shrink-0">MalwareBazaar</span>
-          <span className="text-red-400 font-semibold">{mb.signature}</span>
+          <span className="w-28 shrink-0" style={{ color: palette.textTertiary }}>MalwareBazaar</span>
+          <span className="font-semibold" style={{ color: palette.rose, fontFamily: typography.mono }}>{mb.signature}</span>
         </div>
       )}
       {ha?.verdict && (
         <div className="flex items-center gap-4">
-          <span className="text-slate-400 w-28 flex-shrink-0">Hybrid Analysis</span>
-          <span className={`font-semibold ${ha.verdict === 'malicious' ? 'text-red-400' : 'text-slate-300'}`}>
+          <span className="w-28 shrink-0" style={{ color: palette.textTertiary }}>Hybrid Analysis</span>
+          <span className="font-semibold" style={{ color: ha.verdict === 'malicious' ? palette.rose : palette.textSecondary }}>
             {ha.verdict}
           </span>
         </div>
@@ -685,11 +659,11 @@ function HashDetails({ data }: { data: any }) {
 function URLDetails({ data }: { data: any }) {
   const results = data.results || {};
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-1.5 text-xs">
       {data.threatTypes?.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {data.threatTypes.map((t: string) => (
-            <span key={t} className="px-2 py-0.5 bg-red-500/15 text-red-300 text-xs rounded border border-red-500/20">
+            <span key={t} className="px-2 py-0.5 text-[11px] rounded" style={chipStyle('danger')}>
               {t}
             </span>
           ))}
@@ -698,8 +672,8 @@ function URLDetails({ data }: { data: any }) {
       {Object.entries(results).map(([source, val]: [string, any]) => (
         val?.found && (
           <div key={source} className="flex items-center gap-4">
-            <span className="text-slate-400 w-28 flex-shrink-0">{formatSourceName(source)}</span>
-            <span className={`font-semibold ${val.malicious ? 'text-red-400' : 'text-green-400'}`}>
+            <span className="w-28 shrink-0" style={{ color: palette.textTertiary }}>{formatSourceName(source)}</span>
+            <span className="font-semibold" style={{ color: val.malicious ? palette.rose : palette.green }}>
               {val.malicious ? 'Flagged' : 'Clean'}
             </span>
           </div>

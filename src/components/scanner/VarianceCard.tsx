@@ -1,4 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
+import { palette, typography } from '../../design-system/tokens';
+import { toneBg, toneBorder, toneColor } from '../results/resultTokens';
 
 interface Variance {
   field: string;
@@ -14,41 +16,55 @@ export default function VarianceCard({ variances }: VarianceCardProps) {
   if (variances.length === 0) return null;
 
   return (
-    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+    <div
+      className="p-4"
+      style={{
+        background: toneBg('warn', 0.07),
+        border: `1px solid ${toneBorder('warn')}`,
+        borderRadius: '9px',
+        fontFamily: typography.ui,
+      }}
+    >
       <div className="flex items-start gap-3 mb-4">
-        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: toneColor.warn }} />
         <div>
-          <h3 className="text-base font-semibold text-amber-400 mb-1">
-            Source Variance Detected
+          <h3 className="text-sm font-semibold mb-0.5" style={{ color: toneColor.warn }}>
+            Source variance detected
           </h3>
-          <p className="text-sm text-amber-200/80">
-            Different sources provided conflicting information for some fields
+          <p className="text-xs" style={{ color: palette.textSecondary }}>
+            Different sources provided conflicting information for some fields.
           </p>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {variances.map((variance, index) => (
           <div
             key={index}
-            className="bg-slate-900/50 rounded-lg border border-amber-500/20 p-3"
+            className="rounded-lg p-3"
+            style={{ background: palette.base, border: `1px solid ${palette.borderDefault}` }}
           >
-            <h4 className="text-sm font-semibold text-slate-200 mb-2">
+            <h4 className="text-sm font-semibold mb-2" style={{ color: palette.textPrimary }}>
               {variance.field}
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {variance.values.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="text-slate-400">{item.source}:</span>
-                  <span className="text-white font-medium">{item.value}</span>
+                <div key={idx} className="flex items-center justify-between gap-3 text-sm">
+                  <span style={{ color: palette.textSecondary }}>{item.source}</span>
+                  <span
+                    className="font-medium text-right break-all text-xs"
+                    style={{ color: palette.textPrimary, fontFamily: typography.mono }}
+                  >
+                    {item.value}
+                  </span>
                 </div>
               ))}
             </div>
             {variance.recommendation && (
-              <p className="text-xs text-amber-300 mt-2 pt-2 border-t border-amber-500/20">
+              <p
+                className="text-xs mt-2 pt-2"
+                style={{ color: palette.textSecondary, borderTop: `1px solid ${palette.borderSubtle}` }}
+              >
                 {variance.recommendation}
               </p>
             )}

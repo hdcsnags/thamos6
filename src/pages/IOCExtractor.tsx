@@ -13,19 +13,15 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import ThreatScore from '../components/ThreatScore';
+import { palette, typography } from '../design-system/tokens';
+import { Callout, Pill, ResultCard, StatCell, type Tone } from '../components/results';
 import {
   classifyIPVerdict,
   classifyURLVerdict,
   classifyHashVerdict,
-  exportToCSV,
-  exportToJSON,
-  exportToPlainText,
-  exportToDefanged,
+  defangIOC,
   IOCAnalysisResult,
-  summarizeIp,
-  summarizeUrl,
-  summarizeHash,
+  IOCVerdict,
 } from '../lib/iocAnalysis';
 import { bulkLookupIPs, lookupHash, scanURL } from '../lib/threatIntel';
 import { supabase } from '../lib/supabase';
@@ -75,6 +71,23 @@ function pickPrimaryIOC(iocs: ExtractedIOCs): PrimaryIOC {
   return null;
 }
 
+/** Semantic tone for a verdict chip: rose = malicious, amber = suspicious, green = clean, neutral = unknown. */
+function verdictToneFor(severity: IOCVerdict['severity'], verdictText: string): Tone {
+  const text = (verdictText || '').toLowerCase();
+  if (severity === 'critical' || severity === 'high' || text.includes('malicious')) return 'danger';
+  if (severity === 'medium' || text.includes('suspicious')) return 'warn';
+  if (severity === 'low' || text.includes('clean') || text.includes('benign') || text.includes('verified')) return 'good';
+  return 'neutral';
+}
+
+/** Threat score bands mirror the ThreatScore component the Tactical theme uses. */
+function scoreToneFor(score: number): { tone: Tone; label: string } {
+  if (score >= 70) return { tone: 'danger', label: 'High risk' };
+  if (score >= 40) return { tone: 'warn', label: 'Suspicious' };
+  if (score >= 20) return { tone: 'neutral', label: 'Low risk' };
+  return { tone: 'good', label: 'Clean' };
+}
+
 export default function IOCExtractor() {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<InputMode>('single');
@@ -87,8 +100,6 @@ export default function IOCExtractor() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<IOCAnalysisResult[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(new Set());
-  const [expandedRaw, setExpandedRaw] = useState<Set<string>>(new Set());
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
 
 const extractIOCs = (text: string): ExtractedIOCs => {
@@ -219,28 +230,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
     setCopied(null);
     setAnalysisResults([]);
     setAnalysisError(null);
-    setExpandedEvidence(new Set());
-    setExpandedRaw(new Set());
-  };
-
-  const toggleEvidence = (ioc: string) => {
-    const newSet = new Set(expandedEvidence);
-    if (newSet.has(ioc)) {
-      newSet.delete(ioc);
-    } else {
-      newSet.add(ioc);
-    }
-    setExpandedEvidence(newSet);
-  };
-
-  const toggleRaw = (ioc: string) => {
-    const newSet = new Set(expandedRaw);
-    if (newSet.has(ioc)) {
-      newSet.delete(ioc);
-    } else {
-      newSet.add(ioc);
-    }
-    setExpandedRaw(newSet);
+    setExpandedResult(null);
   };
 
   // Auto-run (Single mode): debounce input -> extract -> analyze
@@ -420,6 +410,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
             verdict: classifyIPVerdict(mockData, enrichment),
             sources: mockData.sources ?? {},
             enrichment,
+            checkedAt: new Date().toISOString(),
           };
         });
 
@@ -428,7 +419,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
       }
 
       // SINGLE MODE: analyze the "primary" IOC only
-      const chosen = primary ?? pickPrimaryIOC(iocs);
+      const chosen = activePrimary ?? pickPrimaryIOC(activeIocs);
       if (!chosen) {
         setAnalysisError('No IOC detected to analyze.');
         return;
@@ -444,7 +435,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
         const mockData = buildHashMockData(data);
         const verdict = classifyHashVerdict(mockData);
 
-        setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData }]);
+        setAnalysisResults([{ ioc: chosen.value, type: 'hash', verdict, sources: mockData.sources ?? mockData, checkedAt: new Date().toISOString() }]);
         return;
       }
 
@@ -521,6 +512,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
             type: chosen.type === 'domain' ? 'domain' : 'url',
             verdict,
             sources: mockData.sources ?? mockData,
+            checkedAt: new Date().toISOString(),
           } as IOCAnalysisResult,
         ]);
         return;
@@ -546,7 +538,7 @@ const extractIOCs = (text: string): ExtractedIOCs => {
         };
 
         const verdict = classifyIPVerdict(mockData, enrichment);
-        setAnalysisResults([{ ioc: chosen.value, type: 'ip', verdict, sources: mockData.sources ?? mockData, enrichment }]);
+        setAnalysisResults([{ ioc: chosen.value, type: 'ip', verdict, sources: mockData.sources ?? mockData, enrichment, checkedAt: new Date().toISOString() }]);
         return;
       }
 
@@ -609,82 +601,148 @@ const extractIOCs = (text: string): ExtractedIOCs => {
       cves: iocs.cves,
     };
 
+    const rows: { type: string; value: string }[] = [
+      ...all.ips.map(value => ({ type: 'ip', value })),
+      ...all.urls.map(value => ({ type: 'url', value })),
+      ...all.domains.map(value => ({ type: 'domain', value })),
+      ...all.emails.map(value => ({ type: 'email', value })),
+      ...all.hashes.map(value => ({ type: 'hash', value })),
+      ...all.extensions.map(value => ({ type: 'extension', value })),
+      ...all.cves.map(value => ({ type: 'cve', value })),
+    ];
+
+    const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+
     let output = '';
-    if (format === 'json') output = exportToJSON(all);
-    if (format === 'csv') output = exportToCSV(all);
-    if (format === 'text') output = exportToPlainText(all);
-    if (format === 'defanged') output = exportToDefanged(all);
+    if (format === 'json') output = JSON.stringify(all, null, 2);
+    if (format === 'csv') output = ['type,value', ...rows.map(r => `${csvCell(r.type)},${csvCell(r.value)}`)].join('\n');
+    if (format === 'text') output = rows.map(r => r.value).join('\n');
+    if (format === 'defanged') output = rows.map(r => defangIOC(r.value, r.type)).join('\n');
 
     void handleCopy(output, `export-${format}`);
   };
 
   const renderCountPill = (label: string, count: number) => (
-    <span className="px-3 py-1.5 bg-slate-800 text-slate-200 rounded-lg text-sm border border-slate-700">
-      <span className="text-slate-400 mr-2">{label}</span>
-      <span className="font-semibold">{count}</span>
+    <span
+      className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs"
+      style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+    >
+      <span style={{ color: palette.textTertiary }}>{label}</span>
+      <span className="font-semibold tabular-nums" style={{ color: count > 0 ? palette.textPrimary : palette.textDisabled }}>{count}</span>
     </span>
   );
 
+  const secondaryButton = 'ioc-btn inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm';
+  const secondaryButtonStyle = {
+    background: palette.float,
+    border: `1px solid ${palette.borderDefault}`,
+    color: palette.textSecondary,
+  } as const;
+
+  const segmentStyle = (active: boolean) =>
+    ({
+      background: active ? palette.surface : 'transparent',
+      color: active ? palette.textPrimary : palette.textSecondary,
+      boxShadow: active ? '0 1px 2px rgba(0,0,0,0.35)' : 'none',
+    }) as const;
+
+  const fieldStyle = {
+    background: palette.void,
+    border: `1px solid ${palette.borderDefault}`,
+    color: palette.textPrimary,
+    fontFamily: typography.mono,
+  } as const;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="max-w-5xl mx-auto px-6 py-10">
-        <div className="flex items-start gap-4 mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg">
-            <FileSearch className="w-7 h-7 text-white" />
+    <div
+      className="min-h-full @container"
+      style={{ background: palette.elevated, color: palette.textPrimary, fontFamily: typography.ui }}
+    >
+      <style>{`
+        .ioc-field::placeholder { color: ${palette.textDisabled}; }
+        .ioc-field:focus { outline: none; border-color: ${palette.borderActive} !important; }
+        .ioc-btn { transition: background-color 150ms, color 150ms; }
+        .ioc-btn:hover:not(:disabled) { background: ${palette.surface} !important; color: ${palette.textPrimary} !important; }
+        .ioc-seg { transition: color 150ms, background-color 150ms; }
+        .ioc-seg:hover { color: ${palette.textPrimary} !important; }
+        .ioc-link:hover { color: ${palette.textPrimary} !important; }
+      `}</style>
+
+      <div className="max-w-5xl mx-auto px-6 py-6">
+        <div className="flex items-start gap-3 mb-6">
+          <div
+            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+          >
+            <FileSearch className="w-5 h-5" style={{ color: palette.accent }} />
           </div>
           <div>
-           <h1 className="text-3xl font-bold text-slate-100">Smart IOC Intake</h1>
-<p className="text-slate-400 mt-2">
-  Paste any text to extract IOCs. Single mode auto-detects and runs the correct lookup.
-</p>
-
-<p className="text-xs text-slate-500 mt-2">
-  IOCExtractor build: PHASE1-2026-01-15-A
-</p>
+            <h1 className="text-lg font-semibold" style={{ color: palette.textPrimary }}>Smart IOC intake</h1>
+            <p className="text-sm mt-0.5" style={{ color: palette.textSecondary }}>
+              Paste any text to extract IOCs. Single mode auto-detects and runs the correct lookup.
+            </p>
           </div>
         </div>
 
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-6 shadow-sm">
+        <ResultCard>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
-            <label className="text-sm font-medium text-slate-300">
-              Paste Text to Extract & Analyze
+            <label className="text-sm font-medium" style={{ color: palette.textSecondary }}>
+              Paste text to extract and analyze
             </label>
 
             <div className="flex flex-wrap gap-2 items-center">
-              <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+              <div
+                role="tablist"
+                aria-label="Input mode"
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-md"
+                style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+              >
                 <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'single'}
                   onClick={() => setMode('single')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    mode === 'single' ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white'
-                  }`}
+                  className="ioc-seg px-3 py-1 rounded text-xs font-medium"
+                  style={segmentStyle(mode === 'single')}
                 >
                   Single
                 </button>
                 <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'bulk'}
                   onClick={() => setMode('bulk')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    mode === 'bulk' ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white'
-                  }`}
+                  className="ioc-seg px-3 py-1 rounded text-xs font-medium"
+                  style={segmentStyle(mode === 'bulk')}
                 >
                   Bulk (IPs)
                 </button>
               </div>
 
               {mode === 'bulk' && (
-                <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                <div
+                  role="tablist"
+                  aria-label="Analysis depth"
+                  className="inline-flex items-center gap-0.5 p-0.5 rounded-md"
+                  style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+                >
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={analysisMode === 'fast'}
                     onClick={() => setAnalysisMode('fast')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                      analysisMode === 'fast' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
-                    }`}
+                    className="ioc-seg px-3 py-1 rounded text-xs font-medium"
+                    style={segmentStyle(analysisMode === 'fast')}
                   >
                     Fast (10)
                   </button>
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={analysisMode === 'full'}
                     onClick={() => setAnalysisMode('full')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                      analysisMode === 'full' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
-                    }`}
+                    className="ioc-seg px-3 py-1 rounded text-xs font-medium"
+                    style={segmentStyle(analysisMode === 'full')}
                   >
                     Full
                   </button>
@@ -710,55 +768,58 @@ const extractIOCs = (text: string): ExtractedIOCs => {
                 }
               }}
               placeholder="Paste an IP / URL / domain / hash / Chrome extension URL..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+              className="ioc-field w-full rounded-lg px-4 py-3 text-sm"
+              style={fieldStyle}
+              spellCheck={false}
             />
           ) : (
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Paste email content, logs, proxy data, SOC notes, etc..."
-              className="w-full h-48 bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+              className="ioc-field w-full h-48 rounded-lg p-4 text-sm resize-none"
+              style={fieldStyle}
+              spellCheck={false}
             />
           )}
 
           <div className="flex flex-wrap gap-2 mt-4">
             {mode === 'bulk' && (
-              <button
-                onClick={handleExtract}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
-              >
+              <button type="button" onClick={handleExtract} className={secondaryButton} style={secondaryButtonStyle}>
                 <Play className="w-4 h-4" />
                 Extract
               </button>
             )}
-            <button
-              onClick={handleClear}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium"
-            >
+            <button type="button" onClick={handleClear} className={secondaryButton} style={secondaryButtonStyle}>
               <Trash2 className="w-4 h-4" />
               Clear
             </button>
 
-           {iocs && mode === 'bulk' && (
-                  <button
-                  onClick={() => void handleAnalyze()}
-                  disabled={analyzing}
-                  className="ml-auto inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-cyan-400 text-slate-950 font-semibold disabled:opacity-60"
-                >
-                  {analyzing ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Shield className="w-4 h-4" />
-                      Analyze IPs
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
+            {iocs && mode === 'bulk' && (
+              <button
+                type="button"
+                onClick={() => void handleAnalyze()}
+                disabled={analyzing}
+                className="ml-auto inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: palette.accent, color: palette.void }}
+              >
+                {analyzing ? (
+                  <>
+                    <span
+                      className="w-4 h-4 rounded-full animate-spin"
+                      style={{ border: `2px solid ${palette.void}`, borderTopColor: 'transparent' }}
+                    />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-4 h-4" />
+                    Analyze IPs
+                  </>
+                )}
+              </button>
+            )}
+          </div>
 
           {iocs && (
             <div className="mt-5">
@@ -775,147 +836,164 @@ const extractIOCs = (text: string): ExtractedIOCs => {
               </div>
 
               {mode === 'single' && primary && totalFound > 1 && (
-                <div className="mt-3 flex items-start gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200">
-                  <AlertTriangle className="w-5 h-5 mt-0.5" />
-                  <div className="text-sm">
-                    Multiple IOCs detected. <span className="font-semibold">Single</span> mode will analyze only the first detected
-                    IOC: <span className="font-semibold">{primary.value}</span>. Switch to <span className="font-semibold">Bulk</span> for IP enrichment + extraction/export.
-                  </div>
+                <div className="mt-3">
+                  <Callout
+                    tone="warn"
+                    icon={<AlertTriangle className="w-4 h-4" />}
+                    title="Multiple IOCs detected"
+                    detail={
+                      <>
+                        Single mode analyzes only the first detected IOC:{' '}
+                        <span style={{ fontFamily: typography.mono, color: palette.textPrimary }}>{primary.value}</span>.
+                        Switch to Bulk for IP enrichment plus extraction and export.
+                      </>
+                    }
+                  />
                 </div>
               )}
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => exportBundle('text')}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
-                >
-                  {copied === 'export-text' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  Copy Text
-                </button>
-                <button
-                  onClick={() => exportBundle('defanged')}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
-                >
-                  {copied === 'export-defanged' ? <Check className="w-4 h-4 text-emerald-400" /> : <Download className="w-4 h-4" />}
-                  Copy Defanged
-                </button>
-                <button
-                  onClick={() => exportBundle('json')}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
-                >
-                  {copied === 'export-json' ? <Check className="w-4 h-4 text-emerald-400" /> : <FileText className="w-4 h-4" />}
-                  Copy JSON
-                </button>
-                <button
-                  onClick={() => exportBundle('csv')}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
-                >
-                  {copied === 'export-csv' ? <Check className="w-4 h-4 text-emerald-400" /> : <Download className="w-4 h-4" />}
-                  Copy CSV
-                </button>
+                {([
+                  ['text', 'Copy text', Copy],
+                  ['defanged', 'Copy defanged', Download],
+                  ['json', 'Copy JSON', FileText],
+                  ['csv', 'Copy CSV', Download],
+                ] as const).map(([format, label, Icon]) => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => exportBundle(format)}
+                    className={secondaryButton}
+                    style={secondaryButtonStyle}
+                  >
+                    {copied === `export-${format}` ? (
+                      <Check className="w-4 h-4" style={{ color: palette.green }} />
+                    ) : (
+                      <Icon className="w-4 h-4" />
+                    )}
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
           {analysisError && (
-            <div className="mt-5 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 mt-0.5" />
-              <div className="text-sm">{analysisError}</div>
+            <div className="mt-5">
+              <Callout tone="danger" icon={<AlertTriangle className="w-4 h-4" />} title="Analysis error" detail={analysisError} />
             </div>
           )}
-        </div>
+        </ResultCard>
 
         {analysisResults.length > 0 && (
-          <div className="mt-8 space-y-4">
-            <h2 className="text-xl font-semibold text-white">Results</h2>
+          <div className="mt-6 space-y-4">
+            <h2 className="text-sm font-semibold" style={{ color: palette.textPrimary }}>Results</h2>
 
             {analysisResults.map((r) => {
-              const score =
+              const score = Number(
                 (r.sources as any)?.overallThreatScore ??
-                (r.sources as any)?.threatScore ??
-                (r.sources as any)?.score ??
-                0;
+                  (r.sources as any)?.threatScore ??
+                  (r.sources as any)?.score ??
+                  0
+              ) || 0;
 
               const isExpanded = expandedResult === r.ioc;
+              const verdictTone = verdictToneFor(r.verdict.severity, r.verdict.verdict);
+              const scoreInfo = scoreToneFor(score);
 
               return (
-                <div key={r.ioc} className="bg-slate-900/60 rounded-2xl border border-slate-800 p-5">
+                <ResultCard key={r.ioc}>
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs uppercase tracking-wide text-slate-500">{r.type}</span>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full border ${
-                            r.verdict.severity === 'critical'
-                              ? 'border-red-500/40 text-red-300 bg-red-500/10'
-                              : r.verdict.severity === 'high'
-                                ? 'border-orange-500/40 text-orange-300 bg-orange-500/10'
-                                : r.verdict.severity === 'medium'
-                                  ? 'border-amber-500/40 text-amber-300 bg-amber-500/10'
-                                  : r.verdict.severity === 'low'
-                                    ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
-                                    : 'border-slate-500/40 text-slate-300 bg-slate-500/10'
-                          }`}
-                        >
-                          {r.verdict.verdict} • {Math.round(r.verdict.confidence * 100)}%
-                        </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-medium uppercase" style={{ color: palette.textTertiary, letterSpacing: '0.04em' }}>{r.type}</span>
+                        <Pill
+                          label={`${r.verdict.verdict} · ${Math.round(r.verdict.confidence * 100)}%`}
+                          tone={verdictTone}
+                        />
                       </div>
-                      <div className="mt-1 font-mono text-sm text-slate-100 break-all">{r.ioc}</div>
+                      <div className="mt-1.5 text-sm break-all" style={{ fontFamily: typography.mono, color: palette.textPrimary }}>{r.ioc}</div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <ThreatScore score={Number(score) || 0} size="sm" />
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="min-w-[72px]">
+                        <StatCell label={scoreInfo.label} value={score} tone={scoreInfo.tone} />
+                      </div>
                       <button
+                        type="button"
                         onClick={() => addToWatchlist(r.ioc, r.type, r.verdict.verdict)}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                        className={secondaryButton}
+                        style={secondaryButtonStyle}
                       >
                         <BookmarkPlus className="w-4 h-4" />
                         Watchlist
                       </button>
                       <button
+                        type="button"
                         onClick={() => createCaseNote(r.ioc, r.type, r.verdict.verdict)}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm"
+                        className={secondaryButton}
+                        style={secondaryButtonStyle}
                       >
                         <FileText className="w-4 h-4" />
-                        Case Note
+                        Case note
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="mt-4 grid grid-cols-1 @xl:grid-cols-2 gap-4">
                     <div>
-                      <div className="text-sm font-semibold text-slate-200 mb-2">Evidence</div>
-                      <ul className="space-y-1 text-sm text-slate-300 list-disc ml-5">
-                        {(r.verdict.evidence || []).slice(0, 8).map((e, idx) => (
-                          <li key={idx}>{e}</li>
-                        ))}
-                      </ul>
+                      <div className="text-xs font-semibold mb-2" style={{ color: palette.textSecondary }}>Evidence</div>
+                      {(r.verdict.evidence || []).length > 0 ? (
+                        <ul className="space-y-1 text-sm list-disc ml-5" style={{ color: palette.textPrimary }}>
+                          {(r.verdict.evidence || []).slice(0, 8).map((e, idx) => (
+                            <li key={idx}>{e}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs" style={{ color: palette.textTertiary }}>No evidence returned.</p>
+                      )}
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-slate-200 mb-2">Recommended Actions</div>
-                      <ul className="space-y-1 text-sm text-slate-300 list-disc ml-5">
-                        {(r.verdict.recommendations || []).slice(0, 8).map((e, idx) => (
-                          <li key={idx}>{e}</li>
-                        ))}
-                      </ul>
+                      <div className="text-xs font-semibold mb-2" style={{ color: palette.textSecondary }}>Recommended actions</div>
+                      {(r.verdict.recommendations || []).length > 0 ? (
+                        <ul className="space-y-1 text-sm list-disc ml-5" style={{ color: palette.textPrimary }}>
+                          {(r.verdict.recommendations || []).slice(0, 8).map((e, idx) => (
+                            <li key={idx}>{e}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs" style={{ color: palette.textTertiary }}>No recommendations returned.</p>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-4">
                     <button
+                      type="button"
                       onClick={() => setExpandedResult(isExpanded ? null : r.ioc)}
-                      className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white"
+                      className="ioc-link inline-flex items-center gap-1.5 text-xs font-medium"
+                      style={{ color: palette.textSecondary }}
                     >
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       {isExpanded ? 'Hide raw sources' : 'Show raw sources'}
                     </button>
                     {isExpanded && (
-                      <pre className="mt-3 bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 overflow-auto">
+                      <pre
+                        className="mt-3 p-4 overflow-auto"
+                        style={{
+                          background: palette.void,
+                          color: palette.textSecondary,
+                          fontFamily: typography.mono,
+                          fontSize: '11px',
+                          borderRadius: '8px',
+                          border: `1px solid ${palette.borderDefault}`,
+                        }}
+                      >
                         {JSON.stringify(r.sources, null, 2)}
                       </pre>
                     )}
                   </div>
-                </div>
+                </ResultCard>
               );
             })}
           </div>

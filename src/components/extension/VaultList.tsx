@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Shield, RefreshCw, Trash2, AlertTriangle, Clock, Loader2, StickyNote } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { palette, typography } from '../../design-system/tokens';
+import { cardStyle } from '../../components/results';
+import { riskTone, chipStyle, secondaryButtonStyle } from './extensionTones';
 
 interface VaultEntry {
   id: string;
@@ -97,15 +100,6 @@ export default function VaultList({ onRescan, isScanning }: VaultListProps) {
     }
   };
 
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'critical': return 'text-red-400 bg-red-500/20 border-red-500/30';
-      case 'high': return 'text-orange-400 bg-orange-500/20 border-orange-500/30';
-      case 'medium': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
-      default: return 'text-green-400 bg-green-500/20 border-green-500/30';
-    }
-  };
-
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never';
     const date = new Date(dateString);
@@ -127,19 +121,19 @@ export default function VaultList({ onRescan, isScanning }: VaultListProps) {
 
   if (loading) {
     return (
-      <div className="text-center py-12 text-slate-400">
-        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-        Loading vault...
+      <div className="text-center py-12 text-sm" style={{ color: palette.textTertiary, fontFamily: typography.ui }}>
+        <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+        Loading vault…
       </div>
     );
   }
 
   if (entries.length === 0) {
     return (
-      <div className="text-center py-16">
-        <Shield className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-        <h3 className="text-lg font-semibold text-white mb-2">Vault is Empty</h3>
-        <p className="text-slate-400 text-sm max-w-md mx-auto">
+      <div className="text-center py-12" style={{ fontFamily: typography.ui }}>
+        <Shield className="w-8 h-8 mx-auto mb-3" style={{ color: palette.textDisabled }} />
+        <h3 className="text-sm font-semibold mb-1" style={{ color: palette.textPrimary }}>Vault is empty</h3>
+        <p className="text-xs max-w-md mx-auto" style={{ color: palette.textTertiary }}>
           Add extensions to the vault after scanning them. Vaulted extensions can be rescanned later
           to detect supply-chain changes.
         </p>
@@ -148,31 +142,31 @@ export default function VaultList({ onRescan, isScanning }: VaultListProps) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2" style={{ fontFamily: typography.ui }}>
       {entries.map(entry => (
-        <div
-          key={entry.id}
-          className="border border-slate-700 rounded-lg p-4 bg-slate-800/50 hover:bg-slate-800 transition-colors"
-        >
+        <div key={entry.id} className="p-4" style={cardStyle}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-2">
-                <h4 className="font-semibold text-white truncate">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <h4 className="text-sm font-semibold truncate" style={{ color: palette.textPrimary }}>
                   {entry.extension_name || entry.extension_id}
                 </h4>
                 {entry.latest_analysis && (
-                  <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${getRiskColor(entry.latest_analysis.risk_level)}`}>
-                    {entry.latest_analysis.risk_score}/100
+                  <span
+                    className="px-2 py-0.5 rounded text-[11px] font-semibold tabular-nums"
+                    style={chipStyle(riskTone(entry.latest_analysis.risk_level))}
+                  >
+                    {entry.latest_analysis.risk_score}/100 · {entry.latest_analysis.risk_level}
                   </span>
                 )}
                 {hasDelta(entry) && (
-                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1" style={chipStyle('warn')}>
                     <AlertTriangle className="w-3 h-3" />
                     Changed
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-4 text-xs text-slate-400">
+              <div className="flex items-center gap-4 text-xs" style={{ color: palette.textTertiary }}>
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   Added {formatDate(entry.added_at)}
@@ -181,19 +175,21 @@ export default function VaultList({ onRescan, isScanning }: VaultListProps) {
                   <RefreshCw className="w-3 h-3" />
                   Scanned {formatDate(entry.last_scanned_at)}
                 </span>
+                <span className="truncate" style={{ fontFamily: typography.mono }}>{entry.extension_id}</span>
               </div>
               {entry.notes && (
-                <div className="mt-2 flex items-start gap-1.5 text-xs text-slate-400">
-                  <StickyNote className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <div className="mt-2 flex items-start gap-1.5 text-xs" style={{ color: palette.textSecondary }}>
+                  <StickyNote className="w-3 h-3 mt-0.5 shrink-0" />
                   <span>{entry.notes}</span>
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => handleRescan(entry.extension_id)}
                 disabled={isScanning}
-                className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors hover:brightness-125 disabled:opacity-50 flex items-center gap-1.5"
+                style={secondaryButtonStyle}
               >
                 {rescanning === entry.extension_id ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -204,7 +200,8 @@ export default function VaultList({ onRescan, isScanning }: VaultListProps) {
               </button>
               <button
                 onClick={() => removeFromVault(entry.id)}
-                className="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded transition-colors"
+                className="p-1.5 rounded-md transition-colors hover:brightness-125"
+                style={{ color: palette.textTertiary }}
                 title="Remove from vault"
               >
                 <Trash2 className="w-4 h-4" />

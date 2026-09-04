@@ -9,6 +9,10 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { ThreatResult } from '../types';
+import { palette, typography } from '../design-system/tokens';
+import { type Tone, toneColor, toneBorder, cardStyle } from './results/resultTokens';
+import { Pill } from './results';
+import { scoreTone } from './scanner/verdictStyles';
 
 interface SourceCardProps {
   source: string;
@@ -328,6 +332,7 @@ export default function SourceCard({ source, result }: SourceCardProps) {
   const safeResult: any = result ?? { data: {}, isMalicious: false, threatScore: undefined, error: undefined };
 
   const [expanded, setExpanded] = useState(false);
+  const [hover, setHover] = useState(false);
   const info = sourceInfo[source] || { name: source, url: '#', description: '' };
 
   const hasError = !!safeResult.error;
@@ -335,109 +340,99 @@ export default function SourceCard({ source, result }: SourceCardProps) {
   const hasThreat = safeResult.isMalicious || (safeResult.threatScore !== undefined && safeResult.threatScore > 30);
   const keyData = hasError ? {} : extractKeyData(source, safeResult.data);
 
-  const getStatusIcon = () => {
-    if (isApiKeyMissing) return <ShieldOff className="w-5 h-5 text-amber-500" />;
-    if (hasError) return <AlertCircle className="w-5 h-5 text-slate-500" />;
-    if (hasThreat) return <XCircle className="w-5 h-5 text-red-400" />;
-    return <CheckCircle className="w-5 h-5 text-emerald-400" />;
+  // Border/icon tone reflects real state only: unconfigured and errored sources
+  // are neutral (never "clean"); a threat is rose; a checked source is good.
+  const statusTone: Tone = isApiKeyMissing || hasError ? 'neutral' : hasThreat ? 'danger' : 'good';
+
+  const statusIcon = isApiKeyMissing ? (
+    <ShieldOff className="w-4 h-4" style={{ color: palette.textTertiary }} />
+  ) : hasError ? (
+    <AlertCircle className="w-4 h-4" style={{ color: palette.textTertiary }} />
+  ) : hasThreat ? (
+    <XCircle className="w-4 h-4" style={{ color: toneColor.danger }} />
+  ) : (
+    <CheckCircle className="w-4 h-4" style={{ color: toneColor.good }} />
+  );
+
+  const statusPill = isApiKeyMissing ? (
+    <Pill label="Not configured" tone="neutral" />
+  ) : hasError ? (
+    <Pill label="Error" tone="danger" />
+  ) : safeResult.threatScore !== undefined ? (
+    <Pill label={`Score ${safeResult.threatScore}`} tone={scoreTone(safeResult.threatScore)} />
+  ) : (
+    <Pill label="OK" tone="good" />
+  );
+
+  const valueColor = (value: string | number | boolean): string => {
+    // Flags that are present, or high numeric scores, are the only colored values.
+    if (value === true) return toneColor.danger;
+    if (typeof value === 'number' && value > 50) return toneColor.danger;
+    if (value === false) return palette.textSecondary;
+    return palette.textPrimary;
   };
 
-  const getStatusBorder = () => {
-    if (isApiKeyMissing) return 'border-amber-500/30';
-    if (hasError) return 'border-slate-700';
-    if (hasThreat) return 'border-red-500/30';
-    return 'border-emerald-500/30';
-  };
-
-  const getStatusBadge = () => {
-    if (isApiKeyMissing) {
-      return (
-        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">
-          Not Checked (API Key Missing)
-        </div>
-      );
-    }
-    if (hasError) {
-      return (
-        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-700 text-slate-400">
-          Error
-        </div>
-      );
-    }
-    if (safeResult.threatScore !== undefined) {
-      return (
-        <div
-          className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-            safeResult.threatScore >= 70
-              ? 'bg-red-500/20 text-red-400'
-              : safeResult.threatScore >= 40
-              ? 'bg-orange-500/20 text-orange-400'
-              : safeResult.threatScore >= 20
-              ? 'bg-yellow-500/20 text-yellow-400'
-              : 'bg-emerald-500/20 text-emerald-400'
-          }`}
-        >
-          Score: {safeResult.threatScore}
-        </div>
-      );
-    }
-    return (
-      <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">
-        Checked
-      </div>
-    );
-  };
+  const entries = Object.entries(keyData);
 
   return (
     <div
-      className={`bg-slate-800/50 rounded-xl border ${getStatusBorder()} overflow-hidden transition-all hover:bg-slate-800/70`}
+      className="overflow-hidden transition-colors"
+      style={{
+        ...cardStyle,
+        background: hover ? palette.elevated : palette.base,
+        border: `1px solid ${statusTone === 'neutral' ? palette.borderDefault : toneBorder(statusTone, 0.24)}`,
+        fontFamily: typography.ui,
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
     >
       <div className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            {getStatusIcon()}
-            <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {statusIcon}
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-white">{info.name}</h3>
-                <a
-                  href={info.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-slate-500 hover:text-cyan-400 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                <h3 className="text-sm font-semibold truncate" style={{ color: palette.textPrimary }}>{info.name}</h3>
+                {info.url !== '#' && (
+                  <a
+                    href={info.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="transition-colors"
+                    style={{ color: palette.textTertiary }}
+                    title={info.url}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
               </div>
-              <p className="text-xs text-slate-500">{info.description}</p>
+              <p className="text-xs" style={{ color: palette.textTertiary }}>{info.description}</p>
             </div>
           </div>
 
-          {getStatusBadge()}
+          <div className="shrink-0">{statusPill}</div>
         </div>
 
         {hasError ? (
-          <div className="mt-3 p-2 bg-slate-900/50 rounded-lg">
-            <p className="text-sm text-slate-500">{safeResult.error}</p>
+          <div
+            className="mt-3 p-2 rounded-md"
+            style={{ background: palette.void, border: `1px solid ${palette.borderSubtle}` }}
+          >
+            <p className="text-xs" style={{ color: palette.textSecondary, fontFamily: typography.mono }}>{safeResult.error}</p>
           </div>
         ) : (
-          Object.keys(keyData).length > 0 && (
+          entries.length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {Object.entries(keyData)
+              {entries
                 .slice(0, expanded ? undefined : 4)
                 .map(([key, value]) => (
-                  <div key={key} className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg">
-                    <span className="text-xs text-slate-500">{key}</span>
-                    <span
-                      className={`text-xs font-medium ${
-                        value === true
-                          ? 'text-red-400'
-                          : value === false
-                          ? 'text-emerald-400'
-                          : typeof value === 'number' && value > 50
-                          ? 'text-red-400'
-                          : 'text-white'
-                      }`}
-                    >
+                  <div
+                    key={key}
+                    className="flex justify-between items-center gap-2 p-2 rounded-md"
+                    style={{ background: palette.void, border: `1px solid ${palette.borderSubtle}` }}
+                  >
+                    <span className="text-xs" style={{ color: palette.textTertiary }}>{key}</span>
+                    <span className="text-xs font-medium text-right truncate" style={{ color: valueColor(value) }}>
                       {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
                     </span>
                   </div>
@@ -446,20 +441,21 @@ export default function SourceCard({ source, result }: SourceCardProps) {
           )
         )}
 
-        {Object.keys(keyData).length > 4 && (
+        {entries.length > 4 && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="mt-3 flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+            className="mt-3 flex items-center gap-1 text-xs transition-colors"
+            style={{ color: palette.accent }}
           >
             {expanded ? (
               <>
-                <ChevronUp className="w-4 h-4" />
+                <ChevronUp className="w-3.5 h-3.5" />
                 Show less
               </>
             ) : (
               <>
-                <ChevronDown className="w-4 h-4" />
-                Show {Object.keys(keyData).length - 4} more
+                <ChevronDown className="w-3.5 h-3.5" />
+                Show {entries.length - 4} more
               </>
             )}
           </button>

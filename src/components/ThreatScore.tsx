@@ -1,25 +1,22 @@
+import { palette, typography, accentBg } from '../design-system/tokens';
+import { scoreColor } from './scanner/verdictStyles';
+
 interface ThreatScoreProps {
   score: number;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
 }
 
+function scoreLabel(score: number): string {
+  if (score >= 70) return 'High risk';
+  if (score >= 40) return 'Suspicious';
+  if (score >= 20) return 'Low risk';
+  return 'Clean';
+}
+
 export default function ThreatScore({ score, size = 'md', showLabel = true }: ThreatScoreProps) {
-  const getColorClass = () => {
-    if (score >= 70) return { bg: 'bg-red-500', text: 'text-red-400', ring: 'ring-red-500/30' };
-    if (score >= 40) return { bg: 'bg-orange-500', text: 'text-orange-400', ring: 'ring-orange-500/30' };
-    if (score >= 20) return { bg: 'bg-yellow-500', text: 'text-yellow-400', ring: 'ring-yellow-500/30' };
-    return { bg: 'bg-emerald-500', text: 'text-emerald-400', ring: 'ring-emerald-500/30' };
-  };
-
-  const getLabel = () => {
-    if (score >= 70) return 'High Risk';
-    if (score >= 40) return 'Suspicious';
-    if (score >= 20) return 'Low Risk';
-    return 'Clean';
-  };
-
-  const colors = getColorClass();
+  const color = scoreColor(score);
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
 
   const sizeClasses = {
     sm: { container: 'w-16 h-16', text: 'text-lg', label: 'text-xs' },
@@ -30,34 +27,41 @@ export default function ThreatScore({ score, size = 'md', showLabel = true }: Th
   const classes = sizeClasses[size];
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2" style={{ fontFamily: typography.ui }}>
       <div
-        className={`${classes.container} rounded-full flex items-center justify-center ring-4 ${colors.ring} bg-slate-800`}
+        className={`${classes.container} rounded-full flex items-center justify-center`}
         style={{
-          background: `conic-gradient(${colors.bg.replace('bg-', 'rgb(var(--')} ${score}%, transparent 0)`,
+          // Filled arc = score; the remainder is the neutral track.
+          background: `conic-gradient(${color} ${clamped}%, ${palette.surface} 0)`,
+          boxShadow: `0 0 0 4px ${accentBg(color, 0.18)}`,
         }}
       >
-        <div className="w-[85%] h-[85%] rounded-full bg-slate-900 flex items-center justify-center">
-          <span className={`${classes.text} font-bold ${colors.text}`}>{score}</span>
+        <div
+          className="w-[85%] h-[85%] rounded-full flex items-center justify-center"
+          style={{ background: palette.base }}
+        >
+          <span className={`${classes.text} font-bold tabular-nums`} style={{ color }}>{score}</span>
         </div>
       </div>
       {showLabel && (
-        <span className={`${classes.label} font-medium ${colors.text}`}>{getLabel()}</span>
+        <span className={`${classes.label} font-medium`} style={{ color }}>{scoreLabel(score)}</span>
       )}
     </div>
   );
 }
 
 export function ThreatBadge({ score }: { score: number }) {
-  const getStyle = () => {
-    if (score >= 70) return 'bg-red-500/20 text-red-400 border-red-500/30';
-    if (score >= 40) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-    if (score >= 20) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-    return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-  };
-
+  const color = scoreColor(score);
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStyle()}`}>
+    <span
+      className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold tabular-nums"
+      style={{
+        color,
+        background: accentBg(color, 0.12),
+        border: `1px solid ${accentBg(color, 0.28)}`,
+        fontFamily: typography.ui,
+      }}
+    >
       {score}
     </span>
   );

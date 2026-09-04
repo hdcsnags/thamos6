@@ -2,36 +2,82 @@ import { useState, useMemo, useEffect } from 'react';
 import { Search, AlertTriangle, Shield, Newspaper } from 'lucide-react';
 import { detectIOCType } from '../lib/iocDetection';
 import { supabase } from '../lib/supabase';
-import { palette, typography } from '../design-system/tokens';
+import { palette, typography, accentBg, accentBorder } from '../design-system/tokens';
 
 interface ScannerProps {
   onScan: (type: string, value: string) => void;
 }
 
-type Severity = 'high' | 'medium' | 'clean' | 'info' | 'live' | 'feed';
+type Severity = 'high' | 'medium' | 'clean' | 'info';
 
-const pillClass: Record<Severity, string> = {
-  high: 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
-  medium: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
-  clean: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
-  info: 'bg-slate-500/15 text-slate-300 border border-slate-500/30',
-  live: 'bg-violet-500/15 text-violet-300 border border-violet-500/30',
-  feed: 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30',
+const pillColor: Record<Severity, string | null> = {
+  high: palette.rose,
+  medium: palette.amber,
+  clean: palette.green,
+  info: null,
 };
 
 function Pill({ label, tone }: { label: string; tone: Severity }) {
+  const color = pillColor[tone];
   return (
-    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${pillClass[tone]}`}>
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold capitalize"
+      style={{
+        color: color ?? palette.textSecondary,
+        background: color ? accentBg(color, 0.12) : palette.float,
+        border: `1px solid ${color ? accentBorder(color, 0.28) : palette.borderDefault}`,
+      }}
+    >
       {label}
     </span>
+  );
+}
+
+type FeedPanel = 'recent' | 'watchlist' | 'stream';
+
+const panelLabels: Record<FeedPanel, string> = {
+  recent: 'Recent',
+  watchlist: 'Watchlist',
+  stream: 'Stream',
+};
+
+const feedCardStyle = {
+  background: palette.base,
+  border: `1px solid ${palette.borderDefault}`,
+  borderRadius: '9px',
+} as const;
+
+function FeedSkeletons() {
+  return (
+    <>
+      {[...Array(3)].map((_, i) => (
+        <div key={i} className="p-4 animate-pulse" style={feedCardStyle} aria-hidden>
+          <div className="h-3 rounded mb-3 w-1/3" style={{ background: palette.float }} />
+          <div className="h-3 rounded mb-2" style={{ background: palette.elevated }} />
+          <div className="h-2.5 rounded w-1/4" style={{ background: palette.elevated }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function FeedEmpty({ icon, title, hint }: { icon: React.ReactNode; title: string; hint: string }) {
+  return (
+    <div className="col-span-full text-center py-12">
+      <div className="mx-auto mb-3 flex items-center justify-center" style={{ color: palette.textDisabled }}>
+        {icon}
+      </div>
+      <p className="text-sm" style={{ color: palette.textSecondary }}>{title}</p>
+      <p className="text-xs mt-1" style={{ color: palette.textTertiary }}>{hint}</p>
+    </div>
   );
 }
 
 export default function Scanner({ onScan }: ScannerProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
-  const [activePanel, setActivePanel] = useState<'recent' | 'watchlist' | 'stream'>('stream');
-  
+  const [activePanel, setActivePanel] = useState<FeedPanel>('stream');
+
   // Real data state
   const [recentLookups, setRecentLookups] = useState<any[]>([]);
   const [watchlistEntries, setWatchlistEntries] = useState<any[]>([]);
@@ -42,7 +88,7 @@ export default function Scanner({ onScan }: ScannerProps) {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      
+
       try {
         // Fetch recent lookups (combine IP and URL)
         const [ipRes, urlRes, alertsRes, feedRes] = await Promise.all([
@@ -109,28 +155,29 @@ export default function Scanner({ onScan }: ScannerProps) {
     onScan(detection.type, detection.normalizedValue);
   };
 
-  // Detection status label and styling
-  const detectionStatus = useMemo(() => {
+  // Detection status label; `detected` drives the accent state of the chip.
+  const detectionStatus = useMemo((): { text: string; detected: boolean } => {
     if (!input.trim()) {
-      return { text: 'READY', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
-    }
-    
-    if (detection.type === 'unknown') {
-      return { text: 'ANALYZING...', color: 'bg-slate-700/50 border-slate-600 text-slate-300' };
+      return { text: 'Ready', detected: false };
     }
 
-    const typeMap: Record<string, { text: string; color: string }> = {
-      ip: { text: 'IP DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      url: { text: 'URL DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      domain: { text: 'DOMAIN DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      hash: { text: 'HASH DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      extension: { text: 'EXTENSION DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      cve: { text: 'CVE DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      wallet: { text: 'WALLET DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
-      email: { text: 'EMAIL DETECTED', color: 'bg-sky-900/30 border-sky-700/40 text-sky-200' },
+    if (detection.type === 'unknown') {
+      return { text: 'Analyzing…', detected: false };
+    }
+
+    const typeLabels: Record<string, string> = {
+      ip: 'IP detected',
+      url: 'URL detected',
+      domain: 'Domain detected',
+      hash: 'Hash detected',
+      extension: 'Extension detected',
+      cve: 'CVE detected',
+      wallet: 'Wallet detected',
+      email: 'Email detected',
     };
 
-    return typeMap[detection.type] || { text: 'CHECK INPUT', color: 'bg-slate-900/50 border-slate-800 text-slate-400' };
+    const label = typeLabels[detection.type];
+    return label ? { text: label, detected: true } : { text: 'Check input', detected: false };
   }, [input, detection.type]);
 
   // Format relative time
@@ -149,8 +196,8 @@ export default function Scanner({ onScan }: ScannerProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto" style={{ backgroundColor: palette.void, color: palette.textPrimary, fontFamily: typography.ui }}>
-      {/* Local styles for cursor animation */}
+    <div className="flex-1 overflow-y-auto @container" style={{ backgroundColor: palette.void, color: palette.textPrimary, fontFamily: typography.ui }}>
+      {/* Local styles for cursor animation and feed card hover */}
       <style>{`
         @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .cursor-blink {
@@ -163,6 +210,10 @@ export default function Scanner({ onScan }: ScannerProps) {
           margin-left: 4px;
           vertical-align: middle;
         }
+        .scanner-feed-card { transition: border-color 150ms, background-color 150ms; }
+        .scanner-feed-card:hover { border-color: ${palette.borderActive} !important; background: ${palette.elevated} !important; }
+        .scanner-seg-btn { transition: color 150ms, background-color 150ms; }
+        .scanner-seg-btn:hover { color: ${palette.textPrimary} !important; }
       `}</style>
 
       {/* Top status bar */}
@@ -171,7 +222,7 @@ export default function Scanner({ onScan }: ScannerProps) {
           <h1 className="text-sm font-semibold" style={{ color: palette.textPrimary }}>Threat intelligence scanner</h1>
           <span className="text-[11px]" style={{ color: palette.textTertiary }}>Primary: IP reputation</span>
         </div>
-        
+
         <div className="flex items-center gap-2 text-[11px]" style={{ color: palette.textTertiary }}>
           <span className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: palette.green }}></span>
@@ -183,7 +234,7 @@ export default function Scanner({ onScan }: ScannerProps) {
       {/* Main content */}
       <div className="px-6 py-8 relative z-10">
         <div className="max-w-7xl mx-auto space-y-8">
-          
+
           {/* Hero Header */}
           <div className="max-w-5xl mx-auto">
             <h1 className="text-2xl font-semibold mb-1" style={{ color: palette.textPrimary }}>Investigate an indicator</h1>
@@ -191,11 +242,11 @@ export default function Scanner({ onScan }: ScannerProps) {
               Start with an IP address, or enter a URL, domain, hash, CVE, wallet, email address, or extension ID.
             </p>
           </div>
-          
+
           {/* Scanner Terminal */}
           <div className="max-w-5xl mx-auto">
             <form onSubmit={handleSubmit}>
-              <div 
+              <div
                 className="rounded-lg overflow-hidden transition-colors duration-200"
                 style={{
                   background: palette.elevated,
@@ -207,7 +258,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                   <span className="text-xs font-medium" style={{ color: palette.textSecondary }}>Indicator lookup</span>
                   <span className="text-[10px]" style={{ color: palette.textTertiary }}>Enter to scan</span>
                 </div>
-                
+
                 {/* Input area */}
                 <div className="p-6 md:p-8">
                   <div className="flex items-center gap-4">
@@ -228,7 +279,7 @@ export default function Scanner({ onScan }: ScannerProps) {
                       />
                       {!input.trim() && <span className="cursor-blink" />}
                     </div>
-                    <button 
+                    <button
                       type="submit"
                       className="h-11 px-4 rounded-md transition-colors flex items-center gap-2"
                       style={{ backgroundColor: palette.accent, color: palette.void }}
@@ -237,17 +288,28 @@ export default function Scanner({ onScan }: ScannerProps) {
                       <span className="text-xs font-semibold">Scan</span>
                     </button>
                   </div>
-                  
+
                   {/* Status footer */}
-                  <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between flex-wrap gap-4">
-                    <div className="flex items-center gap-6 text-[11px] mono text-slate-500 uppercase tracking-wider">
-                      <span>SOURCES: <span className="text-slate-300">13+</span></span>
-                      <span>MODE: <span className="text-emerald-300">PARALLEL</span></span>
-                      <div className={`px-2 py-1 rounded-md border ${detectionStatus.color}`}>
+                  <div className="mt-6 pt-4 flex items-center justify-between flex-wrap gap-4" style={{ borderTop: `1px solid ${palette.borderSubtle}` }}>
+                    <div className="flex items-center gap-5 text-[11px]" style={{ color: palette.textTertiary }}>
+                      <span>Sources: <span style={{ color: palette.textSecondary }}>13+</span></span>
+                      <span>Mode: <span style={{ color: palette.textSecondary }}>parallel</span></span>
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium transition-colors"
+                        style={{
+                          color: detectionStatus.detected ? palette.accent : palette.textSecondary,
+                          background: detectionStatus.detected ? accentBg(palette.accent, 0.12) : palette.float,
+                          border: `1px solid ${detectionStatus.detected ? accentBorder(palette.accent, 0.3) : palette.borderDefault}`,
+                        }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: detectionStatus.detected ? palette.accent : palette.borderActive }}
+                        />
                         {detectionStatus.text}
-                      </div>
+                      </span>
                     </div>
-                    
+
                     <span className="text-[10px]" style={{ color: palette.textTertiary }}>Sources run in parallel; availability depends on your tier and configured keys.</span>
                   </div>
                 </div>
@@ -255,9 +317,16 @@ export default function Scanner({ onScan }: ScannerProps) {
 
               {/* Error message */}
               {error && (
-                <div className="mt-5 flex items-start gap-2 text-red-200 text-sm bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                <div
+                  className="mt-5 flex items-start gap-2 text-sm rounded-lg p-3"
+                  style={{
+                    color: palette.rose,
+                    background: accentBg(palette.rose, 0.1),
+                    border: `1px solid ${accentBorder(palette.rose, 0.25)}`,
+                  }}
+                >
                   <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                  <span style={{ color: palette.textPrimary }}>{error}</span>
                 </div>
               )}
             </form>
@@ -265,127 +334,97 @@ export default function Scanner({ onScan }: ScannerProps) {
 
           {/* Intelligence Feed Section */}
           <section className="max-w-7xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
               <div>
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">Intelligence Feed</h2>
-                <p className="text-xs text-slate-500 mt-1">Real-time activity awareness</p>
+                <h2 className="text-sm font-semibold" style={{ color: palette.textPrimary }}>Intelligence feed</h2>
+                <p className="text-xs mt-0.5" style={{ color: palette.textTertiary }}>Recent lookups, watchlist alerts and security news</p>
               </div>
-              
-              {/* Toggle buttons */}
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => setActivePanel('recent')}
-                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
-                    activePanel === 'recent'
-                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
-                  }`}
-                >
-                  Recent
-                </button>
-                <button 
-                  onClick={() => setActivePanel('watchlist')}
-                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
-                    activePanel === 'watchlist'
-                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
-                  }`}
-                >
-                  Watchlist
-                </button>
-                <button 
-                  onClick={() => setActivePanel('stream')}
-                  className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
-                    activePanel === 'stream'
-                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                      : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/50 hover:text-slate-300'
-                  }`}
-                >
-                  Stream
-                </button>
-              </div>
-            </div>
-            
-            {/* Recent Investigations Panel */}
-            {activePanel === 'recent' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {loading ? (
-                  [...Array(3)].map((_, i) => (
-                    <div 
-                      key={i}
-                      className="rounded-xl p-5 animate-pulse"
+
+              {/* Segmented control */}
+              <div
+                role="tablist"
+                aria-label="Intelligence feed panel"
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-md"
+                style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+              >
+                {(Object.keys(panelLabels) as FeedPanel[]).map((panel) => {
+                  const active = activePanel === panel;
+                  return (
+                    <button
+                      key={panel}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setActivePanel(panel)}
+                      className="scanner-seg-btn px-3 py-1 rounded text-xs font-medium"
                       style={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid rgba(148, 163, 184, 0.1)'
+                        background: active ? palette.surface : 'transparent',
+                        color: active ? palette.textPrimary : palette.textSecondary,
+                        boxShadow: active ? '0 1px 2px rgba(0,0,0,0.35)' : 'none',
                       }}
                     >
-                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
-                      <div className="h-3 bg-slate-800 rounded"></div>
-                    </div>
-                  ))
+                      {panelLabels[panel]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Recent Investigations Panel */}
+            {activePanel === 'recent' && (
+              <div className="grid grid-cols-1 @xl:grid-cols-2 @3xl:grid-cols-3 gap-4">
+                {loading ? (
+                  <FeedSkeletons />
                 ) : recentLookups.length > 0 ? (
                   recentLookups.map((lookup) => {
                     const isIP = lookup.type === 'ip';
                     const isMalicious = isIP ? lookup.threat_score > 50 : lookup.is_malicious;
-                    const severity = isMalicious ? 'high' : 'clean';
-                    const dotColor = isMalicious ? 'bg-rose-500' : 'bg-emerald-500';
+                    const severity: Severity = isMalicious ? 'high' : 'clean';
+                    const dotColor = isMalicious ? palette.rose : palette.green;
                     const displayValue = isIP ? lookup.ip_address : lookup.url;
-                    
+
                     return (
-                      <div 
+                      <button
+                        type="button"
                         key={lookup.id}
-                        className="rounded-xl p-5 transition-all hover:bg-white/5 cursor-pointer"
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid rgba(148, 163, 184, 0.1)'
-                        }}
+                        className="scanner-feed-card p-4 text-left cursor-pointer w-full"
+                        style={feedCardStyle}
                         onClick={() => onScan(lookup.type, displayValue)}
+                        title="Scan again"
                       >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                              {isIP ? 'IP Lookup' : 'URL Scan'}
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                            <h3 className="text-xs font-medium truncate" style={{ color: palette.textSecondary }}>
+                              {isIP ? 'IP lookup' : 'URL scan'}
                             </h3>
                           </div>
                           <Pill label={isMalicious ? 'High' : 'Clean'} tone={severity} />
                         </div>
-                        <div className="mono text-xs text-slate-400 break-all mb-3 truncate">
+                        <div className="text-xs break-all mb-2 truncate" style={{ fontFamily: typography.mono, color: palette.textPrimary }}>
                           {displayValue}
                         </div>
-                        <div className="text-[10px] text-slate-600 mono">
+                        <div className="text-[11px]" style={{ color: palette.textTertiary }}>
                           {getRelativeTime(lookup.created_at)}
                         </div>
-                      </div>
+                      </button>
                     );
                   })
                 ) : (
-                  <div className="col-span-3 text-center py-12">
-                    <Search className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400">No recent lookups yet</p>
-                    <p className="text-slate-600 text-sm mt-1">Start analyzing IOCs to see them here</p>
-                  </div>
+                  <FeedEmpty
+                    icon={<Search className="w-8 h-8" />}
+                    title="No recent lookups yet"
+                    hint="Start analyzing indicators to see them here"
+                  />
                 )}
               </div>
             )}
-            
+
             {/* Watchlist Hits Panel */}
             {activePanel === 'watchlist' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 @xl:grid-cols-2 @3xl:grid-cols-3 gap-4">
                 {loading ? (
-                  [...Array(3)].map((_, i) => (
-                    <div 
-                      key={i}
-                      className="rounded-xl p-5 animate-pulse"
-                      style={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid rgba(148, 163, 184, 0.1)'
-                      }}
-                    >
-                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
-                      <div className="h-3 bg-slate-800 rounded"></div>
-                    </div>
-                  ))
+                  <FeedSkeletons />
                 ) : watchlistEntries.length > 0 ? (
                   watchlistEntries.map((alert: any) => {
                     const severityMap: Record<string, Severity> = {
@@ -395,26 +434,18 @@ export default function Scanner({ onScan }: ScannerProps) {
                       low: 'info',
                     };
                     const severity = severityMap[alert.severity || 'medium'] || 'medium';
-                    const dotColor = alert.severity === 'critical' || alert.severity === 'high' 
-                      ? 'bg-rose-500 animate-pulse' 
-                      : 'bg-amber-500';
-                    const borderColor = alert.severity === 'critical' || alert.severity === 'high'
-                      ? 'rgba(251, 113, 133, 0.2)'
-                      : 'rgba(251, 191, 36, 0.2)';
-                    
+                    const dotColor = pillColor[severity] ?? palette.borderActive;
+
                     return (
-                      <div 
+                      <div
                         key={alert.id}
-                        className="rounded-xl p-5 transition-all hover:bg-white/5"
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: `1px solid ${borderColor}`
-                        }}
+                        className="scanner-feed-card p-4"
+                        style={feedCardStyle}
                       >
-                        <div className="flex items-center justify-between gap-2 mb-4">
+                        <div className="flex items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`}></div>
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                            <h3 className="text-xs font-medium truncate" style={{ color: palette.textPrimary }}>
                               {alert.title}
                             </h3>
                           </div>
@@ -423,47 +454,36 @@ export default function Scanner({ onScan }: ScannerProps) {
                             tone={severity}
                           />
                         </div>
-                        <div className="text-xs text-slate-400 mb-3 line-clamp-2">
+                        <div className="text-xs mb-2 line-clamp-2" style={{ color: palette.textSecondary }}>
                           {alert.description || 'Watchlist match detected'}
                         </div>
                         {alert.watchlist_entry && (
-                          <div className="text-[10px] text-amber-400 mono mb-2 truncate">
-                            Matched "{alert.watchlist_entry.value}" in {alert.context}
+                          <div className="text-[11px] mb-2 truncate" style={{ color: palette.textTertiary }}>
+                            Matched <span style={{ fontFamily: typography.mono, color: palette.textSecondary }}>{alert.watchlist_entry.value}</span>
+                            {alert.context ? <> in {alert.context}</> : null}
                           </div>
                         )}
-                        <div className="text-[10px] text-slate-600 mono">
+                        <div className="text-[11px]" style={{ color: palette.textTertiary }}>
                           {getRelativeTime(alert.created_at)}
                         </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="col-span-3 text-center py-12">
-                    <Shield className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400">No watchlist alerts yet</p>
-                    <p className="text-slate-600 text-sm mt-1">Alerts will appear when watchlist IOCs match news items</p>
-                  </div>
+                  <FeedEmpty
+                    icon={<Shield className="w-8 h-8" />}
+                    title="No watchlist alerts yet"
+                    hint="Alerts will appear when watchlist IOCs match news items"
+                  />
                 )}
               </div>
             )}
-            
+
             {/* Intel Stream Panel */}
             {activePanel === 'stream' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 @xl:grid-cols-2 @3xl:grid-cols-3 gap-4">
                 {loading ? (
-                  [...Array(3)].map((_, i) => (
-                    <div 
-                      key={i}
-                      className="rounded-xl p-5 animate-pulse"
-                      style={{
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid rgba(148, 163, 184, 0.1)'
-                      }}
-                    >
-                      <div className="h-4 bg-slate-700 rounded mb-3"></div>
-                      <div className="h-3 bg-slate-800 rounded"></div>
-                    </div>
-                  ))
+                  <FeedSkeletons />
                 ) : feedItems.length > 0 ? (
                   feedItems.map((item) => {
                     return (
@@ -472,36 +492,30 @@ export default function Scanner({ onScan }: ScannerProps) {
                         href={item.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="rounded-xl p-5 transition-all hover:bg-white/5 block"
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid rgba(148, 163, 184, 0.1)'
-                        }}
+                        className="scanner-feed-card p-4 block"
+                        style={feedCardStyle}
                       >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
-                            <h3 className="text-xs font-bold text-white uppercase tracking-wider line-clamp-1">
-                              {item.source?.name || 'Security News'}
-                            </h3>
-                          </div>
-                          <Pill label="Feed" tone="feed" />
+                        <div className="flex items-center gap-2 mb-3 min-w-0">
+                          <Newspaper className="w-3.5 h-3.5 shrink-0" style={{ color: palette.textTertiary }} />
+                          <h3 className="text-xs font-medium line-clamp-1" style={{ color: palette.textSecondary }}>
+                            {item.source?.name || 'Security news'}
+                          </h3>
                         </div>
-                        <div className="text-xs text-slate-400 mb-3 line-clamp-2">
+                        <div className="text-xs mb-2 line-clamp-2" style={{ color: palette.textPrimary }}>
                           {item.title}
                         </div>
-                        <div className="text-[10px] text-slate-600 mono">
+                        <div className="text-[11px]" style={{ color: palette.textTertiary }}>
                           {getRelativeTime(item.pub_date)}
                         </div>
                       </a>
                     );
                   })
                 ) : (
-                  <div className="col-span-3 text-center py-12">
-                    <Newspaper className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                    <p className="text-slate-400">No feed items yet</p>
-                    <p className="text-slate-600 text-sm mt-1">Check back later for security news</p>
-                  </div>
+                  <FeedEmpty
+                    icon={<Newspaper className="w-8 h-8" />}
+                    title="No feed items yet"
+                    hint="Check back later for security news"
+                  />
                 )}
               </div>
             )}

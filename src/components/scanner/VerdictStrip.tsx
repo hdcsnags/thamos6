@@ -1,4 +1,6 @@
 import type { CalibratedScoring } from '../../types';
+import { palette, typography } from '../../design-system/tokens';
+import { cardStyle } from '../results/resultTokens';
 import { SCORING_VERDICT_LABEL, CATEGORY_SEVERITY_STYLE, scoreColor } from './verdictStyles';
 
 interface VerdictStripProps {
@@ -21,20 +23,23 @@ export default function VerdictStrip({ scoring }: VerdictStripProps) {
 
   return (
     <div
-      className="rounded-xl p-4 flex items-center gap-4 flex-wrap"
-      style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}
+      className="p-4 flex items-center gap-4 flex-wrap"
+      style={{ ...cardStyle, fontFamily: typography.ui }}
     >
       {/* Hero: calibrated score + verdict */}
       <div className="flex items-center gap-3">
-        <span className={`text-4xl font-black tabular-nums leading-none ${scoreColor(calibrated)}`}>
+        <span
+          className="text-3xl font-bold tabular-nums leading-none"
+          style={{ color: scoreColor(calibrated) }}
+        >
           {calibrated}
         </span>
         <div className="flex flex-col">
-          <span className={`text-sm font-bold tracking-wider ${v.cls}`}>{v.label}</span>
-          <span className="text-[10px] uppercase tracking-wider text-slate-500">
+          <span className="text-sm font-semibold" style={{ color: v.color }}>{v.label}</span>
+          <span className="text-[11px]" style={{ color: palette.textTertiary }}>
             Calibrated
             {legacy != null && (
-              <span className={diverges ? 'text-amber-400/80 ml-1.5' : 'text-slate-600 ml-1.5'}>
+              <span className="ml-1.5" style={{ color: diverges ? palette.amber : palette.textDisabled }}>
                 · legacy {legacy} {delta}
               </span>
             )}
@@ -43,29 +48,33 @@ export default function VerdictStrip({ scoring }: VerdictStripProps) {
       </div>
 
       {/* Divider */}
-      <div className="w-px self-stretch bg-white/5 hidden sm:block" />
+      <div className="w-px self-stretch hidden sm:block" style={{ background: palette.borderSubtle }} />
 
       {/* What it is — abuse-category chips */}
       <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
         {categories && categories.length > 0 ? (
-          categories.map((c) => (
-            <span
-              key={c.key}
-              title={`${c.evidence}${c.sources.length ? ` — ${c.sources.join(', ')}` : ''}`}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${CATEGORY_SEVERITY_STYLE[c.severity]}`}
-            >
-              {c.label}
-              <span className="text-[10px] opacity-60">{c.sources.length}</span>
-            </span>
-          ))
+          categories.map((c) => {
+            const s = CATEGORY_SEVERITY_STYLE[c.severity];
+            return (
+              <span
+                key={c.key}
+                title={`${c.evidence}${c.sources.length ? ` — ${c.sources.join(', ')}` : ''}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium"
+                style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}
+              >
+                {c.label}
+                <span className="text-[10px]" style={{ color: palette.textTertiary }}>{c.sources.length}</span>
+              </span>
+            );
+          })
         ) : (
-          <span className="text-xs text-slate-600 self-center">No abuse categories flagged</span>
+          <span className="text-xs self-center" style={{ color: palette.textTertiary }}>No abuse categories flagged</span>
         )}
       </div>
 
       {/* Hint to the Verdict tab */}
-      <span className="text-[10px] uppercase tracking-wider text-slate-600 self-center hidden md:block">
-        details in Verdict tab →
+      <span className="text-[11px] self-center hidden md:block" style={{ color: palette.textTertiary }}>
+        Details in Verdict tab →
       </span>
     </div>
   );

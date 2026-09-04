@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check, Activity, Database, FileText, Zap, Brain } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { Shield, AlertTriangle, Search, Clock, FileCode, ChevronDown, ChevronUp, Loader2, ExternalLink, FolderOpen, Archive, Plus, Check, Activity, Database, Zap, Brain } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../contexts/themecontext';
+import { palette, typography } from '../design-system/tokens';
+import { Pill, SectionHeader, Callout, StatCell, cardStyle, type Tone } from '../components/results';
+import {
+  riskTone, toneColor, toneBg, toneBorder, chipStyle,
+  primaryButtonStyle, secondaryButtonStyle, disabledButtonStyle,
+  fieldLabelStyle, sectionTitleStyle, codeBlockStyle,
+} from '../components/extension/extensionTones';
 import FileExplorer from '../components/extension/FileExplorer';
 import FileViewer from '../components/extension/FileViewer';
 import VaultList from '../components/extension/VaultList';
@@ -97,6 +105,92 @@ interface ExtensionScannerProps {
   initialUrl?: string;
 }
 
+// ---- Semantic tone mappers (real state only) ----
+
+const verdictTone = (v: string): Tone => {
+  switch (v) {
+    case 'MALICIOUS': return 'danger';
+    case 'OVERPRIVILEGED': return 'warn';
+    case 'SUSPICIOUS': return 'warn';
+    case 'LIKELY_SAFE': return 'good';
+    default: return 'neutral';
+  }
+};
+
+const adminActionTone = (a: string): Tone => {
+  switch (a) {
+    case 'ALLOW': return 'good';
+    case 'ALLOW_MONITOR': return 'neutral';
+    case 'REVIEW': return 'warn';
+    case 'BLOCK': return 'danger';
+    case 'REMOVE': return 'danger';
+    default: return 'neutral';
+  }
+};
+
+const assessmentTone = (a: FindingAssessment['assessment']): Tone => {
+  switch (a) {
+    case 'CONFIRMED': return 'danger';
+    case 'REFUTED': return 'good';
+    case 'CAPABILITY_ONLY': return 'warn';
+    default: return 'neutral';
+  }
+};
+
+const concernTypeTone = (t: TopConcern['type']): Tone => {
+  switch (t) {
+    case 'CONFIRMED_BEHAVIOR': return 'danger';
+    case 'CAPABILITY_RISK': return 'warn';
+    case 'CONTEXTUAL_FALSE_POSITIVE': return 'good';
+    case 'EXTERNAL_REPUTATION_SIGNAL': return 'accent';
+    default: return 'warn';
+  }
+};
+
+const purposeFitTone = (r: string): Tone => {
+  switch (r) {
+    case 'STRONG': return 'good';
+    case 'PARTIAL': return 'warn';
+    case 'WEAK': return 'danger';
+    default: return 'neutral';
+  }
+};
+
+const suitabilityTone = (r: string | undefined): Tone => {
+  switch (r) {
+    case 'APPROVED': return 'good';
+    case 'REVIEW_REQUIRED': return 'warn';
+    case 'NOT_APPROVED': return 'danger';
+    default: return 'neutral';
+  }
+};
+
+const aiRiskTone = (r: string | undefined): Tone => {
+  switch (r) {
+    case 'MEDIUM': return 'warn';
+    case 'HIGH':
+    case 'CRITICAL': return 'danger';
+    default: return 'neutral';
+  }
+};
+
+const crxRiskTone = (level: string | undefined): Tone => {
+  switch ((level || '').toLowerCase()) {
+    case 'critical':
+    case 'high': return 'danger';
+    case 'medium': return 'warn';
+    default: return 'neutral';
+  }
+};
+
+const toneText = (tone: Tone) => (tone === 'neutral' ? palette.textPrimary : toneColor[tone]);
+
+const emptyStateStyle: CSSProperties = {
+  ...cardStyle,
+  color: palette.textTertiary,
+  fontFamily: typography.ui,
+};
+
 export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) {
   const { theme } = useTheme();
   const [extensionUrl, setExtensionUrl] = useState('');
@@ -117,6 +211,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   const [verdict, setVerdict] = useState<VerdictResult | null>(null);
   const [verdictError, setVerdictError] = useState('');
   const [showCrxJustifications, setShowCrxJustifications] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   useEffect(() => {
     loadRecentAnalyses();
@@ -346,27 +441,6 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
     }
   };
 
-  const getVerdictColor = (v: string) => {
-    switch (v) {
-      case 'MALICIOUS': return 'red';
-      case 'OVERPRIVILEGED': return 'orange';
-      case 'SUSPICIOUS': return 'amber';
-      case 'LIKELY_SAFE': return 'green';
-      default: return 'slate';
-    }
-  };
-
-  const getAdminActionColor = (a: string) => {
-    switch (a) {
-      case 'ALLOW': return 'green';
-      case 'ALLOW_MONITOR': return 'teal';
-      case 'REVIEW': return 'amber';
-      case 'BLOCK': return 'orange';
-      case 'REMOVE': return 'red';
-      default: return 'slate';
-    }
-  };
-
   const formatAdminAction = (a: string) => {
     switch (a) {
       case 'ALLOW': return 'Allow';
@@ -379,42 +453,7 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
   };
 
   const formatVerdict = (v: string) => v.replace('_', ' ');
-
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'critical': return 'red';
-      case 'high': return 'orange';
-      case 'medium': return 'yellow';
-      case 'low': return 'green';
-      default: return 'slate';
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'red';
-      case 'high': return 'orange';
-      case 'medium': return 'yellow';
-      case 'low': return 'blue';
-      default: return 'slate';
-    }
-  };
-
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'permissions': return Shield;
-      case 'code_patterns': return FileCode;
-      case 'network': return ExternalLink;
-      default: return AlertTriangle;
-    }
-  };
-
-  const findingsByCategory = findings.reduce((acc, finding) => {
-    const cat = finding.category || 'other';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(finding);
-    return acc;
-  }, {} as Record<string, SecurityFinding[]>);
+  const humanize = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase());
 
   const behaviorFlags = currentAnalysis?.behavior_flags || [];
   const malExtFlags = behaviorFlags.filter(f => f.flag_type === 'confirmed_removed_from_store');
@@ -450,10 +489,26 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
     { id: 'vault', label: 'Vault', icon: Archive },
   ];
 
+  const tabButtonStyle = (isActive: boolean): CSSProperties => ({
+    color: isActive ? palette.textPrimary : palette.textTertiary,
+    boxShadow: isActive ? `inset 0 -2px 0 ${palette.accent}` : 'none',
+    fontFamily: typography.ui,
+  });
+
+  const scrollToTabs = () => tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  const riskT = currentAnalysis ? riskTone(currentAnalysis.risk_level) : 'neutral';
+
   return (
-    <div className={`p-8 max-w-7xl mx-auto h-full overflow-y-auto ${theme === 'desktop' ? 'p-0 max-w-none flex flex-col' : ''}`}>
+    <div
+      className={`@container h-full overflow-y-auto ${theme === 'desktop' ? 'flex flex-col' : 'p-8 max-w-7xl mx-auto'}`}
+      style={{ background: palette.elevated, color: palette.textPrimary, fontFamily: typography.ui }}
+    >
       {theme === 'desktop' && (
-        <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
+        <div
+          className="sticky top-0 z-20 px-4"
+          style={{ background: palette.elevated, borderBottom: `1px solid ${palette.borderDefault}` }}
+        >
           <div className="flex items-center gap-1">
             {menuItems.map(item => {
               const Icon = item.icon;
@@ -466,18 +521,20 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                     setActiveTab(item.id as any);
                     if (item.id === 'vault') setCurrentAnalysis(null);
                   }}
-                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                    isActive 
-                      ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
-                      : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                  }`}
+                  className="flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors"
+                  style={tabButtonStyle(isActive)}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   {item.label}
                   {hasCount && (
-                    <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${
-                      isActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-500'
-                    }`}>
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] tabular-nums"
+                      style={{
+                        background: isActive ? toneBg('accent', 0.12) : palette.base,
+                        color: isActive ? palette.accent : palette.textTertiary,
+                        border: `1px solid ${isActive ? toneBorder('accent', 0.28) : palette.borderSubtle}`,
+                      }}
+                    >
                       {item.count}
                     </span>
                   )}
@@ -488,52 +545,59 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
         </div>
       )}
 
-      <div className={theme === 'desktop' ? 'p-8 flex-1' : ''}>
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-              <Shield className="w-8 h-8 text-cyan-500" />
-              Thamos Extension Scanner
+      <div className={theme === 'desktop' ? 'p-5 flex-1' : ''}>
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold flex items-center gap-2" style={{ color: palette.textPrimary }}>
+              <Shield className="w-4 h-4" style={{ color: palette.textTertiary }} />
+              Extension Scanner
             </h1>
-            <p className="text-slate-400">Identify malicious behavior, hidden IOCs, and security risks in extensions</p>
+            <p className="text-xs mt-0.5" style={{ color: palette.textTertiary }}>
+              Static analysis of browser extensions: permissions, code patterns, IOCs and behaviour
+            </p>
           </div>
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors border border-slate-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors hover:brightness-125 shrink-0"
+            style={secondaryButtonStyle}
           >
-            <Clock className="w-4 h-4" />
-            {showHistory ? 'Hide History' : 'Recent Analyses'}
+            <Clock className="w-3.5 h-3.5" />
+            {showHistory ? 'Hide history' : 'Recent analyses'}
           </button>
         </div>
 
         {showHistory && (
-          <div className="mb-8 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden animate-in slide-in-from-top duration-300">
-            <div className="p-4 border-b border-slate-800 bg-slate-800/50">
-              <h3 className="font-semibold text-white">Recent Analyses</h3>
+          <div className="mb-5 overflow-hidden" style={cardStyle}>
+            <div className="px-4 py-2.5" style={{ background: palette.elevated, borderBottom: `1px solid ${palette.borderDefault}` }}>
+              <span style={sectionTitleStyle}>Recent analyses</span>
             </div>
-            <div className="divide-y divide-slate-800">
+            <div>
               {recentAnalyses.length === 0 ? (
-                <p className="p-8 text-center text-slate-500">No recent analyses found</p>
+                <p className="p-6 text-center text-xs" style={{ color: palette.textTertiary }}>No recent analyses found</p>
               ) : (
-                recentAnalyses.map(analysis => (
+                recentAnalyses.map((analysis, idx) => (
                   <button
                     key={analysis.id}
                     onClick={() => {
                       setCurrentAnalysis(analysis);
                       setShowHistory(false);
                     }}
-                    className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors text-left"
+                    className="w-full px-4 py-3 flex items-center justify-between gap-3 transition-colors hover:brightness-125 text-left"
+                    style={{ background: palette.base, borderTop: idx === 0 ? 'none' : `1px solid ${palette.borderSubtle}` }}
                   >
-                    <div>
-                      <div className="font-medium text-white">{analysis.extension_name}</div>
-                      <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
-                        <span>{analysis.extension_id}</span>
-                        <span>•</span>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium truncate" style={{ color: palette.textPrimary }}>{analysis.extension_name}</div>
+                      <div className="text-[11px] flex items-center gap-2 mt-0.5" style={{ color: palette.textTertiary }}>
+                        <span style={{ fontFamily: typography.mono }}>{analysis.extension_id}</span>
+                        <span>·</span>
                         <span>{new Date(analysis.analyzed_at).toLocaleString()}</span>
                       </div>
                     </div>
-                    <div className={`px-2 py-1 rounded text-xs font-bold uppercase bg-${getRiskColor(analysis.risk_level)}-500/10 text-${getRiskColor(analysis.risk_level)}-400 border border-${getRiskColor(analysis.risk_level)}-500/20`}>
-                      {analysis.risk_level}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold tabular-nums" style={{ color: toneText(riskTone(analysis.risk_level)) }}>
+                        {analysis.risk_score}
+                      </span>
+                      <Pill label={analysis.risk_level} tone={riskTone(analysis.risk_level)} />
                     </div>
                   </button>
                 ))
@@ -542,45 +606,53 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="md:col-span-3">
-            <label htmlFor="extension-url" className="block text-sm font-medium text-slate-400 mb-2">
-              Extension ID · Chrome Web Store URL · Edge Add-ons URL
+        <div className="grid grid-cols-1 @3xl:grid-cols-4 gap-4 mb-5">
+          <div className="@3xl:col-span-3">
+            <label htmlFor="extension-url" className="block text-xs font-medium mb-1.5" style={{ color: palette.textSecondary }}>
+              Extension ID, Chrome Web Store URL or Edge Add-ons URL
             </label>
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: palette.textTertiary }} />
               <input
                 id="extension-url"
                 type="text"
                 value={extensionUrl}
                 onChange={(e) => setExtensionUrl(e.target.value)}
                 onKeyPress={handleKeyPress}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
                 placeholder="chromewebstore.google.com/… or microsoftedge.microsoft.com/addons/… or 32-char ID"
-                className="w-full pl-12 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all text-white placeholder:text-slate-500"
+                className="w-full pl-9 pr-3 py-2 rounded-md text-[13px] outline-none transition-colors"
+                style={{
+                  background: palette.base,
+                  color: palette.textPrimary,
+                  border: `1px solid ${inputFocused ? palette.accent : palette.borderDefault}`,
+                  fontFamily: typography.mono,
+                }}
                 disabled={isAnalyzing}
               />
             </div>
             {error && (
-              <div className="mt-3 flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-lg">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
+              <div className="mt-3">
+                <Callout icon={<AlertTriangle className="w-4 h-4" />} title={error} tone="danger" />
               </div>
             )}
           </div>
-          <div className="pt-7 flex gap-2">
+          <div className="@3xl:pt-6 flex gap-2">
             <button
               onClick={() => analyzeExtension()}
               disabled={isAnalyzing}
-              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all flex items-center gap-2"
+              className="px-4 py-2 text-[13px] font-semibold rounded-md transition-colors hover:brightness-110 flex items-center gap-2"
+              style={isAnalyzing ? disabledButtonStyle : primaryButtonStyle}
             >
               {isAnalyzing ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Analyzing...
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Analyzing…
                 </>
               ) : (
                 <>
-                  <FileCode className="w-5 h-5" />
+                  <FileCode className="w-4 h-4" />
                   Analyze
                 </>
               )}
@@ -588,13 +660,14 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
             {theme !== 'desktop' && (
               <button
                 onClick={() => { setCurrentAnalysis(null); setActiveTab('vault'); }}
-                className={`px-4 py-3 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                className="px-3 py-2 rounded-md text-[13px] font-medium transition-colors hover:brightness-125 flex items-center gap-2"
+                style={
                   activeTab === 'vault' && !currentAnalysis
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
-                }`}
+                    ? { ...secondaryButtonStyle, background: palette.surface, color: palette.textPrimary, border: `1px solid ${palette.borderActive}` }
+                    : secondaryButtonStyle
+                }
               >
-                <Archive className="w-5 h-5" />
+                <Archive className="w-4 h-4" />
                 Vault
               </button>
             )}
@@ -602,11 +675,10 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
         </div>
 
         {activeTab === 'vault' && !currentAnalysis && (
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-              <Archive className="w-5 h-5 text-amber-400" />
-              Extension Vault
-            </h2>
+          <div className="p-5" style={cardStyle}>
+            <div className="mb-4">
+              <SectionHeader icon={<Archive className="w-4 h-4" />} title="Extension vault" />
+            </div>
             <VaultList
               onRescan={(extId) => analyzeExtension(extId)}
               isScanning={isAnalyzing}
@@ -615,169 +687,158 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
         )}
 
         {currentAnalysis && (
-          <div className="space-y-6">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <div className="flex items-center gap-3 mb-2 flex-wrap">
-                    <h2 className="text-2xl font-bold text-white">{currentAnalysis.extension_name}</h2>
-                    {currentAnalysis.extension_url?.includes('microsoftedge.microsoft.com') ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase tracking-wide">Edge Add-ons</span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-700/50 text-slate-400 border border-slate-600/30 uppercase tracking-wide">Chrome</span>
-                    )}
+          <div className="space-y-4">
+            <div className="p-5" style={cardStyle}>
+              {/* Identity row */}
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h2 className="text-base font-semibold truncate" style={{ color: palette.textPrimary }}>{currentAnalysis.extension_name}</h2>
+                    <Pill
+                      label={currentAnalysis.extension_url?.includes('microsoftedge.microsoft.com') ? 'Edge Add-ons' : 'Chrome'}
+                      tone="neutral"
+                    />
                     {vaultStatus === 'none' && (
                       <button
                         onClick={addToVault}
-                        className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-medium rounded transition-colors flex items-center gap-1.5 border border-amber-500/30"
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors hover:brightness-125 flex items-center gap-1"
+                        style={secondaryButtonStyle}
                       >
                         <Plus className="w-3 h-3" />
-                        Add to Vault
+                        Add to vault
                       </button>
                     )}
                     {vaultStatus === 'adding' && (
-                      <span className="px-3 py-1 bg-slate-700 text-slate-400 text-xs rounded flex items-center gap-1.5">
+                      <span className="px-2.5 py-1 text-[11px] rounded-md flex items-center gap-1" style={chipStyle('neutral')}>
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        Adding...
+                        Adding…
                       </span>
                     )}
                     {vaultStatus === 'added' && (
-                      <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded flex items-center gap-1.5 border border-green-500/30">
+                      <span className="px-2.5 py-1 text-[11px] font-medium rounded-md flex items-center gap-1" style={chipStyle('good')}>
                         <Check className="w-3 h-3" />
-                        In Vault
+                        In vault
                       </span>
                     )}
                   </div>
-                  <p className="text-slate-400">Version {currentAnalysis.extension_version}</p>
-                  {currentAnalysis.scan_duration_ms && (
-                    <p className="text-sm text-slate-500 mt-1">
-                      Scan completed in {(currentAnalysis.scan_duration_ms / 1000).toFixed(2)}s
-                    </p>
-                  )}
+                  <p className="text-xs" style={{ color: palette.textSecondary }}>
+                    Version {currentAnalysis.extension_version}
+                    <span style={{ color: palette.textTertiary }}> · </span>
+                    <span style={{ color: palette.textTertiary, fontFamily: typography.mono }}>{currentAnalysis.extension_id}</span>
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: palette.textTertiary }}>
+                    Analyzed {new Date(currentAnalysis.analyzed_at).toLocaleString()}
+                    {currentAnalysis.scan_duration_ms ? ` · scan ${(currentAnalysis.scan_duration_ms / 1000).toFixed(2)}s` : ''}
+                    {currentAnalysis.total_files_scanned !== undefined ? ` · ${currentAnalysis.total_files_scanned} files scanned` : ''}
+                    {currentAnalysis.files_skipped_count ? ` · ${currentAnalysis.files_skipped_count} skipped` : ''}
+                  </p>
                 </div>
+                {currentAnalysis.extension_url && (
+                  <a
+                    href={currentAnalysis.extension_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs hover:underline shrink-0"
+                    style={{ color: palette.accent }}
+                  >
+                    Store listing <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
 
               {malExtFlags.length > 0 && (
-                <div className="mb-6 border-2 border-red-500/50 bg-red-500/10 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <h4 className="font-bold text-red-300 mb-1 uppercase tracking-wide text-sm">
-                        Confirmed Removed from Chrome Web Store
-                      </h4>
-                      {malExtFlags.map((flag, idx) => (
-                        <div key={idx}>
-                          <p className="text-sm text-red-200/80 mb-2">{flag.description}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {flag.evidence.map((ev, i) => (
-                              <span key={i} className="text-xs font-mono px-2 py-0.5 bg-red-500/20 text-red-300 rounded border border-red-500/20">
-                                {ev}
-                              </span>
-                            ))}
-                          </div>
+                <div className="mb-4">
+                  <Callout icon={<Shield className="w-4 h-4" />} title="Confirmed removed from Chrome Web Store" tone="danger">
+                    {malExtFlags.map((flag, idx) => (
+                      <div key={idx} className="mt-1.5">
+                        <p className="text-xs mb-2" style={{ color: palette.textSecondary }}>{flag.description}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {flag.evidence.map((ev, i) => (
+                            <span key={i} className="text-[11px] px-2 py-0.5 rounded break-all" style={chipStyle('danger', true)}>
+                              {ev}
+                            </span>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
+                    ))}
+                  </Callout>
                 </div>
               )}
 
               {vaultDeltaFlags.length > 0 && (
-                <div className="mb-6 border-2 border-amber-500/30 bg-amber-500/10 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-amber-300 mb-1">Changed Since Last Vault Scan</h4>
-                      {vaultDeltaFlags.map((flag, idx) => (
-                        <div key={idx}>
-                          <p className="text-sm text-amber-200/80 mb-2">{flag.description}</p>
-                          <ul className="space-y-1">
-                            {flag.evidence.filter(e => !e.startsWith('baseline_analysis_id')).map((ev, i) => (
-                              <li key={i} className="text-xs text-amber-300/70 font-mono">{ev}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="mb-4">
+                  <Callout icon={<AlertTriangle className="w-4 h-4" />} title="Changed since last vault scan" tone="warn">
+                    {vaultDeltaFlags.map((flag, idx) => (
+                      <div key={idx} className="mt-1.5">
+                        <p className="text-xs mb-2" style={{ color: palette.textSecondary }}>{flag.description}</p>
+                        <ul className="space-y-1">
+                          {flag.evidence.filter(e => !e.startsWith('baseline_analysis_id')).map((ev, i) => (
+                            <li key={i} className="text-[11px] break-all" style={{ color: palette.textSecondary, fontFamily: typography.mono }}>{ev}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </Callout>
                 </div>
               )}
 
-              {/* Three-panel summary: Raw Scanner | External Intel | THAMOS Verdict */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {/* Three-panel summary: Raw scanner | External intel | Thamos verdict */}
+              <div className="grid grid-cols-1 @3xl:grid-cols-3 gap-3 mb-4">
 
-                {/* Raw Scanner Risk */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Raw Scanner Risk</div>
-                  <div className={`text-4xl font-bold text-${getRiskColor(currentAnalysis.risk_level)}-400 leading-none mb-1`}>
-                    {currentAnalysis.risk_score}
+                {/* Raw scanner risk */}
+                <div className="p-4" style={cardStyle}>
+                  <div className="mb-2" style={fieldLabelStyle}>Raw scanner risk</div>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-3xl font-semibold leading-none tabular-nums" style={{ color: toneText(riskT) }}>
+                      {currentAnalysis.risk_score}
+                    </span>
+                    <Pill label={currentAnalysis.risk_level} tone={riskT} />
                   </div>
-                  <div className={`text-sm font-semibold text-${getRiskColor(currentAnalysis.risk_level)}-400 uppercase mb-3`}>
-                    {currentAnalysis.risk_level}
-                  </div>
-                  <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${
-                    scannerClassification === 'CONFIRMED_MALICIOUS' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                    : scannerClassification === 'MIXED' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                    : 'bg-slate-700/50 text-slate-400 border-slate-600/30'
-                  }`}>
-                    {scannerClassification === 'CONFIRMED_MALICIOUS' ? 'Confirmed Malicious'
-                     : scannerClassification === 'MIXED' ? 'Mixed Evidence'
-                     : 'Capability-Based'}
-                  </span>
+                  <Pill
+                    label={
+                      scannerClassification === 'CONFIRMED_MALICIOUS' ? 'Confirmed malicious'
+                      : scannerClassification === 'MIXED' ? 'Mixed evidence'
+                      : 'Capability-based'
+                    }
+                    tone={scannerClassification === 'CONFIRMED_MALICIOUS' ? 'danger' : scannerClassification === 'MIXED' ? 'warn' : 'neutral'}
+                  />
                   <div className="mt-3 grid grid-cols-2 gap-1.5">
-                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
-                      <div className="text-sm font-bold text-white">{findings.length}</div>
-                      <div className="text-[9px] text-slate-500">Findings</div>
-                    </div>
-                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
-                      <div className="text-sm font-bold text-white">{iocs.length}</div>
-                      <div className="text-[9px] text-slate-500">IOCs</div>
-                    </div>
-                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
-                      <div className="text-sm font-bold text-white">{otherBehaviorFlags.length}</div>
-                      <div className="text-[9px] text-slate-500">Behavior</div>
-                    </div>
-                    <div className="bg-slate-900/40 rounded p-1.5 text-center">
-                      <div className="text-sm font-bold text-white">{currentAnalysis.obfuscation_score || 0}</div>
-                      <div className="text-[9px] text-slate-500">Obfuscation</div>
-                    </div>
+                    <StatCell label="Findings" value={findings.length} />
+                    <StatCell label="IOCs" value={iocs.length} />
+                    <StatCell label="Behavior" value={otherBehaviorFlags.length} />
+                    <StatCell label="Obfuscation" value={currentAnalysis.obfuscation_score || 0} />
                   </div>
                 </div>
 
-                {/* External Intel */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">External Intel</div>
+                {/* External intel */}
+                <div className="p-4" style={cardStyle}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div style={fieldLabelStyle}>External intel</div>
                     {crxData?.share_url && (
                       <a href={crxData.share_url} target="_blank" rel="noopener noreferrer"
-                        className="text-[10px] text-slate-600 hover:text-teal-400 transition-colors flex items-center gap-0.5">
+                        className="text-[11px] hover:underline flex items-center gap-0.5" style={{ color: palette.accent }}>
                         CRXplorer <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     )}
                   </div>
                   {crxData ? (
                     <>
-                      <div className="text-4xl font-bold text-white leading-none mb-1">{crxData.overall_score ?? '—'}</div>
-                      <div className={`text-sm font-semibold uppercase mb-3 ${
-                        crxData.risk_level === 'Critical' ? 'text-red-400'
-                        : crxData.risk_level === 'High' ? 'text-orange-400'
-                        : crxData.risk_level === 'Medium' ? 'text-amber-400'
-                        : 'text-green-400'
-                      }`}>{crxData.risk_level}</div>
-                      {crxData.should_use !== null && (
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border mb-3 ${
-                          crxData.should_use
-                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                            : 'bg-red-500/20 text-red-400 border-red-500/30'
-                        }`}>
-                          {crxData.should_use ? '✓ Recommended' : '✗ Not Recommended'}
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-3xl font-semibold leading-none tabular-nums" style={{ color: toneText(crxRiskTone(crxData.risk_level)) }}>
+                          {crxData.overall_score ?? '—'}
                         </span>
+                        {crxData.risk_level && <Pill label={crxData.risk_level} tone={crxRiskTone(crxData.risk_level)} />}
+                      </div>
+                      {crxData.should_use !== null && crxData.should_use !== undefined && (
+                        <div className="mb-2">
+                          <Pill label={crxData.should_use ? 'Recommended' : 'Not recommended'} tone={crxData.should_use ? 'good' : 'danger'} />
+                        </div>
                       )}
                       {(crxData.reasoning as any[])?.length > 0 && (
                         <ul className="space-y-1 mt-1">
                           {(crxData.reasoning as any[]).slice(0, 3).map((r: any, i: number) => (
-                            <li key={i} className="text-[10px] text-slate-400 flex items-start gap-1">
-                              <span className="text-teal-500 flex-shrink-0 mt-0.5">›</span>
+                            <li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color: palette.textSecondary }}>
+                              <span className="shrink-0" style={{ color: palette.textTertiary }}>›</span>
                               {typeof r === 'string' ? r : r?.text ?? ''}
                             </li>
                           ))}
@@ -785,124 +846,113 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                       )}
                     </>
                   ) : (
-                    <div className="text-slate-500 text-sm mt-2">No external data available</div>
+                    <div className="text-xs mt-1" style={{ color: palette.textTertiary }}>
+                      {currentAnalysis.crxcavator_data ? 'CRXplorer returned no data for this extension' : 'CRXplorer not queried'}
+                    </div>
                   )}
                 </div>
 
-                {/* THAMOS Verdict */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-3">
+                {/* Thamos verdict */}
+                <div className="p-4" style={cardStyle}>
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1.5">
-                      <Brain className="w-3.5 h-3.5 text-cyan-400" />
-                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Thamos Verdict</span>
+                      <Brain className="w-3.5 h-3.5" style={{ color: palette.textTertiary }} />
+                      <span style={fieldLabelStyle}>Thamos verdict</span>
                     </div>
-                    {/* small re-run button shown only after a verdict exists */}
                     {verdict && !verdictLoading && (
                       <button onClick={runThamosVerdict}
-                        className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
+                        className="text-[11px] transition-colors hover:brightness-125" style={{ color: palette.textTertiary }}>
                         Re-run
                       </button>
                     )}
                   </div>
 
                   {!verdict && !verdictLoading && !verdictError && (
-                    <div className="flex flex-col items-center py-3 gap-3">
+                    <div className="flex flex-col items-center py-2 gap-3">
                       <T6Orb state="idle" size={44} />
-                      <span className="text-[10px] text-slate-500">Awaiting analysis</span>
+                      <span className="text-[11px]" style={{ color: palette.textTertiary }}>Awaiting analysis</span>
                       <button
                         onClick={runThamosVerdict}
-                        className="w-full px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-500/30 transition-colors flex items-center justify-center gap-1.5"
+                        className="w-full px-3 py-2 text-xs font-semibold rounded-md transition-colors hover:brightness-110 flex items-center justify-center gap-1.5"
+                        style={primaryButtonStyle}
                       >
                         <Brain className="w-3.5 h-3.5" />
-                        Run THAMOS Analysis
+                        Run Thamos analysis
                       </button>
                     </div>
                   )}
                   {verdictLoading && (
-                    <div className="flex flex-col items-center py-3 gap-2">
+                    <div className="flex flex-col items-center py-2 gap-2">
                       <T6Orb state="thinking" size={44} />
-                      <span className="text-[10px] text-slate-400 font-mono tracking-wider">Analyzing...</span>
+                      <span className="text-[11px]" style={{ color: palette.textSecondary }}>Analyzing…</span>
                     </div>
                   )}
                   {verdictError && !verdictLoading && (
-                    <div className="text-red-400 text-xs flex items-start gap-1.5 mt-1">
-                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <div className="text-xs flex items-start gap-1.5 mt-1" style={{ color: palette.rose }}>
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>{verdictError}</span>
                     </div>
                   )}
                   {verdict && !verdictLoading && (
                     <div className="flex flex-col items-center text-center gap-1">
                       <T6Orb state={verdictOrbState} size={44} />
-                      <div className={`text-base font-bold text-${getVerdictColor(verdict.verdict)}-400 mt-1`}>
-                        {formatVerdict(verdict.verdict)}
+                      <div className="text-sm font-semibold mt-1" style={{ color: toneText(verdictTone(verdict.verdict)) }}>
+                        {humanize(formatVerdict(verdict.verdict))}
                       </div>
-                      <div className="text-[10px] text-slate-500">{verdict.confidence} CONFIDENCE</div>
+                      <div className="text-[11px]" style={{ color: palette.textTertiary }}>{humanize(verdict.confidence)} confidence</div>
                       {verdict.admin_action && (
-                        <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-${getAdminActionColor(verdict.admin_action)}-500/20 text-${getAdminActionColor(verdict.admin_action)}-400 border border-${getAdminActionColor(verdict.admin_action)}-500/30`}>
-                          {formatAdminAction(verdict.admin_action)}
-                        </span>
+                        <div className="mt-1">
+                          <Pill label={formatAdminAction(verdict.admin_action)} tone={adminActionTone(verdict.admin_action)} />
+                        </div>
                       )}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Organizational Suitability — shown whenever AI data flow signals exist, even before verdict */}
+              {/* Organizational suitability — shown whenever AI data flow signals exist, even before verdict */}
               {(aiDataFindings.length > 0 || verdict?.organizational_suitability) && (() => {
                 const os = verdict?.organizational_suitability;
-                const ratingColor = !os || os.rating === 'UNKNOWN' ? 'slate'
-                  : os.rating === 'APPROVED' ? 'green'
-                  : os.rating === 'REVIEW_REQUIRED' ? 'amber'
-                  : 'red';
-                const riskColor = !os || os.ai_data_flow_risk === 'NONE' ? 'slate'
-                  : os.ai_data_flow_risk === 'LOW' ? 'blue'
-                  : os.ai_data_flow_risk === 'MEDIUM' ? 'yellow'
-                  : os.ai_data_flow_risk === 'HIGH' ? 'orange'
-                  : 'red';
+                const ratingT = suitabilityTone(os?.rating);
+                const riskTn = aiRiskTone(os?.ai_data_flow_risk);
                 const vendors = os?.detected_ai_vendors?.length ? os.detected_ai_vendors : aiDataFindings.filter(f => f.rule_id === 'AI-DATA-1').flatMap(f => f.evidence.split(', '));
                 const surfaces = os?.content_surfaces?.length ? os.content_surfaces : aiDataFindings.filter(f => f.rule_id === 'AI-DATA-2').flatMap(f => f.evidence.split(', '));
                 return (
-                  <div className={`mb-4 border-2 rounded-xl p-4 ${
-                    ratingColor === 'red' ? 'border-red-500/40 bg-red-500/5'
-                    : ratingColor === 'amber' ? 'border-amber-500/40 bg-amber-500/5'
-                    : ratingColor === 'green' ? 'border-green-500/30 bg-green-500/5'
-                    : 'border-slate-700 bg-slate-800/30'
-                  }`}>
-                    <div className="flex items-center justify-between mb-3">
+                  <div
+                    className="mb-4 rounded-lg p-4"
+                    style={{ background: toneBg(ratingT, 0.06), border: `1px solid ${toneBorder(ratingT)}` }}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <Database className="w-4 h-4 text-slate-400" />
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Organizational Suitability</span>
+                        <Database className="w-4 h-4" style={{ color: palette.textTertiary }} />
+                        <span style={sectionTitleStyle}>Organizational suitability</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {os?.ai_data_flow_risk && os.ai_data_flow_risk !== 'NONE' && (
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border bg-${riskColor}-500/20 text-${riskColor}-400 border-${riskColor}-500/30`}>
-                            AI Risk: {os.ai_data_flow_risk}
-                          </span>
+                          <Pill label={`AI data-flow risk: ${humanize(os.ai_data_flow_risk)}`} tone={riskTn} />
                         )}
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border bg-${ratingColor}-500/20 text-${ratingColor}-400 border-${ratingColor}-500/30`}>
-                          {os ? os.rating.replace('_', ' ') : 'PENDING ANALYSIS'}
-                        </span>
+                        <Pill label={os ? humanize(os.rating) : 'Pending analysis'} tone={ratingT} />
                       </div>
                     </div>
 
                     {(vendors.length > 0 || surfaces.length > 0) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3 mb-3">
                         {vendors.length > 0 && (
                           <div>
-                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Detected AI Vendors</div>
+                            <div className="mb-1.5" style={fieldLabelStyle}>Detected AI vendors</div>
                             <div className="flex flex-wrap gap-1">
                               {vendors.map((v, i) => (
-                                <span key={i} className="px-1.5 py-0.5 bg-purple-500/15 text-purple-300 text-[10px] font-mono rounded border border-purple-500/20">{v}</span>
+                                <span key={i} className="px-1.5 py-0.5 text-[11px] rounded" style={chipStyle('neutral', true)}>{v}</span>
                               ))}
                             </div>
                           </div>
                         )}
                         {surfaces.length > 0 && (
                           <div>
-                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Content Surfaces Exposed</div>
+                            <div className="mb-1.5" style={fieldLabelStyle}>Content surfaces exposed</div>
                             <div className="flex flex-wrap gap-1">
                               {surfaces.map((s, i) => (
-                                <span key={i} className="px-1.5 py-0.5 bg-blue-500/15 text-blue-300 text-[10px] font-mono rounded border border-blue-500/20">{s}</span>
+                                <span key={i} className="px-1.5 py-0.5 text-[11px] rounded" style={chipStyle('neutral', true)}>{s}</span>
                               ))}
                             </div>
                           </div>
@@ -911,11 +961,11 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                     )}
 
                     {os?.reasoning ? (
-                      <p className="text-xs text-slate-300 leading-relaxed">{os.reasoning}</p>
+                      <p className="text-xs leading-relaxed" style={{ color: palette.textSecondary }}>{os.reasoning}</p>
                     ) : (
-                      <p className="text-xs text-slate-500 italic">
+                      <p className="text-xs" style={{ color: palette.textTertiary }}>
                         {aiDataFindings.length > 0
-                          ? `${aiDataFindings.length} AI data flow signal(s) detected. Run THAMOS Analysis for full governance assessment.`
+                          ? `${aiDataFindings.length} AI data flow signal(s) detected. Run Thamos analysis for the full governance assessment.`
                           : 'No AI data flow signals detected in this extension.'}
                       </p>
                     )}
@@ -923,36 +973,29 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                 );
               })()}
 
-              {/* Why They Differ — full width below three panels */}
+              {/* Why they differ — full width below three panels */}
               {verdict?.why_verdict_differs && (
-                <div className="mb-4 px-4 py-3 bg-slate-800/30 border border-slate-700/50 rounded-lg">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Why They Differ</div>
-                  <p className="text-sm text-slate-300 leading-relaxed">{verdict.why_verdict_differs}</p>
+                <div className="mb-4 px-4 py-3" style={cardStyle}>
+                  <div className="mb-1" style={fieldLabelStyle}>Why the verdicts differ</div>
+                  <p className="text-xs leading-relaxed" style={{ color: palette.textSecondary }}>{verdict.why_verdict_differs}</p>
                 </div>
               )}
 
               {/* Full verdict details */}
               {verdict && !verdictLoading && (
-                <div className="mb-6 space-y-3">
+                <div className="mb-5 space-y-3">
                   {verdict.finding_assessments && verdict.finding_assessments.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Finding Verification — Code-Grounded</div>
+                      <div className="mb-2" style={sectionTitleStyle}>Finding verification (code-grounded)</div>
                       <div className="space-y-2">
                         {verdict.finding_assessments.map((fa, i) => (
-                          <div key={i} className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                          <div key={i} className="p-3" style={cardStyle}>
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                                fa.assessment === 'CONFIRMED' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                                : fa.assessment === 'REFUTED' ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                : fa.assessment === 'CAPABILITY_ONLY' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                                : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
-                              }`}>
-                                {fa.assessment.replace(/_/g, ' ')}
-                              </span>
-                              <span className="text-xs font-mono font-medium text-cyan-400">{fa.rule_id}</span>
-                              <span className="text-[10px] font-mono text-slate-500">{fa.file_path}</span>
+                              <Pill label={humanize(fa.assessment)} tone={assessmentTone(fa.assessment)} />
+                              <span className="text-xs font-medium" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{fa.rule_id}</span>
+                              <span className="text-[11px] break-all" style={{ color: palette.textTertiary, fontFamily: typography.mono }}>{fa.file_path}</span>
                             </div>
-                            <p className="text-xs text-slate-400">{fa.reasoning}</p>
+                            <p className="text-xs" style={{ color: palette.textSecondary }}>{fa.reasoning}</p>
                           </div>
                         ))}
                       </div>
@@ -961,55 +1004,42 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
 
                   {verdict.top_concerns && verdict.top_concerns.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Top Concerns</div>
+                      <div className="mb-2" style={sectionTitleStyle}>Top concerns</div>
                       <div className="space-y-2">
                         {verdict.top_concerns.map((concern, i) => (
-                          <div key={i} className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                          <div key={i} className="p-3" style={cardStyle}>
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                                concern.type === 'CONFIRMED_BEHAVIOR' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                                : concern.type === 'CAPABILITY_RISK' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                                : concern.type === 'CONTEXTUAL_FALSE_POSITIVE' ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                : concern.type === 'EXTERNAL_REPUTATION_SIGNAL' ? 'bg-teal-500/20 text-teal-400 border-teal-500/30'
-                                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              }`}>
-                                {concern.type.replace(/_/g, ' ')}
-                              </span>
-                              <span className={`text-[10px] font-bold ${
-                                concern.severity === 'CRITICAL' ? 'text-red-400'
-                                : concern.severity === 'HIGH' ? 'text-orange-400'
-                                : concern.severity === 'MEDIUM' ? 'text-amber-400'
-                                : 'text-slate-400'
-                              }`}>{concern.severity}</span>
-                              <span className="text-xs font-medium text-white">{concern.title}</span>
+                              <Pill label={humanize(concern.type)} tone={concernTypeTone(concern.type)} />
+                              <Pill label={humanize(concern.severity)} tone={riskTone(concern.severity)} />
+                              <span className="text-xs font-medium" style={{ color: palette.textPrimary }}>{concern.title}</span>
                             </div>
-                            <p className="text-xs text-slate-400">{concern.evidence}</p>
+                            <p className="text-xs" style={{ color: palette.textSecondary }}>{concern.evidence}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3">
                     {verdict.positive_signals && verdict.positive_signals.length > 0 && (
-                      <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
-                        <div className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-2">Positive Signals</div>
+                      <div className="p-3" style={cardStyle}>
+                        <div className="mb-2" style={sectionTitleStyle}>Positive signals</div>
                         <ul className="space-y-1">
                           {verdict.positive_signals.map((s, i) => (
-                            <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
-                              <span className="text-green-400 flex-shrink-0">✓</span>{s}
+                            <li key={i} className="text-xs flex items-start gap-1.5" style={{ color: palette.textSecondary }}>
+                              <Check className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: palette.green }} />{s}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
                     {verdict.watch_items && verdict.watch_items.length > 0 && (
-                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
-                        <div className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-2">Watch Items</div>
+                      <div className="p-3" style={cardStyle}>
+                        <div className="mb-2" style={sectionTitleStyle}>Watch items</div>
                         <ul className="space-y-1">
                           {verdict.watch_items.map((w, i) => (
-                            <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
-                              <span className="text-amber-400 flex-shrink-0">›</span>{w}
+                            <li key={i} className="text-xs flex items-start gap-1.5" style={{ color: palette.textSecondary }}>
+                              <span className="shrink-0" style={{ color: palette.amber }}>›</span>{w}
                             </li>
                           ))}
                         </ul>
@@ -1018,25 +1048,20 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                   </div>
 
                   {(verdict.purpose_fit || verdict.recommendation) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3">
                       {verdict.purpose_fit && (
-                        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
+                        <div className="p-3" style={cardStyle}>
                           <div className="flex items-center gap-2 mb-1.5">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Purpose Fit</div>
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                              verdict.purpose_fit.rating === 'STRONG' ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                              : verdict.purpose_fit.rating === 'PARTIAL' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              : verdict.purpose_fit.rating === 'WEAK' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                              : 'bg-slate-700/50 text-slate-400 border-slate-600/30'
-                            }`}>{verdict.purpose_fit.rating}</span>
+                            <span style={sectionTitleStyle}>Purpose fit</span>
+                            <Pill label={humanize(verdict.purpose_fit.rating)} tone={purposeFitTone(verdict.purpose_fit.rating)} />
                           </div>
-                          <p className="text-xs text-slate-400">{verdict.purpose_fit.reasoning}</p>
+                          <p className="text-xs" style={{ color: palette.textSecondary }}>{verdict.purpose_fit.reasoning}</p>
                         </div>
                       )}
                       {verdict.recommendation && (
-                        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Recommendation</div>
-                          <p className="text-xs text-slate-300">{verdict.recommendation}</p>
+                        <div className="p-3" style={cardStyle}>
+                          <div className="mb-1.5" style={sectionTitleStyle}>Recommendation</div>
+                          <p className="text-xs" style={{ color: palette.textSecondary }}>{verdict.recommendation}</p>
                         </div>
                       )}
                     </div>
@@ -1044,10 +1069,10 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
 
                   {verdict.ioc_highlights && verdict.ioc_highlights.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Key IOCs</div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="mb-2" style={sectionTitleStyle}>Key IOCs</div>
+                      <div className="flex flex-wrap gap-1.5">
                         {verdict.ioc_highlights.map((ioc, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-red-500/10 text-red-400 text-xs font-mono rounded border border-red-500/20 break-all">
+                          <span key={i} className="px-2 py-0.5 text-xs rounded break-all" style={chipStyle('warn', true)}>
                             {ioc}
                           </span>
                         ))}
@@ -1059,21 +1084,22 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
 
               {/* CRXplorer category justifications — collapsible */}
               {crxData?.category_justifications && Object.keys(crxData.category_justifications as object).length > 0 && (
-                <div className="mb-6">
+                <div className="mb-5">
                   <button
                     onClick={() => setShowCrxJustifications(!showCrxJustifications)}
-                    className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-teal-400 transition-colors mb-2"
+                    className="flex items-center gap-1.5 text-xs font-medium transition-colors hover:brightness-125 mb-2"
+                    style={{ color: palette.textSecondary }}
                   >
-                    <Database className="w-3 h-3" />
-                    CRXplorer Category Analysis
-                    {showCrxJustifications ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    <Database className="w-3.5 h-3.5" />
+                    CRXplorer category analysis
+                    {showCrxJustifications ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
                   {showCrxJustifications && (
-                    <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3 space-y-2">
-                      {Object.entries(crxData.category_justifications as Record<string, any>).map(([cat, just]) => (
-                        <div key={cat} className="border-b border-slate-700/30 pb-2 last:border-0 last:pb-0">
-                          <div className="text-[10px] font-bold text-teal-400/70 uppercase mb-0.5">{cat.replace(/_/g, ' ')}</div>
-                          <p className="text-xs text-slate-400">{typeof just === 'string' ? just : JSON.stringify(just)}</p>
+                    <div className="p-3 space-y-2" style={cardStyle}>
+                      {Object.entries(crxData.category_justifications as Record<string, any>).map(([cat, just], idx, arr) => (
+                        <div key={cat} className="pb-2" style={{ borderBottom: idx === arr.length - 1 ? 'none' : `1px solid ${palette.borderSubtle}` }}>
+                          <div className="mb-0.5" style={fieldLabelStyle}>{humanize(cat)}</div>
+                          <p className="text-xs" style={{ color: palette.textSecondary }}>{typeof just === 'string' ? just : JSON.stringify(just)}</p>
                         </div>
                       ))}
                     </div>
@@ -1082,113 +1108,106 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
               )}
 
               {theme !== 'desktop' && (
-                <div ref={tabStripRef} className="border-b border-slate-700 mb-6">
-                  <div className="flex gap-4">
+                <div ref={tabStripRef} className="mb-5" style={{ borderBottom: `1px solid ${palette.borderDefault}` }}>
+                  <div className="flex gap-1">
                     <button
-                      onClick={() => { setActiveTab('findings'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-                      className={`pb-3 px-2 font-medium transition-all border-b-2 ${
-                        activeTab === 'findings'
-                          ? 'border-cyan-500 text-cyan-400'
-                          : 'border-transparent text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => { setActiveTab('findings'); scrollToTabs(); }}
+                      className="px-3 py-2.5 text-[13px] font-medium transition-colors"
+                      style={tabButtonStyle(activeTab === 'findings')}
                     >
-                      Findings ({findings.length})
+                      Findings <span className="tabular-nums" style={{ color: palette.textTertiary }}>({findings.length})</span>
                     </button>
                     <button
-                      onClick={() => { setActiveTab('iocs'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-                      className={`pb-3 px-2 font-medium transition-all border-b-2 ${
-                        activeTab === 'iocs'
-                          ? 'border-cyan-500 text-cyan-400'
-                          : 'border-transparent text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => { setActiveTab('iocs'); scrollToTabs(); }}
+                      className="px-3 py-2.5 text-[13px] font-medium transition-colors"
+                      style={tabButtonStyle(activeTab === 'iocs')}
                     >
-                      IOCs ({iocs.length})
+                      IOCs <span className="tabular-nums" style={{ color: palette.textTertiary }}>({iocs.length})</span>
                     </button>
                     <button
-                      onClick={() => { setActiveTab('behavior'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-                      className={`pb-3 px-2 font-medium transition-all border-b-2 ${
-                        activeTab === 'behavior'
-                          ? 'border-cyan-500 text-cyan-400'
-                          : 'border-transparent text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => { setActiveTab('behavior'); scrollToTabs(); }}
+                      className="px-3 py-2.5 text-[13px] font-medium transition-colors"
+                      style={tabButtonStyle(activeTab === 'behavior')}
                     >
-                      Behavior ({otherBehaviorFlags.length})
+                      Behavior <span className="tabular-nums" style={{ color: palette.textTertiary }}>({otherBehaviorFlags.length})</span>
                     </button>
                     <button
-                      onClick={() => { setActiveTab('files'); tabStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-                      className={`pb-3 px-2 font-medium transition-all border-b-2 ${
-                        activeTab === 'files'
-                          ? 'border-cyan-500 text-cyan-400'
-                          : 'border-transparent text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => { setActiveTab('files'); scrollToTabs(); }}
+                      className="px-3 py-2.5 text-[13px] font-medium transition-colors flex items-center gap-1.5"
+                      style={tabButtonStyle(activeTab === 'files')}
                     >
-                      <div className="flex items-center gap-2">
-                        <FolderOpen className="w-4 h-4" />
-                        Files
-                      </div>
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      Files
                     </button>
                   </div>
                 </div>
               )}
 
               {activeTab === 'findings' && (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {findings.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 bg-slate-800/30 rounded-lg border border-slate-800">
+                    <div className="p-6 text-center text-xs" style={emptyStateStyle}>
                       No high-risk findings identified in this analysis.
                     </div>
                   ) : (
-                    findings.map(finding => (
-                      <div
-                        key={finding.id}
-                        className={`bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden transition-all ${
-                          expandedFindings.has(finding.id) ? 'ring-1 ring-cyan-500/50' : ''
-                        }`}
-                      >
-                        <button
-                          onClick={() => toggleFinding(finding.id)}
-                          className="w-full p-4 flex items-center justify-between text-left"
+                    findings.map(finding => {
+                      const isOpen = expandedFindings.has(finding.id);
+                      return (
+                        <div
+                          key={finding.id}
+                          className="overflow-hidden"
+                          style={{ ...cardStyle, border: `1px solid ${isOpen ? palette.borderActive : palette.borderDefault}` }}
                         >
-                          <div className="flex items-center gap-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-${getRiskColor(finding.severity)}-500/20 text-${getRiskColor(finding.severity)}-400 border border-${getRiskColor(finding.severity)}-500/30`}>
-                              {finding.severity}
-                            </span>
-                            <span className="font-medium text-white">{finding.title}</span>
-                          </div>
-                          {expandedFindings.has(finding.id) ? (
-                            <ChevronUp className="w-4 h-4 text-slate-500" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-slate-500" />
-                          )}
-                        </button>
-                        {expandedFindings.has(finding.id) && (
-                          <div className="p-4 border-t border-slate-700 bg-slate-900/30">
-                            <p className="text-slate-300 mb-4">{finding.description}</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Evidence</h4>
-                                <pre className="p-3 bg-slate-950 rounded border border-slate-800 text-xs text-cyan-400 font-mono overflow-x-auto whitespace-pre-wrap">
-                                  {finding.evidence}
-                                </pre>
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Location</h4>
-                                <button
-                                  onClick={() => viewFileForFinding(finding.file_path)}
-                                  className="w-full p-3 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-left transition-colors flex items-center justify-between group"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <FileCode className="w-4 h-4 text-cyan-500" />
-                                    <span className="text-xs text-slate-300 font-mono truncate">{finding.file_path}</span>
-                                  </div>
-                                  <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors" />
-                                </button>
+                          <button
+                            onClick={() => toggleFinding(finding.id)}
+                            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left transition-colors hover:brightness-125"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                              <Pill label={finding.severity} tone={riskTone(finding.severity)} />
+                              {finding.rule_id && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px]" style={chipStyle('neutral', true)}>{finding.rule_id}</span>
+                              )}
+                              <span className="text-[13px] font-medium" style={{ color: palette.textPrimary }}>{finding.title}</span>
+                              {finding.confidence && (
+                                <span className="text-[11px]" style={{ color: palette.textTertiary }}>{finding.confidence} confidence</span>
+                              )}
+                            </div>
+                            {isOpen ? (
+                              <ChevronUp className="w-4 h-4 shrink-0" style={{ color: palette.textTertiary }} />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 shrink-0" style={{ color: palette.textTertiary }} />
+                            )}
+                          </button>
+                          {isOpen && (
+                            <div className="p-4" style={{ background: palette.elevated, borderTop: `1px solid ${palette.borderSubtle}` }}>
+                              <p className="text-xs mb-3" style={{ color: palette.textSecondary }}>{finding.description}</p>
+                              <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3">
+                                <div>
+                                  <div className="mb-1.5" style={fieldLabelStyle}>Evidence</div>
+                                  <pre className="p-3 overflow-x-auto whitespace-pre-wrap break-all" style={codeBlockStyle}>
+                                    {finding.evidence}
+                                  </pre>
+                                </div>
+                                <div>
+                                  <div className="mb-1.5" style={fieldLabelStyle}>Location</div>
+                                  <button
+                                    onClick={() => viewFileForFinding(finding.file_path)}
+                                    className="w-full p-3 rounded-md text-left transition-colors hover:brightness-125 flex items-center justify-between gap-2"
+                                    style={secondaryButtonStyle}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <FileCode className="w-4 h-4 shrink-0" style={{ color: palette.textTertiary }} />
+                                      <span className="text-xs truncate" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{finding.file_path}</span>
+                                    </div>
+                                    <ExternalLink className="w-3 h-3 shrink-0" style={{ color: palette.textTertiary }} />
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    ))
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1196,8 +1215,8 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
               {activeTab === 'iocs' && (
                 <div>
                   {iocs.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 bg-slate-800/30 rounded-lg border border-slate-800">
-                      No Indicators of Compromise detected in the source code.
+                    <div className="p-6 text-center text-xs" style={emptyStateStyle}>
+                      No indicators of compromise detected in the source code.
                     </div>
                   ) : (
                     <IOCEnrichment iocs={iocs} />
@@ -1206,40 +1225,44 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
               )}
 
               {activeTab === 'behavior' && (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {otherBehaviorFlags.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 bg-slate-800/30 rounded-lg border border-slate-800">
+                    <div className="p-6 text-center text-xs" style={emptyStateStyle}>
                       No suspicious behavioral patterns detected.
                     </div>
                   ) : (
-                    otherBehaviorFlags.map((flag, idx) => (
-                      <div key={idx} className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-                        <div className="flex items-start gap-4">
-                          <div className={`p-2 rounded-lg bg-${getRiskColor(flag.severity)}-500/20`}>
-                            <AlertTriangle className={`w-5 h-5 text-${getRiskColor(flag.severity)}-400`} />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-white mb-1">{flag.flag_type.replace(/_/g, ' ').toUpperCase()}</h4>
-                            <p className="text-sm text-slate-400 mb-3">{flag.description}</p>
-                            <div className="space-y-1">
-                              {flag.evidence.map((ev, i) => (
-                                <div key={i} className="text-[10px] font-mono text-cyan-500/70 bg-cyan-500/5 px-2 py-1 rounded border border-cyan-500/10">
-                                  {ev}
-                                </div>
-                              ))}
+                    otherBehaviorFlags.map((flag, idx) => {
+                      const tone = riskTone(flag.severity);
+                      return (
+                        <div key={idx} className="p-4" style={cardStyle}>
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: tone === 'neutral' ? palette.textTertiary : toneColor[tone] }} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <h4 className="text-[13px] font-semibold" style={{ color: palette.textPrimary }}>{humanize(flag.flag_type)}</h4>
+                                <Pill label={flag.severity} tone={tone} />
+                              </div>
+                              <p className="text-xs mb-2" style={{ color: palette.textSecondary }}>{flag.description}</p>
+                              <div className="space-y-1">
+                                {flag.evidence.map((ev, i) => (
+                                  <div key={i} className="px-2 py-1 break-all" style={codeBlockStyle}>
+                                    {ev}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
 
               {activeTab === 'files' && (
-                <div className="bg-slate-800/30 rounded-lg border border-slate-700 overflow-hidden" style={{ height: '600px' }}>
+                <div className="overflow-hidden" style={{ ...cardStyle, height: '600px' }}>
                   <div className="flex h-full">
-                    <div className="w-1/3 border-r border-slate-700 overflow-y-auto bg-slate-900/50">
+                    <div className="w-1/3 overflow-y-auto" style={{ background: palette.base, borderRight: `1px solid ${palette.borderDefault}` }}>
                       <FileExplorer
                         analysisId={currentAnalysis.id}
                         onFileSelect={setSelectedFile}
@@ -1255,8 +1278,8 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
                           findings={findings}
                         />
                       ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-500 p-8 text-center">
-                          <FileCode className="w-12 h-12 mb-4 opacity-20" />
+                        <div className="h-full flex flex-col items-center justify-center p-8 text-center text-xs" style={{ color: palette.textTertiary }}>
+                          <FileCode className="w-8 h-8 mb-3" style={{ color: palette.textDisabled }} />
                           <p>Select a file from the explorer to view its source code and detected risks.</p>
                         </div>
                       )}
@@ -1271,4 +1294,3 @@ export default function ExtensionScanner({ initialUrl }: ExtensionScannerProps) 
     </div>
   );
 }
-

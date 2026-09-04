@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, Info, Copy, Check, Download } from 'lucide-react';
+import { AlertTriangle, Copy, Check, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { palette, typography } from '../../design-system/tokens';
+import { riskTone, toneColor, toneBg, chipStyle } from './extensionTones';
 
 interface FileViewerProps {
   analysisId: string;
@@ -98,16 +100,6 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
     return evidenceMap;
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'red';
-      case 'high': return 'orange';
-      case 'medium': return 'yellow';
-      case 'low': return 'blue';
-      default: return 'slate';
-    }
-  };
-
   const copyToClipboard = async (text: string, lineNumber: number) => {
     await navigator.clipboard.writeText(text);
     setCopiedLine(lineNumber);
@@ -128,25 +120,33 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
 
   const renderLineWithSyntax = (line: string, lineNumber: number) => {
     const highlight = highlights.find(h => h.lineNumber === lineNumber);
-    const hasHighlight = !!highlight;
+    const tone = highlight ? riskTone(highlight.finding.severity) : null;
+    // Low-severity findings map to neutral; still mark the line so the analyst sees it.
+    const markColor = tone ? (tone === 'neutral' ? palette.textTertiary : toneColor[tone]) : null;
 
     return (
       <div
         key={lineNumber}
-        className={`flex group hover:bg-slate-800/30 ${
-          hasHighlight ? `bg-${getSeverityColor(highlight.finding.severity)}-500/10 border-l-2 border-${getSeverityColor(highlight.finding.severity)}-500` : ''
-        }`}
+        className="flex group"
+        style={{
+          background: tone && tone !== 'neutral' ? toneBg(tone, 0.1) : 'transparent',
+          boxShadow: markColor ? `inset 2px 0 0 ${markColor}` : 'none',
+        }}
       >
-        <div className="flex-shrink-0 w-16 px-3 py-1 text-right text-slate-500 select-none text-xs font-mono">
+        <div
+          className="shrink-0 w-14 px-3 py-0.5 text-right select-none text-[11px]"
+          style={{ color: palette.textDisabled, fontFamily: typography.mono }}
+        >
           {lineNumber}
         </div>
-        <div className="flex-1 px-3 py-1 text-sm font-mono whitespace-pre">
-          <code className="text-slate-300">{line || ' '}</code>
+        <div className="flex-1 px-3 py-0.5 text-xs whitespace-pre" style={{ fontFamily: typography.mono }}>
+          <code style={{ color: palette.textSecondary }}>{line || ' '}</code>
         </div>
-        <div className="flex-shrink-0 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="shrink-0 px-2 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => copyToClipboard(line, lineNumber)}
-            className="text-slate-400 hover:text-cyan-400 transition-colors"
+            className="transition-colors hover:brightness-125"
+            style={{ color: palette.textTertiary }}
             title="Copy line"
           >
             {copiedLine === lineNumber ? (
@@ -156,9 +156,6 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
             )}
           </button>
         </div>
-        {hasHighlight && (
-          <div className="absolute right-0 top-0 bottom-0 w-1 bg-gradient-to-r from-transparent to-red-500/20" />
-        )}
       </div>
     );
   };
@@ -166,7 +163,7 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-slate-400">Loading file...</div>
+        <div className="text-xs" style={{ color: palette.textTertiary, fontFamily: typography.ui }}>Loading file…</div>
       </div>
     );
   }
@@ -174,7 +171,7 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
   if (error) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-red-400">{error}</div>
+        <div className="text-xs" style={{ color: palette.rose, fontFamily: typography.ui }}>{error}</div>
       </div>
     );
   }
@@ -183,25 +180,31 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
   const fileHighlights = highlights;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-white">{filePath}</span>
-          <span className="px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded uppercase">
+    <div className="flex flex-col h-full" style={{ fontFamily: typography.ui }}>
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-2.5"
+        style={{ background: palette.elevated, borderBottom: `1px solid ${palette.borderDefault}` }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium truncate" style={{ color: palette.textPrimary, fontFamily: typography.mono }} title={filePath}>
+            {filePath}
+          </span>
+          <span className="px-1.5 py-0.5 text-[10px] rounded shrink-0" style={chipStyle('neutral', true)}>
             {fileType}
           </span>
           {fileHighlights.length > 0 && (
-            <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded flex items-center gap-1">
+            <span className="px-2 py-0.5 text-[11px] rounded flex items-center gap-1 shrink-0" style={chipStyle('danger')}>
               <AlertTriangle className="w-3 h-3" />
               {fileHighlights.length} finding{fileHighlights.length > 1 ? 's' : ''}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">{lines.length} lines</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] tabular-nums" style={{ color: palette.textTertiary }}>{lines.length} lines</span>
           <button
             onClick={downloadFile}
-            className="p-1.5 hover:bg-slate-700 rounded transition-colors text-slate-400 hover:text-cyan-400"
+            className="p-1.5 rounded-md transition-colors hover:brightness-125"
+            style={{ color: palette.textTertiary }}
             title="Download file"
           >
             <Download className="w-4 h-4" />
@@ -210,29 +213,38 @@ export default function FileViewer({ analysisId, filePath, findings }: FileViewe
       </div>
 
       {fileHighlights.length > 0 && (
-        <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 space-y-2">
-          {fileHighlights.map((highlight, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-xs">
-              <AlertTriangle className={`w-3.5 h-3.5 text-${getSeverityColor(highlight.finding.severity)}-400 flex-shrink-0 mt-0.5`} />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  {highlight.finding.rule_id && (
-                    <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded font-mono">
-                      {highlight.finding.rule_id}
-                    </span>
-                  )}
-                  <span className="font-semibold text-slate-300">{highlight.finding.title}</span>
-                  <span className="text-slate-500">Line {highlight.lineNumber}</span>
+        <div
+          className="px-4 py-2 space-y-2"
+          style={{ background: palette.base, borderBottom: `1px solid ${palette.borderDefault}` }}
+        >
+          {fileHighlights.map((highlight, idx) => {
+            const tone = riskTone(highlight.finding.severity);
+            return (
+              <div key={idx} className="flex items-start gap-2 text-xs">
+                <AlertTriangle
+                  className="w-3.5 h-3.5 shrink-0 mt-0.5"
+                  style={{ color: tone === 'neutral' ? palette.textTertiary : toneColor[tone] }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {highlight.finding.rule_id && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px]" style={chipStyle('neutral', true)}>
+                        {highlight.finding.rule_id}
+                      </span>
+                    )}
+                    <span className="font-semibold" style={{ color: palette.textPrimary }}>{highlight.finding.title}</span>
+                    <span style={{ color: palette.textTertiary }}>Line {highlight.lineNumber}</span>
+                  </div>
+                  <p className="mt-0.5" style={{ color: palette.textSecondary }}>{highlight.finding.description}</p>
                 </div>
-                <p className="text-slate-400 mt-1">{highlight.finding.description}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <div ref={contentRef} className="flex-1 overflow-auto bg-slate-900">
-        <div className="relative min-w-max">
+      <div ref={contentRef} className="flex-1 overflow-auto" style={{ background: palette.void }}>
+        <div className="relative min-w-max py-1">
           {lines.map((line, idx) => renderLineWithSyntax(line, idx + 1))}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { File, Folder, ChevronRight, ChevronDown, FileCode, FileJson, FileText, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { palette, typography } from '../../design-system/tokens';
 
 interface FileNode {
   name: string;
@@ -117,18 +118,19 @@ export default function FileExplorer({ analysisId, onFileSelect, selectedFile, f
     setExpandedFolders(newExpanded);
   };
 
+  // Icons stay neutral; file type is conveyed by the glyph, not a color.
   const getFileIcon = (fileType: string) => {
+    const style = { color: palette.textTertiary };
     switch (fileType) {
       case 'js':
-        return <FileCode className="w-4 h-4 text-yellow-400" />;
+        return <FileCode className="w-4 h-4 shrink-0" style={style} />;
       case 'json':
-        return <FileJson className="w-4 h-4 text-green-400" />;
+        return <FileJson className="w-4 h-4 shrink-0" style={style} />;
       case 'html':
-        return <FileText className="w-4 h-4 text-orange-400" />;
       case 'css':
-        return <FileText className="w-4 h-4 text-blue-400" />;
+        return <FileText className="w-4 h-4 shrink-0" style={style} />;
       default:
-        return <File className="w-4 h-4 text-slate-400" />;
+        return <File className="w-4 h-4 shrink-0" style={style} />;
     }
   };
 
@@ -139,16 +141,16 @@ export default function FileExplorer({ analysisId, onFileSelect, selectedFile, f
         <div key={node.path}>
           <button
             onClick={() => toggleFolder(node.path)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-800 transition-colors text-left"
-            style={{ paddingLeft: `${depth * 16 + 12}px` }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 transition-colors hover:brightness-125 text-left"
+            style={{ paddingLeft: `${depth * 16 + 12}px`, background: 'transparent' }}
           >
             {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <ChevronDown className="w-4 h-4 shrink-0" style={{ color: palette.textTertiary }} />
             ) : (
-              <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <ChevronRight className="w-4 h-4 shrink-0" style={{ color: palette.textTertiary }} />
             )}
-            <Folder className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            <span className="text-sm text-slate-300 truncate">{node.name}</span>
+            <Folder className="w-4 h-4 shrink-0" style={{ color: palette.textSecondary }} />
+            <span className="text-[13px] truncate" style={{ color: palette.textSecondary, fontFamily: typography.mono }}>{node.name}</span>
           </button>
           {isExpanded && node.children && (
             <div>
@@ -159,19 +161,27 @@ export default function FileExplorer({ analysisId, onFileSelect, selectedFile, f
       );
     }
 
+    const isSelected = selectedFile === node.path;
     return (
       <button
         key={node.path}
         onClick={() => onFileSelect(node.path)}
-        className={`w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-800 transition-colors text-left ${
-          selectedFile === node.path ? 'bg-slate-800 border-l-2 border-cyan-500' : ''
-        }`}
-        style={{ paddingLeft: `${depth * 16 + 28}px` }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 transition-colors hover:brightness-125 text-left"
+        style={{
+          paddingLeft: `${depth * 16 + 28}px`,
+          background: isSelected ? palette.surface : 'transparent',
+          boxShadow: isSelected ? `inset 2px 0 0 ${palette.accent}` : 'none',
+        }}
       >
         {getFileIcon(node.fileType || '')}
-        <span className="text-sm text-slate-300 truncate flex-1">{node.name}</span>
+        <span
+          className="text-[13px] truncate flex-1"
+          style={{ color: isSelected ? palette.textPrimary : palette.textSecondary, fontFamily: typography.mono }}
+        >
+          {node.name}
+        </span>
         {node.hasFinding && (
-          <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: palette.rose }} />
         )}
       </button>
     );
@@ -179,22 +189,22 @@ export default function FileExplorer({ analysisId, onFileSelect, selectedFile, f
 
   if (loading) {
     return (
-      <div className="text-center py-8 text-slate-400">
-        Loading files...
+      <div className="text-center py-8 text-xs" style={{ color: palette.textTertiary, fontFamily: typography.ui }}>
+        Loading files…
       </div>
     );
   }
 
   if (fileTree.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-400">
+      <div className="text-center py-8 text-xs" style={{ color: palette.textTertiary, fontFamily: typography.ui }}>
         No files found
       </div>
     );
   }
 
   return (
-    <div className="overflow-y-auto max-h-[600px]">
+    <div className="overflow-y-auto max-h-[600px] py-1">
       {fileTree.map(node => renderNode(node))}
     </div>
   );

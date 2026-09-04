@@ -1,6 +1,34 @@
 import { useState } from 'react';
 import { ShieldOff, Shield, Copy, Check, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/themecontext';
+import { palette, typography } from '../design-system/tokens';
+
+const cardStyle = {
+  background: palette.base,
+  border: `1px solid ${palette.borderDefault}`,
+  borderRadius: '9px',
+} as const;
+
+const fieldStyle = {
+  background: palette.void,
+  border: `1px solid ${palette.borderDefault}`,
+  color: palette.textPrimary,
+  fontFamily: typography.mono,
+} as const;
+
+const secondaryButtonStyle = {
+  background: palette.float,
+  border: `1px solid ${palette.borderDefault}`,
+  color: palette.textSecondary,
+} as const;
+
+function segmentStyle(active: boolean) {
+  return {
+    background: active ? palette.surface : 'transparent',
+    color: active ? palette.textPrimary : palette.textSecondary,
+    boxShadow: active ? '0 1px 2px rgba(0,0,0,0.35)' : 'none',
+  } as const;
+}
 
 export default function DefangTool() {
   const { theme } = useTheme();
@@ -8,8 +36,6 @@ export default function DefangTool() {
   const [output, setOutput] = useState('');
   const [mode, setMode] = useState<'defang' | 'refang'>('defang');
   const [copied, setCopied] = useState(false);
-
-  // ... (rest of functions remain the same) ...
 
   const defang = (text: string): string => {
     return text
@@ -64,101 +90,144 @@ export default function DefangTool() {
         { input: 'attacker[@]evil[.]com', output: 'attacker@evil.com' },
       ];
 
+  const modeTabs: { id: 'defang' | 'refang'; label: string; icon: typeof Shield }[] = [
+    { id: 'defang', label: 'Defang', icon: ShieldOff },
+    { id: 'refang', label: 'Refang', icon: Shield },
+  ];
+
   return (
-    <div className={`h-full flex flex-col ${theme === 'desktop' ? '' : 'p-8 space-y-8'}`}>
+    <div
+      className={`h-full flex flex-col ${theme === 'desktop' ? '' : 'p-8 space-y-8'}`}
+      style={{ background: palette.elevated, color: palette.textPrimary, fontFamily: typography.ui }}
+    >
+      <style>{`
+        .defang-field::placeholder { color: ${palette.textDisabled}; }
+        .defang-field:focus { outline: none; border-color: ${palette.borderActive} !important; }
+        .defang-btn { transition: background-color 150ms, color 150ms; }
+        .defang-btn:hover:not(:disabled) { background: ${palette.surface} !important; color: ${palette.textPrimary} !important; }
+        .defang-tab { transition: color 150ms; }
+        .defang-tab:hover { color: ${palette.textPrimary} !important; }
+        .defang-seg { transition: color 150ms, background-color 150ms; }
+        .defang-seg:hover { color: ${palette.textPrimary} !important; }
+      `}</style>
+
       {theme === 'desktop' ? (
-        <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
+        <div
+          className="sticky top-0 z-20 px-4"
+          style={{ background: palette.base, borderBottom: `1px solid ${palette.borderSubtle}` }}
+        >
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setMode('defang')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                mode === 'defang' 
-                  ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
-                  : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-              }`}
-            >
-              <ShieldOff className="w-3.5 h-3.5" />
-              Defang Mode
-            </button>
-            <button
-              onClick={() => setMode('refang')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                mode === 'refang' 
-                  ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
-                  : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              Refang Mode
-            </button>
+            {modeTabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = mode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMode(tab.id)}
+                  className="defang-tab flex items-center gap-2 px-3 py-2.5 text-xs font-medium"
+                  style={{
+                    color: isActive ? palette.textPrimary : palette.textTertiary,
+                    borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
+                    marginBottom: '-1px',
+                  }}
+                >
+                  <Icon className="w-3.5 h-3.5" style={{ color: isActive ? palette.accent : palette.textTertiary }} />
+                  {tab.label} mode
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
+          <div
+            className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-4"
+            style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+          >
             {mode === 'defang' ? (
-              <ShieldOff className="w-8 h-8 text-white" />
+              <ShieldOff className="w-7 h-7" style={{ color: palette.accent }} />
             ) : (
-              <Shield className="w-8 h-8 text-white" />
+              <Shield className="w-7 h-7" style={{ color: palette.accent }} />
             )}
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Defang / Refang Tool</h1>
-          <p className="text-slate-400">
+          <h1 className="text-2xl font-semibold mb-2" style={{ color: palette.textPrimary }}>Defang / Refang Tool</h1>
+          <p className="text-sm" style={{ color: palette.textSecondary }}>
             Safely share malicious IOCs by defanging URLs, IPs, and emails.
             Or refang them back to their original form for analysis.
           </p>
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto ${theme === 'desktop' ? 'p-8' : ''}`}>
+      <div className={`flex-1 overflow-y-auto ${theme === 'desktop' ? 'p-6' : ''}`}>
         <div className="max-w-4xl mx-auto">
           {theme !== 'desktop' && (
-            <div className="flex items-center justify-center gap-4 mb-6">
-              <button
-                onClick={() => setMode('defang')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all flex items-center gap-2 ${
-                  mode === 'defang'
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <div
+                role="tablist"
+                aria-label="Conversion direction"
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-md"
+                style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
               >
-                <ShieldOff className="w-4 h-4" />
-                Defang
-              </button>
+                {modeTabs.map(tab => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={mode === tab.id}
+                      onClick={() => setMode(tab.id)}
+                      className="defang-seg px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2"
+                      style={segmentStyle(mode === tab.id)}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
               <button
+                type="button"
                 onClick={handleSwap}
-                className="p-3 bg-slate-800 text-slate-400 rounded-lg hover:text-white hover:bg-slate-700 transition-colors"
+                className="defang-btn p-2 rounded-md"
+                style={secondaryButtonStyle}
                 title="Swap mode and content"
               >
-                <ArrowRightLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setMode('refang')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all flex items-center gap-2 ${
-                  mode === 'refang'
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <Shield className="w-4 h-4" />
-                Refang
+                <ArrowRightLeft className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-white/5 rounded-xl p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="p-5" style={cardStyle}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-slate-300">
+                <label className="text-sm font-medium" style={{ color: palette.textSecondary }}>
                   {mode === 'defang' ? 'Original IOCs' : 'Defanged IOCs'}
                 </label>
-                <button
-                  onClick={handleClear}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear
-                </button>
+                <div className="flex items-center gap-1">
+                  {theme === 'desktop' && (
+                    <button
+                      type="button"
+                      onClick={handleSwap}
+                      className="defang-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs"
+                      style={{ color: palette.textSecondary, background: 'transparent' }}
+                      title="Swap mode and content"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      Swap
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="defang-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs"
+                    style={{ color: palette.textSecondary, background: 'transparent' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear
+                  </button>
+                </div>
               </div>
               <textarea
                 value={input}
@@ -167,32 +236,37 @@ export default function DefangTool() {
                   ? 'Paste URLs, IPs, or emails to defang...\n\nExample:\nhttps://malware.com/bad.exe\n192.168.1.1\nattacker@evil.com'
                   : 'Paste defanged IOCs to refang...\n\nExample:\nhxxps[://]malware[.]com/bad[.]exe\n192[.]168[.]1[.]1\nattacker[@]evil[.]com'
                 }
-                className="w-full h-48 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                className="defang-field w-full h-48 px-4 py-3 rounded-lg text-sm resize-none"
+                style={fieldStyle}
               />
               <div className="mt-4 flex justify-end">
                 <button
+                  type="button"
                   onClick={handleConvert}
                   disabled={!input.trim()}
-                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="px-5 py-2 rounded-md text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  style={{ background: palette.accent, color: palette.void }}
                 >
                   {mode === 'defang' ? 'Defang' : 'Refang'}
                 </button>
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-white/5 rounded-xl p-5">
+            <div className="p-5" style={cardStyle}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-slate-300">
-                  {mode === 'defang' ? 'Defanged Output' : 'Original IOCs'}
+                <label className="text-sm font-medium" style={{ color: palette.textSecondary }}>
+                  {mode === 'defang' ? 'Defanged output' : 'Original IOCs'}
                 </label>
                 {output && (
                   <button
+                    type="button"
                     onClick={handleCopy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                    className="defang-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs"
+                    style={secondaryButtonStyle}
                   >
                     {copied ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5" style={{ color: palette.green }} />
                         Copied
                       </>
                     ) : (
@@ -204,11 +278,11 @@ export default function DefangTool() {
                   </button>
                 )}
               </div>
-              <div className="w-full h-48 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg overflow-auto">
+              <div className="w-full h-48 px-4 py-3 rounded-lg overflow-auto" style={fieldStyle}>
                 {output ? (
-                  <pre className="text-sm text-emerald-400 font-mono whitespace-pre-wrap break-all">{output}</pre>
+                  <pre className="text-sm whitespace-pre-wrap break-all" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{output}</pre>
                 ) : (
-                  <p className="text-slate-500 text-sm">
+                  <p className="text-sm" style={{ color: palette.textDisabled, fontFamily: typography.ui }}>
                     {mode === 'defang' ? 'Defanged output will appear here' : 'Refanged output will appear here'}
                   </p>
                 )}
@@ -216,22 +290,26 @@ export default function DefangTool() {
             </div>
           </div>
 
-          <div className="mt-8 bg-slate-900/50 rounded-xl border border-white/5 p-5">
-            <h3 className="font-semibold text-white mb-4">Examples</h3>
-            <div className="space-y-3">
+          <div className="mt-6 p-5" style={cardStyle}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: palette.textPrimary }}>Examples</h3>
+            <div className="space-y-2">
               {examples.map((ex, i) => (
-                <div key={i} className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-lg">
-                  <code className="flex-1 text-sm text-slate-400 font-mono truncate">{ex.input}</code>
-                  <span className="text-slate-600">→</span>
-                  <code className="flex-1 text-sm text-emerald-400 font-mono truncate">{ex.output}</code>
+                <div
+                  key={i}
+                  className="flex items-center gap-4 p-3 rounded-lg"
+                  style={{ background: palette.elevated, border: `1px solid ${palette.borderSubtle}` }}
+                >
+                  <code className="flex-1 text-xs truncate" style={{ color: palette.textSecondary, fontFamily: typography.mono }}>{ex.input}</code>
+                  <span style={{ color: palette.textDisabled }}>→</span>
+                  <code className="flex-1 text-xs truncate" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{ex.output}</code>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-5">
-            <h3 className="font-semibold text-blue-400 mb-2">Why Defang?</h3>
-            <p className="text-sm text-blue-300/80">
+          <div className="mt-4 p-4" style={cardStyle}>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: palette.textPrimary }}>Why defang?</h3>
+            <p className="text-xs" style={{ color: palette.textSecondary }}>
               Defanging prevents accidental clicks on malicious links and stops security tools
               from flagging your reports. It's a standard practice when sharing IOCs in tickets,
               emails, chat, or documentation.

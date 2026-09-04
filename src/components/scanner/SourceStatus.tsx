@@ -1,4 +1,6 @@
 import { Check, Loader2, AlertTriangle, X } from 'lucide-react';
+import { palette, typography } from '../../design-system/tokens';
+import { type Tone, toneColor, toneBg, toneBorder, cardStyle } from '../results/resultTokens';
 
 export type SourceState = 'pending' | 'loading' | 'success' | 'error' | 'disabled';
 
@@ -12,56 +14,72 @@ interface SourceStatusProps {
   sources: Source[];
 }
 
-function getStateIcon(state: SourceState) {
-  switch (state) {
-    case 'loading':
-      return <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />;
-    case 'success':
-      return <Check className="w-4 h-4 text-green-400" />;
-    case 'error':
-      return <AlertTriangle className="w-4 h-4 text-red-400" />;
-    case 'disabled':
-      return <X className="w-4 h-4 text-slate-500" />;
-    default:
-      return <div className="w-4 h-4 rounded-full border-2 border-slate-600" />;
-  }
-}
+// Only real outcomes get semantic color: success is green, error is rose.
+// Pending / disabled stay neutral; loading uses accent for motion.
+const STATE_TONE: Record<SourceState, Tone> = {
+  pending: 'neutral',
+  loading: 'accent',
+  success: 'good',
+  error: 'danger',
+  disabled: 'neutral',
+};
 
-function getStateColor(state: SourceState) {
+const STATE_LABEL: Record<SourceState, string> = {
+  pending: 'Pending',
+  loading: 'Loading',
+  success: 'OK',
+  error: 'Error',
+  disabled: 'Not configured',
+};
+
+function StateIcon({ state }: { state: SourceState }) {
   switch (state) {
     case 'loading':
-      return 'border-cyan-500/50 bg-cyan-500/10';
+      return <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: toneColor.accent }} />;
     case 'success':
-      return 'border-green-500/50 bg-green-500/10';
+      return <Check className="w-3.5 h-3.5" style={{ color: toneColor.good }} />;
     case 'error':
-      return 'border-red-500/50 bg-red-500/10';
+      return <AlertTriangle className="w-3.5 h-3.5" style={{ color: toneColor.danger }} />;
     case 'disabled':
-      return 'border-slate-700 bg-slate-800/50';
+      return <X className="w-3.5 h-3.5" style={{ color: palette.textDisabled }} />;
     default:
-      return 'border-slate-700 bg-slate-800';
+      return <div className="w-3.5 h-3.5 rounded-full" style={{ border: `2px solid ${palette.borderActive}` }} />;
   }
 }
 
 export default function SourceStatus({ sources }: SourceStatusProps) {
   return (
-    <div className="flex items-center gap-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
-      <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
-        Source Status:
+    <div
+      className="flex items-center gap-3 p-4 overflow-x-auto"
+      style={{ ...cardStyle, fontFamily: typography.ui }}
+    >
+      <span className="text-xs font-medium whitespace-nowrap" style={{ color: palette.textTertiary }}>
+        Sources
       </span>
       <div className="flex items-center gap-2">
         {sources.map((source) => {
           const Icon = source.icon;
+          const tone = STATE_TONE[source.state];
+          const disabled = source.state === 'disabled';
           return (
             <div
               key={source.name}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${getStateColor(source.state)}`}
-              title={source.name}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors"
+              style={{
+                background: toneBg(tone, 0.08),
+                border: `1px solid ${toneBorder(tone, 0.24)}`,
+                opacity: disabled ? 0.7 : 1,
+              }}
+              title={`${source.name}: ${STATE_LABEL[source.state]}`}
             >
-              <Icon className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-medium text-slate-300 whitespace-nowrap">
+              <Icon className="w-3.5 h-3.5" style={{ color: palette.textTertiary }} />
+              <span
+                className="text-xs font-medium whitespace-nowrap"
+                style={{ color: disabled ? palette.textTertiary : palette.textSecondary }}
+              >
                 {source.name}
               </span>
-              {getStateIcon(source.state)}
+              <StateIcon state={source.state} />
             </div>
           );
         })}

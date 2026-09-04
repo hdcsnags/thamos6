@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { palette, typography } from '../../design-system/tokens';
+import { cardStyle, toneColor } from '../results/resultTokens';
 
 interface RawJsonCollapseProps {
   data: any;
   title?: string;
 }
 
-export default function RawJsonCollapse({ data, title = 'Raw JSON Data' }: RawJsonCollapseProps) {
+export default function RawJsonCollapse({ data, title = 'Raw JSON data' }: RawJsonCollapseProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hover, setHover] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
@@ -17,39 +20,51 @@ export default function RawJsonCollapse({ data, title = 'Raw JSON Data' }: RawJs
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-4 hover:bg-slate-800 transition-all"
+    <div className="overflow-hidden" style={{ ...cardStyle, fontFamily: typography.ui }}>
+      <div
+        className="w-full flex items-center justify-between p-4 transition-colors"
+        style={{ background: hover ? palette.elevated : 'transparent' }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
       >
-        <span className="text-sm font-medium text-slate-300">{title}</span>
-        <div className="flex items-center gap-2">
-          {expanded && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopy();
-              }}
-              className="p-1.5 hover:bg-slate-700 rounded transition-all"
-              title="Copy JSON"
-            >
-              {copied ? (
-                <Check className="w-4 h-4 text-green-400" />
-              ) : (
-                <Copy className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
-          )}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex-1 flex items-center justify-between text-left"
+        >
+          <span className="text-sm font-medium" style={{ color: palette.textPrimary }}>{title}</span>
           {expanded ? (
-            <ChevronUp className="w-5 h-5 text-slate-400" />
+            <ChevronUp className="w-4 h-4" style={{ color: palette.textTertiary }} />
           ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-4 h-4" style={{ color: palette.textTertiary }} />
           )}
-        </div>
-      </button>
+        </button>
+        {expanded && (
+          <button
+            onClick={handleCopy}
+            className="ml-2 p-1.5 rounded-md transition-colors"
+            style={{ border: `1px solid ${palette.borderDefault}` }}
+            title="Copy JSON"
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5" style={{ color: toneColor.good }} />
+            ) : (
+              <Copy className="w-3.5 h-3.5" style={{ color: palette.textSecondary }} />
+            )}
+          </button>
+        )}
+      </div>
       {expanded && (
-        <div className="border-t border-slate-700">
-          <pre className="p-4 text-xs text-slate-300 overflow-auto max-h-96 font-mono">
+        <div style={{ borderTop: `1px solid ${palette.borderSubtle}` }}>
+          <pre
+            className="p-4 overflow-auto max-h-96"
+            style={{
+              background: palette.void,
+              color: palette.textSecondary,
+              fontFamily: typography.mono,
+              fontSize: '11px',
+              lineHeight: 1.5,
+            }}
+          >
             {JSON.stringify(data, null, 2)}
           </pre>
         </div>

@@ -123,7 +123,7 @@ export const WALLPAPERS: Wallpaper[] = [
   },
   {
     id: 'dragon-eye',
-    name: 'Sentinel',
+    name: 'Watcher',
     style: {
       backgroundColor: '#050508',
       backgroundImage: 'url(/wallpapers/dragon-eye.png)',

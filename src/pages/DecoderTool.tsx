@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Code, Copy, Check, ArrowRightLeft, Trash2, AlertTriangle, Hash, Link, FileCode, Type } from 'lucide-react';
 import { useTheme } from '../contexts/themecontext';
+import { palette, typography, accentBg, accentBorder } from '../design-system/tokens';
 
 type EncodingType = 'base64' | 'url' | 'hex' | 'html' | 'unicode' | 'rot13';
 
@@ -20,6 +21,33 @@ const encodings: EncodingOption[] = [
   { id: 'rot13', name: 'ROT13', description: 'Simple letter substitution', icon: ArrowRightLeft },
 ];
 
+const cardStyle = {
+  background: palette.base,
+  border: `1px solid ${palette.borderDefault}`,
+  borderRadius: '9px',
+} as const;
+
+const fieldStyle = {
+  background: palette.void,
+  border: `1px solid ${palette.borderDefault}`,
+  color: palette.textPrimary,
+  fontFamily: typography.mono,
+} as const;
+
+const secondaryButtonStyle = {
+  background: palette.float,
+  border: `1px solid ${palette.borderDefault}`,
+  color: palette.textSecondary,
+} as const;
+
+function segmentStyle(active: boolean) {
+  return {
+    background: active ? palette.surface : 'transparent',
+    color: active ? palette.textPrimary : palette.textSecondary,
+    boxShadow: active ? '0 1px 2px rgba(0,0,0,0.35)' : 'none',
+  } as const;
+}
+
 export default function DecoderTool() {
   const { theme } = useTheme();
   const [input, setInput] = useState('');
@@ -28,8 +56,6 @@ export default function DecoderTool() {
   const [mode, setMode] = useState<'decode' | 'encode'>('decode');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  // ... (rest of the functions remain the same) ...
 
   const base64Decode = (str: string): string => {
     try {
@@ -185,29 +211,51 @@ export default function DecoderTool() {
     setError(null);
   };
 
+  const selectEncoding = (id: EncodingType) => {
+    setEncoding(id);
+    setOutput('');
+    setError(null);
+  };
+
   return (
-    <div className={`h-full flex flex-col ${theme === 'desktop' ? '' : 'p-8 space-y-8'}`}>
+    <div
+      className={`h-full flex flex-col ${theme === 'desktop' ? '' : 'p-8 space-y-8'}`}
+      style={{ background: palette.elevated, color: palette.textPrimary, fontFamily: typography.ui }}
+    >
+      <style>{`
+        .decoder-field::placeholder { color: ${palette.textDisabled}; }
+        .decoder-field:focus { outline: none; border-color: ${palette.borderActive} !important; }
+        .decoder-btn { transition: background-color 150ms, color 150ms; }
+        .decoder-btn:hover:not(:disabled) { background: ${palette.surface} !important; color: ${palette.textPrimary} !important; }
+        .decoder-tab { transition: color 150ms, background-color 150ms; }
+        .decoder-tab:hover { color: ${palette.textPrimary} !important; }
+        .decoder-seg { transition: color 150ms, background-color 150ms; }
+        .decoder-seg:hover { color: ${palette.textPrimary} !important; }
+      `}</style>
+
       {theme === 'desktop' ? (
-        <div className="sticky top-0 z-20 backdrop-blur-md bg-slate-900/40 border-b border-white/5 px-6">
-          <div className="flex items-center gap-1">
+        <div
+          className="sticky top-0 z-20 px-4"
+          style={{ background: palette.base, borderBottom: `1px solid ${palette.borderSubtle}` }}
+        >
+          <div className="flex items-center gap-1 overflow-x-auto">
             {encodings.map(enc => {
               const Icon = enc.icon;
               const isActive = encoding === enc.id;
               return (
                 <button
                   key={enc.id}
-                  onClick={() => {
-                    setEncoding(enc.id);
-                    setOutput('');
-                    setError(null);
+                  type="button"
+                  onClick={() => selectEncoding(enc.id)}
+                  title={enc.description}
+                  className="decoder-tab flex items-center gap-2 px-3 py-2.5 text-xs font-medium whitespace-nowrap"
+                  style={{
+                    color: isActive ? palette.textPrimary : palette.textTertiary,
+                    borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
+                    marginBottom: '-1px',
                   }}
-                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                    isActive 
-                      ? 'text-cyan-400 border-cyan-500 bg-cyan-500/5' 
-                      : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                  }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-3.5 h-3.5" style={{ color: isActive ? palette.accent : palette.textTertiary }} />
                   {enc.name}
                 </button>
               );
@@ -216,89 +264,104 @@ export default function DecoderTool() {
         </div>
       ) : (
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4">
-            <Code className="w-8 h-8 text-white" />
+          <div
+            className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-4"
+            style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
+          >
+            <Code className="w-7 h-7" style={{ color: palette.accent }} />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Encoder / Decoder</h1>
-          <p className="text-slate-400">
+          <h1 className="text-2xl font-semibold mb-2" style={{ color: palette.textPrimary }}>Encoder / Decoder</h1>
+          <p className="text-sm" style={{ color: palette.textSecondary }}>
             Decode and encode strings in various formats including Base64, URL encoding,
             hexadecimal, HTML entities, Unicode escapes, and ROT13.
           </p>
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto ${theme === 'desktop' ? 'p-8' : ''}`}>
-        <div className={`max-w-4xl mx-auto ${theme === 'desktop' ? '' : ''}`}>
+      <div className={`flex-1 overflow-y-auto ${theme === 'desktop' ? 'p-6' : ''}`}>
+        <div className="max-w-4xl mx-auto">
           {theme !== 'desktop' && (
-            <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
-              {encodings.map(enc => (
-                <button
-                  key={enc.id}
-                  onClick={() => {
-                    setEncoding(enc.id);
-                    setOutput('');
-                    setError(null);
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    encoding === enc.id
-                      ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                  title={enc.description}
-                >
-                  {enc.name}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+              {encodings.map(enc => {
+                const isActive = encoding === enc.id;
+                return (
+                  <button
+                    key={enc.id}
+                    type="button"
+                    onClick={() => selectEncoding(enc.id)}
+                    className="decoder-btn px-3 py-1.5 rounded-md text-sm font-medium"
+                    style={{
+                      background: isActive ? palette.surface : palette.float,
+                      border: `1px solid ${isActive ? palette.borderActive : palette.borderDefault}`,
+                      color: isActive ? palette.textPrimary : palette.textSecondary,
+                    }}
+                    title={enc.description}
+                  >
+                    {enc.name}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <button
-              onClick={() => {
-                setMode('decode');
-                setOutput('');
-                setError(null);
-              }}
-              className={`px-6 py-2.5 rounded-lg font-medium transition-all ${
-                mode === 'decode'
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div
+              role="tablist"
+              aria-label="Conversion direction"
+              className="inline-flex items-center gap-0.5 p-0.5 rounded-md"
+              style={{ background: palette.float, border: `1px solid ${palette.borderDefault}` }}
             >
-              Decode
-            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'decode'}
+                onClick={() => {
+                  setMode('decode');
+                  setOutput('');
+                  setError(null);
+                }}
+                className="decoder-seg px-4 py-1.5 rounded text-sm font-medium"
+                style={segmentStyle(mode === 'decode')}
+              >
+                Decode
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'encode'}
+                onClick={() => {
+                  setMode('encode');
+                  setOutput('');
+                  setError(null);
+                }}
+                className="decoder-seg px-4 py-1.5 rounded text-sm font-medium"
+                style={segmentStyle(mode === 'encode')}
+              >
+                Encode
+              </button>
+            </div>
             <button
+              type="button"
               onClick={handleSwap}
-              className="p-2.5 bg-slate-800 text-slate-400 rounded-lg hover:text-white hover:bg-slate-700 transition-colors"
+              className="decoder-btn p-2 rounded-md"
+              style={secondaryButtonStyle}
               title="Swap mode and content"
             >
-              <ArrowRightLeft className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => {
-                setMode('encode');
-                setOutput('');
-                setError(null);
-              }}
-              className={`px-6 py-2.5 rounded-lg font-medium transition-all ${
-                mode === 'encode'
-                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Encode
+              <ArrowRightLeft className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-white/5 rounded-xl p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="p-5" style={cardStyle}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-slate-300">
-                  {mode === 'decode' ? 'Encoded Input' : 'Plain Text Input'}
+                <label className="text-sm font-medium" style={{ color: palette.textSecondary }}>
+                  {mode === 'decode' ? 'Encoded input' : 'Plain text input'}
                 </label>
                 <button
+                  type="button"
                   onClick={handleClear}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+                  className="decoder-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs"
+                  style={{ color: palette.textSecondary, background: 'transparent' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Clear
@@ -311,32 +374,37 @@ export default function DecoderTool() {
                   ? `Paste ${encoding.toUpperCase()} encoded text here...`
                   : 'Enter text to encode...'
                 }
-                className="w-full h-40 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                className="decoder-field w-full h-40 px-4 py-3 rounded-lg text-sm resize-none"
+                style={fieldStyle}
               />
               <div className="mt-4 flex justify-end">
                 <button
+                  type="button"
                   onClick={handleConvert}
                   disabled={!input.trim()}
-                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="px-5 py-2 rounded-md text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  style={{ background: palette.accent, color: palette.void }}
                 >
                   {mode === 'decode' ? 'Decode' : 'Encode'}
                 </button>
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-white/5 rounded-xl p-5">
+            <div className="p-5" style={cardStyle}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-slate-300">
-                  {mode === 'decode' ? 'Decoded Output' : 'Encoded Output'}
+                <label className="text-sm font-medium" style={{ color: palette.textSecondary }}>
+                  {mode === 'decode' ? 'Decoded output' : 'Encoded output'}
                 </label>
                 {output && (
                   <button
+                    type="button"
                     onClick={handleCopy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
+                    className="decoder-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs"
+                    style={secondaryButtonStyle}
                   >
                     {copied ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5" style={{ color: palette.green }} />
                         Copied
                       </>
                     ) : (
@@ -348,16 +416,16 @@ export default function DecoderTool() {
                   </button>
                 )}
               </div>
-              <div className="w-full h-40 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg overflow-auto">
+              <div className="w-full h-40 px-4 py-3 rounded-lg overflow-auto" style={fieldStyle}>
                 {error ? (
-                  <div className="flex items-center gap-2 text-red-400">
-                    <AlertTriangle className="w-4 h-4" />
+                  <div className="flex items-center gap-2" style={{ color: palette.rose, fontFamily: typography.ui }}>
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
                     <span className="text-sm">{error}</span>
                   </div>
                 ) : output ? (
-                  <pre className="text-sm text-emerald-400 font-mono whitespace-pre-wrap break-all">{output}</pre>
+                  <pre className="text-sm whitespace-pre-wrap break-all" style={{ color: palette.textPrimary, fontFamily: typography.mono }}>{output}</pre>
                 ) : (
-                  <p className="text-slate-500 text-sm">
+                  <p className="text-sm" style={{ color: palette.textDisabled, fontFamily: typography.ui }}>
                     {mode === 'decode' ? 'Decoded output will appear here' : 'Encoded output will appear here'}
                   </p>
                 )}
@@ -365,34 +433,35 @@ export default function DecoderTool() {
             </div>
           </div>
 
-          <div className="mt-8 bg-slate-900/50 rounded-xl border border-white/5 p-5">
-            <h3 className="font-semibold text-white mb-4">Common Examples</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="p-3 bg-slate-800/50 rounded-lg">
-                <p className="text-slate-400 mb-1">Base64</p>
-                <code className="text-cyan-400 font-mono">SGVsbG8gV29ybGQh → Hello World!</code>
-              </div>
-              <div className="p-3 bg-slate-800/50 rounded-lg">
-                <p className="text-slate-400 mb-1">URL Encoding</p>
-                <code className="text-cyan-400 font-mono">Hello%20World → Hello World</code>
-              </div>
-              <div className="p-3 bg-slate-800/50 rounded-lg">
-                <p className="text-slate-400 mb-1">Hexadecimal</p>
-                <code className="text-cyan-400 font-mono">48656c6c6f → Hello</code>
-              </div>
-              <div className="p-3 bg-slate-800/50 rounded-lg">
-                <p className="text-slate-400 mb-1">ROT13</p>
-                <code className="text-cyan-400 font-mono">Uryyb → Hello</code>
-              </div>
+          <div className="mt-6 p-5" style={cardStyle}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: palette.textPrimary }}>Common examples</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {[
+                ['Base64', 'SGVsbG8gV29ybGQh → Hello World!'],
+                ['URL encoding', 'Hello%20World → Hello World'],
+                ['Hexadecimal', '48656c6c6f → Hello'],
+                ['ROT13', 'Uryyb → Hello'],
+              ].map(([label, example]) => (
+                <div key={label} className="p-3 rounded-lg" style={{ background: palette.elevated, border: `1px solid ${palette.borderSubtle}` }}>
+                  <p className="text-xs mb-1" style={{ color: palette.textTertiary }}>{label}</p>
+                  <code className="text-xs" style={{ color: palette.textSecondary, fontFamily: typography.mono }}>{example}</code>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="mt-6 bg-amber-500/10 border border-amber-500/20 rounded-xl p-5">
-            <h3 className="font-semibold text-amber-400 mb-2">Security Note</h3>
-            <p className="text-sm text-amber-300/80">
-              Attackers often use encoding to obfuscate malicious payloads in phishing emails,
-              scripts, and URLs. Always decode suspicious strings in a safe environment.
-            </p>
+          <div
+            className="mt-4 p-4 rounded-lg flex items-start gap-3"
+            style={{ background: accentBg(palette.amber, 0.06), border: `1px solid ${accentBorder(palette.amber, 0.2)}` }}
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: palette.amber }} />
+            <div>
+              <h3 className="text-sm font-semibold mb-1" style={{ color: palette.textPrimary }}>Security note</h3>
+              <p className="text-xs" style={{ color: palette.textSecondary }}>
+                Attackers often use encoding to obfuscate malicious payloads in phishing emails,
+                scripts, and URLs. Always decode suspicious strings in a safe environment.
+              </p>
+            </div>
           </div>
         </div>
       </div>

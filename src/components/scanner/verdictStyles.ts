@@ -1,26 +1,50 @@
 // Shared style maps for the calibrated-verdict UI, so the overview VerdictStrip
-// and the Verdict-tab VerdictPanel stay visually in sync.
+// and the Verdict-tab VerdictPanel stay visually in sync. All values are
+// token-based (hex / rgba strings, kit Tones) for use in inline `style`.
 import type { CalibratedScoring } from '../../types';
+import { palette } from '../../design-system/tokens';
+import { type Tone, toneColor, toneBg, toneBorder } from '../results/resultTokens';
 
-// Calibrated read (scoring.verdict) — label + text color.
-export const SCORING_VERDICT_LABEL: Record<CalibratedScoring['verdict'], { label: string; cls: string }> = {
-  malicious: { label: 'MALICIOUS', cls: 'text-rose-400' },
-  suspicious: { label: 'SUSPICIOUS', cls: 'text-amber-400' },
-  low_signal: { label: 'LOW SIGNAL', cls: 'text-cyan-400' },
-  no_signal: { label: 'NO SIGNAL', cls: 'text-emerald-400' },
+export interface VerdictLabelStyle {
+  label: string;
+  /** Text color (hex). */
+  color: string;
+  tone: Tone;
+}
+
+// Calibrated read (scoring.verdict) — label + color + kit tone.
+// "Low signal" is inconclusive, so it stays neutral; green is reserved for the
+// engine's explicit no-signal conclusion.
+export const SCORING_VERDICT_LABEL: Record<CalibratedScoring['verdict'], VerdictLabelStyle> = {
+  malicious: { label: 'Malicious', color: toneColor.danger, tone: 'danger' },
+  suspicious: { label: 'Suspicious', color: toneColor.warn, tone: 'warn' },
+  low_signal: { label: 'Low signal', color: palette.textSecondary, tone: 'neutral' },
+  no_signal: { label: 'No signal', color: toneColor.good, tone: 'good' },
 };
 
-// Abuse-category chips — colored by severity.
-export const CATEGORY_SEVERITY_STYLE: Record<'high' | 'medium' | 'low', string> = {
-  high: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-  medium: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  low: 'bg-slate-500/15 text-slate-300 border-slate-600/40',
+export interface SeverityStyle {
+  color: string;
+  bg: string;
+  border: string;
+}
+
+// Abuse-category chips — colored by severity. Low severity is neutral chrome.
+export const CATEGORY_SEVERITY_STYLE: Record<'high' | 'medium' | 'low', SeverityStyle> = {
+  high: { color: toneColor.danger, bg: toneBg('danger', 0.12), border: toneBorder('danger') },
+  medium: { color: toneColor.warn, bg: toneBg('warn', 0.12), border: toneBorder('warn') },
+  low: { color: palette.textSecondary, bg: palette.base, border: palette.borderDefault },
 };
 
-// Score-number color by threshold (matches the ThreatScore gauge convention).
+// Score tone by threshold (matches the ThreatScore gauge convention).
+export function scoreTone(score: number): Tone {
+  if (score >= 70) return 'danger';
+  if (score >= 40) return 'warn';
+  if (score >= 20) return 'neutral';
+  return 'good';
+}
+
+// Score-number color (hex) by threshold.
 export function scoreColor(score: number): string {
-  if (score >= 70) return 'text-rose-400';
-  if (score >= 40) return 'text-amber-400';
-  if (score >= 20) return 'text-yellow-400';
-  return 'text-emerald-400';
+  const tone = scoreTone(score);
+  return tone === 'neutral' ? palette.textSecondary : toneColor[tone];
 }

@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { Sparkles, AlertTriangle, Scale, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { CalibratedScoring } from '../../types';
+import { palette, typography } from '../../design-system/tokens';
+import { type Tone, toneColor, toneBg, toneBorder, cardStyle } from '../results/resultTokens';
+import { SectionHeader, Pill, StatCell, Callout } from '../results';
 import VarianceCard from './VarianceCard';
 import { SCORING_VERDICT_LABEL, CATEGORY_SEVERITY_STYLE } from './verdictStyles';
 
@@ -27,19 +30,49 @@ interface VerdictPanelProps {
   scoring?: CalibratedScoring;
 }
 
-const VERDICT_STYLE: Record<string, string> = {
-  MALICIOUS: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
-  SUSPICIOUS: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  LIKELY_BENIGN: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  INCONCLUSIVE: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+// AI verdict → kit tone. Inconclusive is neutral; benign is the only green.
+const VERDICT_TONE: Record<IOCVerdict['verdict'], Tone> = {
+  MALICIOUS: 'danger',
+  SUSPICIOUS: 'warn',
+  LIKELY_BENIGN: 'good',
+  INCONCLUSIVE: 'neutral',
 };
 
-const ASSESSMENT_STYLE: Record<string, string> = {
-  CONFIRMED_SIGNAL: 'bg-rose-500/20 text-rose-400',
-  FALSE_POSITIVE: 'bg-emerald-500/20 text-emerald-400',
-  CONTEXT_ONLY: 'bg-cyan-500/20 text-cyan-400',
-  NO_SIGNAL: 'bg-slate-500/20 text-slate-400',
+// Sentence-case labels for the AI verdict enum (a different enum from the
+// calibrated-scoring labels in verdictStyles).
+const AI_VERDICT_LABEL: Record<IOCVerdict['verdict'], string> = {
+  MALICIOUS: 'Malicious',
+  SUSPICIOUS: 'Suspicious',
+  LIKELY_BENIGN: 'Likely benign',
+  INCONCLUSIVE: 'Inconclusive',
 };
+
+// Per-source assessment chip tone.
+const ASSESSMENT_TONE: Record<string, Tone> = {
+  CONFIRMED_SIGNAL: 'danger',
+  FALSE_POSITIVE: 'good',
+  CONTEXT_ONLY: 'accent',
+  NO_SIGNAL: 'neutral',
+};
+
+function humanize(code: string): string {
+  const s = code.replace(/_/g, ' ').toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function Eyebrow({ children, color = palette.textTertiary }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span className="text-[11px] font-semibold" style={{ color, fontFamily: typography.ui, letterSpacing: '0.02em' }}>
+      {children}
+    </span>
+  );
+}
+
+const innerRow = {
+  background: palette.elevated,
+  border: `1px solid ${palette.borderSubtle}`,
+  borderRadius: '8px',
+} as const;
 
 export default function VerdictPanel({ lookupType, value, scoring }: VerdictPanelProps) {
   const [verdict, setVerdict] = useState<IOCVerdict | null>(null);
@@ -72,74 +105,102 @@ export default function VerdictPanel({ lookupType, value, scoring }: VerdictPane
     }
   };
 
+  const verdictTone: Tone = verdict ? (VERDICT_TONE[verdict.verdict] ?? 'neutral') : 'neutral';
+  const verdictLabel = verdict ? (AI_VERDICT_LABEL[verdict.verdict] ?? humanize(verdict.verdict)) : '';
+  const scoringStyle = scoring ? SCORING_VERDICT_LABEL[scoring.verdict] : null;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ fontFamily: typography.ui }}>
       {/* Calibrated vs legacy score comparison */}
-      {scoring && (
-        <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Scale className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Score Comparison</h3>
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider ml-2">calibrated scoring preview — legacy remains the system default</span>
+      {scoring && scoringStyle && (
+        <div className="p-5" style={cardStyle}>
+          <SectionHeader
+            icon={<Scale className="w-4 h-4" />}
+            title="Score comparison"
+            actions={
+              <span className="text-[11px] text-right" style={{ color: palette.textTertiary }}>
+                Calibrated scoring preview — legacy remains the system default
+              </span>
+            }
+          />
+          <div className="grid grid-cols-3 gap-3 mt-4 mb-4">
+            <StatCell label="Legacy" value={scoring.legacy ?? '—'} />
+            <StatCell label="Calibrated" value={scoring.calibrated} tone="accent" />
+            <div
+              className="p-3 text-center flex flex-col items-center justify-center"
+              style={{
+                background: toneBg(scoringStyle.tone, 0.06),
+                border: `1px solid ${toneBorder(scoringStyle.tone, 0.18)}`,
+                borderRadius: '8px',
+              }}
+            >
+              <div className="text-sm font-semibold" style={{ color: scoringStyle.color }}>
+                {scoringStyle.label}
+              </div>
+              <div className="text-[11px] mt-0.5" style={{ color: palette.textTertiary }}>Calibrated read</div>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="text-center p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <div className="text-2xl font-bold text-slate-300">{scoring.legacy ?? '—'}</div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Legacy</div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
-              <div className="text-2xl font-bold text-cyan-400">{scoring.calibrated}</div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Calibrated</div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 flex flex-col items-center justify-center">
-              <div className={`text-sm font-bold ${SCORING_VERDICT_LABEL[scoring.verdict].cls}`}>{SCORING_VERDICT_LABEL[scoring.verdict].label}</div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider mt-1">Calibrated read</div>
-            </div>
-          </div>
+
           {/* Abuse categories — what the IOC is actually seen doing, not just how bad */}
           {scoring.categories && scoring.categories.length > 0 && (
             <div className="mb-4">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Abuse categories</div>
+              <div className="mb-2"><Eyebrow>Abuse categories</Eyebrow></div>
               <div className="flex flex-wrap gap-2">
-                {scoring.categories.map((c) => (
-                  <span
-                    key={c.key}
-                    title={`${c.evidence}${c.sources.length ? ` — ${c.sources.join(', ')}` : ''}`}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${CATEGORY_SEVERITY_STYLE[c.severity]}`}
-                  >
-                    {c.label}
-                    <span className="text-[10px] opacity-60">{c.sources.length}</span>
-                  </span>
-                ))}
+                {scoring.categories.map((c) => {
+                  const s = CATEGORY_SEVERITY_STYLE[c.severity];
+                  return (
+                    <span
+                      key={c.key}
+                      title={`${c.evidence}${c.sources.length ? ` — ${c.sources.join(', ')}` : ''}`}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium"
+                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}
+                    >
+                      {c.label}
+                      <span className="text-[10px]" style={{ color: palette.textTertiary }}>{c.sources.length}</span>
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
+
           {scoring.legacyDivergence && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-200/90">{scoring.legacyDivergence}</p>
+            <div className="mb-3">
+              <Callout
+                icon={<AlertTriangle className="w-4 h-4" />}
+                title="Legacy and calibrated scores diverge"
+                detail={scoring.legacyDivergence}
+                tone="warn"
+              />
             </div>
           )}
+
           <button
             onClick={() => setShowContributions(!showContributions)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-all"
+            className="flex items-center gap-1.5 text-xs transition-colors"
+            style={{ color: palette.textSecondary }}
           >
             {showContributions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             {showContributions ? 'Hide' : 'Show'} score breakdown ({scoring.contributions.length} sources)
           </button>
+
           {showContributions && (
             <div className="mt-3 space-y-1.5">
               {scoring.contributions.map((c, i) => (
-                <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
-                  <span className={`text-xs font-bold tabular-nums w-10 text-right flex-shrink-0 ${
-                    c.points > 0 ? 'text-rose-400' : c.points < 0 ? 'text-emerald-400' : 'text-slate-500'
-                  }`}>
+                <div key={i} className="flex items-start gap-3 p-2.5" style={innerRow}>
+                  <span
+                    className="text-xs font-semibold tabular-nums w-10 text-right flex-shrink-0"
+                    style={{
+                      color: c.points > 0 ? toneColor.danger : c.points < 0 ? toneColor.good : palette.textTertiary,
+                      fontFamily: typography.mono,
+                    }}
+                  >
                     {c.points > 0 ? `+${c.points}` : c.points}
                   </span>
                   <div className="min-w-0">
-                    <span className="text-xs font-bold text-slate-200">{c.source}</span>
-                    <span className="text-[10px] text-slate-500 ml-2 uppercase">{c.weight}</span>
-                    <p className="text-xs text-slate-400 mt-0.5">{c.note}</p>
+                    <span className="text-xs font-semibold" style={{ color: palette.textPrimary }}>{c.source}</span>
+                    <span className="text-[11px] ml-2" style={{ color: palette.textTertiary }}>{c.weight}</span>
+                    <p className="text-xs mt-0.5" style={{ color: palette.textSecondary }}>{c.note}</p>
                   </div>
                 </div>
               ))}
@@ -152,97 +213,145 @@ export default function VerdictPanel({ lookupType, value, scoring }: VerdictPane
       {scoring && <VarianceCard variances={scoring.variances} />}
 
       {/* Ask THAMOS */}
-      <div className="p-6 rounded-xl" style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)' }}>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">THAMOS Verdict</h3>
-          </div>
-          {verdict && !loading && (
-            <button onClick={runVerdict} className="text-xs text-slate-500 hover:text-white border border-slate-700/50 rounded px-2 py-1 transition-all">
-              RE-RUN
-            </button>
-          )}
-        </div>
+      <div className="p-5" style={cardStyle}>
+        <SectionHeader
+          icon={<Sparkles className="w-4 h-4" />}
+          title="THAMOS verdict"
+          actions={
+            verdict && !loading ? (
+              <button
+                onClick={runVerdict}
+                className="text-xs rounded-md px-2.5 py-1 transition-colors"
+                style={{ color: palette.textSecondary, border: `1px solid ${palette.borderDefault}`, background: palette.elevated }}
+              >
+                Re-run
+              </button>
+            ) : undefined
+          }
+        />
 
         {!verdict && !loading && (
           <div className="text-center py-6 space-y-3">
-            <p className="text-sm text-slate-400 max-w-lg mx-auto">
+            <p className="text-sm max-w-lg mx-auto" style={{ color: palette.textSecondary }}>
               Grounded AI review of the per-source evidence — verifies each signal, flags when the
               score is misleading, and explains what to do next. Loads the persisted lookup server-side.
             </p>
             <button
               onClick={runVerdict}
-              className="px-5 py-2 rounded-lg text-sm font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
+              className="px-4 py-2 rounded-md text-sm font-semibold transition-colors"
+              style={{
+                color: palette.accent,
+                background: toneBg('accent', 0.12),
+                border: `1px solid ${toneBorder('accent')}`,
+              }}
             >
               Ask THAMOS
             </button>
-            {error && <p className="text-sm text-rose-400">{error}</p>}
+            {error && <p className="text-sm" style={{ color: toneColor.danger }}>{error}</p>}
           </div>
         )}
 
         {loading && (
           <div className="text-center py-8">
-            <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-cyan-400">THAMOS is reviewing the evidence…</p>
+            <div
+              className="w-7 h-7 border-2 rounded-full animate-spin mx-auto mb-3"
+              style={{ borderColor: palette.accent, borderTopColor: 'transparent' }}
+            />
+            <p className="text-sm" style={{ color: palette.textSecondary }}>THAMOS is reviewing the evidence…</p>
           </div>
         )}
 
         {verdict && !loading && (
-          <div className="space-y-4">
-            <div className={`p-4 rounded-lg border text-center ${VERDICT_STYLE[verdict.verdict] ?? VERDICT_STYLE.INCONCLUSIVE}`}>
-              <div className="text-xl font-bold">{verdict.verdict.replace('_', ' ')}</div>
-              <div className="text-xs uppercase tracking-wider opacity-80 mt-0.5">{verdict.confidence} confidence</div>
-              <p className="text-sm mt-2 text-slate-200">{verdict.headline}</p>
+          <div className="space-y-4 mt-4">
+            <div
+              className="p-4 text-center"
+              style={{
+                background: toneBg(verdictTone, 0.08),
+                border: `1px solid ${toneBorder(verdictTone)}`,
+                borderRadius: '8px',
+              }}
+            >
+              <div
+                className="text-lg font-semibold"
+                style={{ color: verdictTone === 'neutral' ? palette.textPrimary : toneColor[verdictTone] }}
+              >
+                {verdictLabel}
+              </div>
+              <div className="text-[11px] mt-0.5" style={{ color: palette.textTertiary }}>
+                {humanize(verdict.confidence)} confidence
+              </div>
+              <p className="text-sm mt-2" style={{ color: palette.textPrimary }}>{verdict.headline}</p>
             </div>
 
             {verdict.score_assessment && (
-              <div className={`p-3 rounded-lg border ${verdict.score_assessment.legacy_score_misleading ? 'bg-amber-500/10 border-amber-500/20' : 'bg-slate-800/50 border-slate-700/50'}`}>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Score assessment</span>
-                {verdict.score_assessment.legacy_score_misleading && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">LEGACY SCORE MISLEADING</span>
-                )}
-                <p className="text-sm text-slate-300 mt-1">{verdict.score_assessment.explanation}</p>
+              <div
+                className="p-3"
+                style={{
+                  background: verdict.score_assessment.legacy_score_misleading ? toneBg('warn', 0.07) : palette.elevated,
+                  border: `1px solid ${verdict.score_assessment.legacy_score_misleading ? toneBorder('warn') : palette.borderSubtle}`,
+                  borderRadius: '8px',
+                }}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Eyebrow>Score assessment</Eyebrow>
+                  {verdict.score_assessment.legacy_score_misleading && <Pill label="Legacy score misleading" tone="warn" />}
+                  {verdict.score_assessment.calibrated_score_misleading && <Pill label="Calibrated score misleading" tone="warn" />}
+                </div>
+                <p className="text-sm mt-1" style={{ color: palette.textSecondary }}>{verdict.score_assessment.explanation}</p>
               </div>
             )}
 
             {verdict.source_assessments?.length > 0 && (
               <div className="space-y-1.5">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Source verification</span>
-                {verdict.source_assessments.map((s, i) => (
-                  <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-slate-900/50 border border-slate-800">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${ASSESSMENT_STYLE[s.assessment] ?? ASSESSMENT_STYLE.NO_SIGNAL}`}>
-                      {s.assessment.replace(/_/g, ' ')}
-                    </span>
-                    <div className="min-w-0">
-                      <span className="text-xs font-bold text-slate-200">{s.source}</span>
-                      <p className="text-xs text-slate-400 mt-0.5">{s.reasoning}</p>
+                <Eyebrow>Source verification</Eyebrow>
+                {verdict.source_assessments.map((s, i) => {
+                  const tone = ASSESSMENT_TONE[s.assessment] ?? 'neutral';
+                  return (
+                    <div key={i} className="flex items-start gap-2.5 p-2.5" style={innerRow}>
+                      <span className="flex-shrink-0 mt-px"><Pill label={humanize(s.assessment)} tone={tone} /></span>
+                      <div className="min-w-0">
+                        <span className="text-xs font-semibold" style={{ color: palette.textPrimary }}>{s.source}</span>
+                        <p className="text-xs mt-0.5" style={{ color: palette.textSecondary }}>{s.reasoning}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {verdict.corroboration && (
-              <p className="text-sm text-slate-400"><span className="font-bold text-slate-300">Corroboration:</span> {verdict.corroboration}</p>
+              <p className="text-sm" style={{ color: palette.textSecondary }}>
+                <span className="font-semibold" style={{ color: palette.textPrimary }}>Corroboration:</span> {verdict.corroboration}
+              </p>
             )}
 
             {verdict.benign_explanations?.length > 0 && (
-              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Plausible benign explanations</span>
-                {verdict.benign_explanations.map((b, i) => (
-                  <p key={i} className="text-sm text-slate-300 mt-1">• {b}</p>
-                ))}
+              <div
+                className="p-3"
+                style={{ background: toneBg('good', 0.05), border: `1px solid ${toneBorder('good', 0.2)}`, borderRadius: '8px' }}
+              >
+                <Eyebrow color={toneColor.good}>Plausible benign explanations</Eyebrow>
+                <ul className="mt-1 space-y-1">
+                  {verdict.benign_explanations.map((b, i) => (
+                    <li key={i} className="text-sm flex gap-2" style={{ color: palette.textSecondary }}>
+                      <span style={{ color: palette.textTertiary }}>•</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
-            <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Recommendation</span>
-              <p className="text-sm text-slate-200 mt-1">{verdict.recommendation}</p>
+            <div className="p-3" style={innerRow}>
+              <Eyebrow>Recommendation</Eyebrow>
+              <p className="text-sm mt-1" style={{ color: palette.textPrimary }}>{verdict.recommendation}</p>
               {verdict.pivot_suggestions?.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {verdict.pivot_suggestions.map((p, i) => (
-                    <p key={i} className="text-sm text-cyan-300">→ {p}</p>
+                    <p key={i} className="text-sm flex gap-2" style={{ color: palette.textSecondary }}>
+                      <span style={{ color: palette.accent }}>→</span>
+                      <span>{p}</span>
+                    </p>
                   ))}
                 </div>
               )}
