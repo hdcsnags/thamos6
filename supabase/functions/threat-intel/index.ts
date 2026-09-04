@@ -602,13 +602,15 @@ async function checkAbuseIPDB(ctx: TierContext, ip: string, apiKey: string): Pro
   }
 }
 
-async function checkAlienVaultOTX(ctx: TierContext, ip: string, apiKey: string): Promise<ThreatResult> {
+// `kind` selects the OTX indicator section: the /domain route used to query the
+// IPv4 endpoint with a hostname, which OTX rejects — domains need /domain/.
+async function checkAlienVaultOTX(ctx: TierContext, ip: string, apiKey: string, kind: "IPv4" | "domain" = "IPv4"): Promise<ThreatResult> {
   const cached = await getCachedResponse(ctx, "alienvault", ip);
   if (cached) return { source: "alienvault", data: cached, threatScore: calculateOTXScore(cached) };
   try {
     const headers: Record<string, string> = { "Accept": "application/json" };
     if (apiKey) headers["X-OTX-API-KEY"] = apiKey;
-    const response = await fetchWithTimeout(`https://otx.alienvault.com/api/v1/indicators/IPv4/${ip}/general`, { headers });
+    const response = await fetchWithTimeout(`https://otx.alienvault.com/api/v1/indicators/${kind}/${encodeURIComponent(ip)}/general`, { headers });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     await setCachedResponse(ctx, "alienvault", ip, data);
@@ -2266,6 +2268,101 @@ async function recordGraphEdge(edge: GraphEdgeInput): Promise<void> {
   if (error) console.error("recordGraphEdge:", error);
 }
 
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** URL scan → observation row + URL→host edge. Mirrors saveIPScanGraph for the URL route. */
+async function saveURLScanGraph(
+  ctx: TierContext,
+  url: string,
+  scoring: CalibratedScoring,
+  isMalicious: boolean,
+  threatTypes: string[],
+  sourcesChecked: string[],
+  observedAt: string,
+): Promise<void> {
+  const verdict = scoring.verdict === "malicious"
+    ? "malicious"
+    : scoring.verdict === "suspicious"
+      ? "suspicious"
+      : "no_known_threat";
+
+  const { error: observationError } = await serviceClient.from("scan_observations").insert({
+    ioc_type: "url",
+    ioc_value: url,
+    verdict,
+    is_malicious: isMalicious,
+    threat_score: scoring.calibrated,
+    confidence: scoring.contributions.length > 2 ? "high" : scoring.contributions.length > 0 ? "medium" : "low",
+    context: ctx.cacheContext,
+    user_id: ctx.userId,
+    enrichment: { threatTypes },
+    sources_checked: sourcesChecked,
+    metadata: { tier: ctx.tier, legacy_score: scoring.legacy },
+    observed_at: observedAt,
+  });
+  if (observationError) console.error("saveURLScanGraph observation:", observationError);
+
+  const host = hostnameOf(url);
+  if (!host) return;
+  const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":");
+  await recordGraphEdge({
+    source_type: "url",
+    source_value: url,
+    target_type: isIp ? "ip" : "domain",
+    target_value: host,
+    edge_type: "hosted_on",
+    source_dataset: "scan_enrichment",
+    observed_at: observedAt,
+    confidence: "high",
+    metadata: { contextual: true, threat_types: threatTypes },
+  });
+}
+
+/** Detonation edges: where the URL actually resolved/landed per urlscan.io. */
+async function saveDetonationGraph(url: string, det: Record<string, unknown>): Promise<void> {
+  const page = (det.page ?? {}) as Record<string, string | null | undefined>;
+  const observedAt = typeof det.time === "string" ? det.time : new Date().toISOString();
+  const edges: GraphEdgeInput[] = [];
+  const finalDomain = page.domain?.toLowerCase();
+  const finalIp = page.ip?.toLowerCase();
+
+  if (finalDomain && finalIp) {
+    edges.push({
+      source_type: "domain", source_value: finalDomain, target_type: "ip", target_value: finalIp,
+      edge_type: "resolves_to", source_dataset: "urlscan", observed_at: observedAt, confidence: "high",
+      metadata: { asn: page.asn ?? null, asnname: page.asnname ?? null, country: page.country ?? null },
+    });
+  }
+  if (page.url && page.url !== url) {
+    edges.push({
+      source_type: "url", source_value: url, target_type: "url", target_value: page.url,
+      edge_type: "redirects_to", source_dataset: "urlscan", observed_at: observedAt, confidence: "high",
+      metadata: { hops: Array.isArray(det.redirectChain) ? det.redirectChain.length : null },
+    });
+    if (finalDomain) {
+      edges.push({
+        source_type: "url", source_value: page.url, target_type: "domain", target_value: finalDomain,
+        edge_type: "hosted_on", source_dataset: "urlscan", observed_at: observedAt, confidence: "high", metadata: {},
+      });
+    }
+  }
+  if (finalIp && page.asn) {
+    edges.push({
+      source_type: "ip", source_value: finalIp, target_type: "asn", target_value: String(page.asn),
+      edge_type: "announced_by", source_dataset: "urlscan", observed_at: observedAt, confidence: "medium",
+      metadata: { contextual: true, asnname: page.asnname ?? null },
+    });
+  }
+  if (edges.length === 0) return;
+  await Promise.all(edges.map(edge => recordGraphEdge(edge)));
+}
+
 async function saveIPScanGraph(
   ctx: TierContext,
   ip: string,
@@ -3044,7 +3141,7 @@ Deno.serve(async (req: Request) => {
         sourceStatus,
         detectionSources,
         detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
-        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.details ?? null,
         pdns: pdnsRecords,
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
@@ -3112,6 +3209,8 @@ Deno.serve(async (req: Request) => {
         const scannedUrl = (full?.task?.url as string | undefined) ?? (typeof body.url === "string" ? body.url : undefined);
         if (scannedUrl) {
           await setCachedResponse(ctx, "urlscan_result", scannedUrl, trimmed);
+          // Graph edges from the detonation: where the page actually landed.
+          saveDetonationGraph(scannedUrl, trimmed).catch(e => console.error("urlscan saveDetonationGraph:", e));
         }
         return new Response(JSON.stringify(trimmed), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (e) {
@@ -3177,14 +3276,23 @@ Deno.serve(async (req: Request) => {
       if (canPersist) {
         await serviceClient.from("url_lookups").insert({
           url: targetUrl,
-          results: aggregated.results,
+          // `scoring` rides inside the JSON so history/recent views can read
+          // the calibrated verdict without a schema change.
+          results: { ...aggregated.results, __scoring: urlScoring },
           is_malicious: isMalicious,
           threat_types: threatTypes,
           user_id: ctx.userId,
           context: ctx.cacheContext,
         });
 
-        await logAuditEvent(req, ctx, "url_lookup", "url", targetUrl, { sources: results.map(r => r.source), is_malicious: isMalicious });
+        // Threat graph: URL scans used to write nothing, so URL evidence never
+        // surfaced in the pivot graph. Record the observation plus the URL →
+        // host edge; detonation edges (final IP/domain) are written by
+        // /urlscan-result once the sandbox finishes.
+        saveURLScanGraph(ctx, targetUrl, urlScoring, isMalicious, threatTypes, results.map(r => r.source), aggregated.checkedAt)
+          .catch(e => console.error("url saveURLScanGraph:", e));
+
+        await logAuditEvent(req, ctx, "url_lookup", "url", targetUrl, { sources: results.map(r => r.source), is_malicious: isMalicious, calibrated_score: urlScoring.calibrated, verdict: urlScoring.verdict });
       }
 
       return new Response(JSON.stringify(aggregated), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -3346,6 +3454,11 @@ Deno.serve(async (req: Request) => {
           spamhausLists: spamhaus?.listedIn ?? [],
           blocklistdeListed: (blocklistde?.listedIn?.length ?? 0) > 0,
           blocklistdeLists: blocklistde?.listedIn ?? [],
+          // Per-source outcome for the batch Evidence matrix: which providers
+          // ran, which errored, and which returned a positive hit. Without
+          // this the workbench can only show the aggregated booleans above.
+          sourceStatus,
+          sourceHits: Object.fromEntries(ipResults.map(r => [r.source, r.error ? null : r.isMalicious === true])),
           artifactId,
           batchId,
         };
@@ -3496,7 +3609,7 @@ Deno.serve(async (req: Request) => {
         sourceStatus,
         detectionSources: [],
         detectionConfidence: enrichment.isTor ? "high" : enrichment.isVPN ? "high" : enrichment.isProxy ? "medium" : "low",
-        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.details ?? null,
         pdns: pdnsRecords,
         checkedAt: new Date().toISOString(),
         tier: ctx.tier,
@@ -3704,7 +3817,7 @@ Deno.serve(async (req: Request) => {
       sourcePromises.push(checkDomainWHOIS(ctx, domain));
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVirusTotalDomain(ctx, domain, apiKeys.virustotal ?? ""));
       if (allowedSources.includes("urlhaus")) sourcePromises.push(checkURLhausURL(ctx, `http://${domain}`));
-      if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, domain, apiKeys.alienvault ?? ""));
+      if (allowedSources.includes("alienvault")) sourcePromises.push(checkAlienVaultOTX(ctx, domain, apiKeys.alienvault ?? "", "domain"));
       if (allowedSources.includes("tranco")) sourcePromises.push(checkTrancoRank(ctx, domain));
       if (allowedSources.includes("virustotal")) sourcePromises.push(checkVTResolutions(ctx, domain, "domain", apiKeys.virustotal ?? ""));
       if (allowedSources.includes("circl_pdns")) sourcePromises.push(checkCIRCLPDNS(ctx, domain, apiKeys.circl_pdns ?? ""));
@@ -3753,7 +3866,7 @@ Deno.serve(async (req: Request) => {
         reputation: vtData?.data?.attributes?.reputation || null,
         categories: vtData?.data?.attributes?.categories || null,
         tranco: results.find(r => r.source === "tranco")?.data ?? null,
-        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.data ?? null,
+        vtResolutions: (normalizedSources["virustotal_resolutions"] as any)?.details ?? null,
         pdns: pdnsRecords,
         certSubdomains,
         checkedAt: new Date().toISOString(),
