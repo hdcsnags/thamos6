@@ -4,7 +4,8 @@ import type { BulkIPResult } from '../../types';
 export const VERDICT_TONE: Record<string, { label: string; tone: Tone }> = {
   malicious: { label: 'Malicious', tone: 'danger' },
   suspicious: { label: 'Suspicious', tone: 'warn' },
-  low_signal: { label: 'Low signal', tone: 'accent' },
+  // Inconclusive is not a colour-worthy state — matches verdictStyles/IPResult.
+  low_signal: { label: 'Low signal', tone: 'neutral' },
   no_signal: { label: 'No signal', tone: 'good' },
 };
 

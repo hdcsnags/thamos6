@@ -5,6 +5,7 @@ import { Pill } from '../results';
 import type { BulkIPResult } from '../../types';
 import { computeClusters } from './clusterUtils';
 import { verdictFor } from './verdict';
+import { summarizeCoverage } from './coverage';
 
 interface BatchReportProps {
   results: BulkIPResult[];
@@ -38,7 +39,7 @@ export function BatchReport({ results, batchId }: BatchReportProps) {
   const evidenceClusters = clusters.filter(c => c.kind === 'tag');
   const outlierRows = results.filter(r => outlierIPs.includes(r.ip) && verdictFor(r).tone !== 'good');
 
-  const avgCoverage = 'n/a — full per-source coverage lands with the Evidence tab';
+  const coverage = useMemo(() => summarizeCoverage(results), [results]);
 
   return (
     <div className="max-w-[920px] mx-auto">
@@ -91,7 +92,7 @@ export function BatchReport({ results, batchId }: BatchReportProps) {
         })}
       </Section>
 
-      <div className="grid grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3.5">
         <Section index={3} title="Shared Infrastructure">
           {infraClusters.length === 0 ? (
             <p className="text-xs" style={{ color: palette.textDisabled }}>No shared hosting org or VPN provider detected.</p>
@@ -131,9 +132,20 @@ export function BatchReport({ results, batchId }: BatchReportProps) {
       </Section>
 
       <Section index={6} title="Coverage & Data Completeness">
-        <p className="text-xs" style={{ color: palette.textTertiary }}>
-          Average per-source coverage: {avgCoverage}. A full source-by-source matrix (detected / clear / unavailable / error per provider) ships with the Evidence tab.
-        </p>
+        {coverage ? (
+          <p className="text-xs leading-relaxed" style={{ color: palette.textTertiary }}>
+            <b style={{ color: coverage.coverage < 80 ? palette.amber : palette.textSecondary }}>{coverage.coverage}%</b> of provider calls succeeded across{' '}
+            {coverage.providers} providers.
+            {coverage.fullyFailed.length > 0
+              ? <> <b style={{ color: palette.amber }}>{coverage.fullyFailed.join(', ')}</b> returned errors for every IP — scores in this report were computed without {coverage.fullyFailed.length === 1 ? 'that source' : 'those sources'}.</>
+              : <> No provider failed for the whole batch.</>}
+            {' '}The per-IP breakdown is in the Evidence tab.
+          </p>
+        ) : (
+          <p className="text-xs" style={{ color: palette.textTertiary }}>
+            Per-source status was not returned for this batch (scanned before the scanner started reporting it), so coverage cannot be stated. Re-run the batch for a full source-by-IP matrix.
+          </p>
+        )}
       </Section>
 
       <Section index={7} title="Methodology & Scoring">

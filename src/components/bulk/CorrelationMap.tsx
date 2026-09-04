@@ -89,8 +89,9 @@ export function CorrelationMap({ results, onDrillDown, onViewInTriage }: Correla
 
   if (results.length === 0) return null;
 
+  // Fixed height: this renders inside a Desktop window, so viewport units (100vh) overflowed small windows.
   return (
-    <div className="flex gap-3.5" style={{ height: 'calc(100vh - 320px)', minHeight: 460 }}>
+    <div className="flex gap-3.5" style={{ height: 520 }}>
       <div className="flex-1 min-w-0 rounded-lg relative" style={{ background: palette.base, border: `1px solid ${palette.borderDefault}` }}>
         {clusters.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center text-center px-8">

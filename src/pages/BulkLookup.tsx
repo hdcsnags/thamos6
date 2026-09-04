@@ -7,6 +7,7 @@ import { Callout, ResultCard, SectionHeader } from '../components/results';
 import { BulkTriageView } from '../components/bulk/BulkTriageView';
 import { CorrelationMap } from '../components/bulk/CorrelationMap';
 import { BatchReport } from '../components/bulk/BatchReport';
+import { BulkEvidenceMatrix } from '../components/bulk/BulkEvidenceMatrix';
 
 type WorkbenchTab = 'triage' | 'correlation' | 'evidence' | 'report';
 
@@ -309,14 +310,7 @@ export default function BulkLookup({ initialIPs, onDrillDown }: BulkLookupProps 
               )}
 
               {activeTab === 'evidence' && (
-                <ResultCard>
-                  <SectionHeader title="Evidence matrix — coming next" />
-                  <p className="text-sm mt-2" style={{ color: palette.textSecondary }}>
-                    A source-by-IP matrix (detected / clear / unavailable / error per provider) needs one small backend
-                    change first — persisting per-source status instead of just the aggregated flags bulk scans return
-                    today. That's queued as the next fast-follow on top of this workbench.
-                  </p>
-                </ResultCard>
+                <BulkEvidenceMatrix results={results} onDrillDown={onDrillDown} />
               )}
 
               {activeTab === 'report' && <BatchReport results={results} batchId={batchId} />}

@@ -251,6 +251,10 @@ export interface BulkIPResult {
   spamhausLists: string[];
   blocklistdeListed?: boolean;
   blocklistdeLists?: string[];
+  /** Per-provider fetch outcome (ok / error). Absent from batches scanned before the backend started returning it. */
+  sourceStatus?: Record<string, { ok: boolean; error?: string }>;
+  /** Per-provider verdict: true = positive hit, false = checked and clear, null = provider errored. */
+  sourceHits?: Record<string, boolean | null>;
   /** Durable ip_lookups row id for this bulk result — pass to getIPArtifact/deepEnrichIP for drill-down. */
   artifactId?: string | null;
   batchId?: string;
