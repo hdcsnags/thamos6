@@ -96,17 +96,17 @@ function App() {
         case 'ip':
           return <IPResult ip={scanResult.value} onScan={handleScan} artifactId={scanResult.artifactId} />;
         case 'url':
-          return <URLResult url={scanResult.value} />;
+          return <URLResult url={scanResult.value} onScan={handleScan} />;
         case 'domain':
           return <DomainResult domain={scanResult.value} onScan={handleScan} />;
         case 'hash':
-          return <HashResult hash={scanResult.value} />;
+          return <HashResult hash={scanResult.value} onScan={handleScan} />;
         case 'cve':
-          return <CVEResult cve={scanResult.value} />;
+          return <CVEResult cve={scanResult.value} onScan={handleScan} />;
         case 'wallet':
-          return <WalletResult address={scanResult.value} />;
+          return <WalletResult address={scanResult.value} onScan={handleScan} />;
         case 'email':
-          return <EmailResult email={scanResult.value} />;
+          return <EmailResult email={scanResult.value} onScan={handleScan} />;
         case 'extension':
           return <ExtensionScanner initialUrl={scanResult.value} />;
         default:

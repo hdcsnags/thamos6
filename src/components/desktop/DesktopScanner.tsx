@@ -48,8 +48,8 @@ export function DesktopScanner({ initialScan }: DesktopScannerProps = {}) {
         <button
           onClick={handleBack}
           className="flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors"
-          style={{ color: palette.cyan, fontSize: '12px', fontWeight: 500 }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.cyan}10`; }}
+          style={{ color: palette.accent, fontSize: '12px', fontWeight: 500 }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${palette.accent}10`; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -69,12 +69,12 @@ export function DesktopScanner({ initialScan }: DesktopScannerProps = {}) {
 
       <div className="flex-1 overflow-auto">
         {scanState.type === 'ip' && <IPResult ip={scanState.value} onScan={handleScan} />}
-        {scanState.type === 'url' && <URLResult url={scanState.value} />}
+        {scanState.type === 'url' && <URLResult url={scanState.value} onScan={handleScan} />}
         {scanState.type === 'domain' && <DomainResult domain={scanState.value} onScan={handleScan} />}
-        {scanState.type === 'hash' && <HashResult hash={scanState.value} />}
-        {scanState.type === 'cve' && <CVEResult cve={scanState.value} />}
-        {scanState.type === 'wallet' && <WalletResult address={scanState.value} />}
-        {scanState.type === 'email' && <EmailResult email={scanState.value} />}
+        {scanState.type === 'hash' && <HashResult hash={scanState.value} onScan={handleScan} />}
+        {scanState.type === 'cve' && <CVEResult cve={scanState.value} onScan={handleScan} />}
+        {scanState.type === 'wallet' && <WalletResult address={scanState.value} onScan={handleScan} />}
+        {scanState.type === 'email' && <EmailResult email={scanState.value} onScan={handleScan} />}
         {scanState.type === 'extension' && <ExtensionScanner initialUrl={scanState.value} />}
         {!['ip', 'url', 'domain', 'hash', 'cve', 'wallet', 'email', 'extension'].includes(scanState.type) && (
           <div className="h-full flex items-center justify-center" style={{ backgroundColor: palette.void }}>

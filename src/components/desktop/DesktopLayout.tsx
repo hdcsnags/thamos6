@@ -455,7 +455,35 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Result-window app id for each IOC type `detectIOCType` / result pages can pivot to. */
+const PIVOT_APP_ID: Record<string, AppId> = {
+  ip: 'ip-result',
+  url: 'url-result',
+  domain: 'domain-result',
+  hash: 'hash-result',
+  cve: 'cve-result',
+  wallet: 'wallet-result',
+  email: 'email-result',
+  extension: 'extension-result',
+};
+
+const PIVOT_TITLE_PREFIX: Record<string, string> = {
+  ip: 'IP', url: 'URL', domain: 'Domain', hash: 'Hash', cve: 'CVE', wallet: 'Wallet', email: 'Email', extension: 'Extension',
+};
+
 function renderWindowContent(appId: string, data?: any, openWindow?: (config: Partial<{ appId: AppId; title: string; data?: any }> & { appId: AppId; title: string }) => string) {
+  // Pivot handler handed to every result page: clicking a resolved IP, a
+  // detonation domain, a cert subdomain, etc. opens a sibling result window.
+  // Without it the pages hide their pivot affordances (RelatedIOCs, Host tab…).
+  const pivot = openWindow
+    ? (type: string, value: string) => {
+        const target = PIVOT_APP_ID[type];
+        if (!target || !value) return;
+        const shown = type === 'hash' && value.length > 16 ? `${value.slice(0, 12)}…` : value;
+        openWindow({ appId: target, title: `${PIVOT_TITLE_PREFIX[type] ?? type}: ${shown}`, data: { value } });
+      }
+    : undefined;
+
   switch (appId) {
     case 'terminal':
       return <DesktopTerminal />;
@@ -480,21 +508,21 @@ function renderWindowContent(appId: string, data?: any, openWindow?: (config: Pa
     case 'settings':
       return <DesktopSettings />;
     case 'ip-result':
-      return <IPResult ip={data?.value} artifactId={data?.artifactId} />;
+      return data?.value ? <IPResult ip={data.value} artifactId={data?.artifactId} onScan={pivot} /> : <DesktopScanner />;
     case 'url-result':
-      return <URLResult url={data?.value} />;
+      return data?.value ? <URLResult url={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'domain-result':
-      return <DomainResult domain={data?.value} />;
+      return data?.value ? <DomainResult domain={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'hash-result':
-      return <HashResult hash={data?.value} />;
+      return data?.value ? <HashResult hash={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'extension-result':
       return <ExtensionScanner initialUrl={data?.value} />;
     case 'cve-result':
-      return data?.value ? <CVEResult cve={data.value} /> : <DesktopScanner />;
+      return data?.value ? <CVEResult cve={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'wallet-result':
-      return data?.value ? <WalletResult address={data.value} /> : <DesktopScanner />;
+      return data?.value ? <WalletResult address={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'email-result':
-      return data?.value ? <EmailResult email={data.value} /> : <DesktopScanner />;
+      return data?.value ? <EmailResult email={data.value} onScan={pivot} /> : <DesktopScanner />;
     case 'decoder':
       return <DecoderTool />;
     case 'defang':
